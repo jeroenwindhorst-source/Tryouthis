@@ -7,6 +7,11 @@ volgende stap voor de hand ligt — niet wat er bestaat.
 
 Dit is de rol waarop de eerste vertical slice is gebouwd.
 
+De werkplek is ingedeeld naar het **werkproces**, niet naar het dossier:
+dagstart → voorbereiden → spreekuur → monitoren → afronden. Per stap staat in het scherm
+letterlijk wát je daar ziet, want dat is wat in bestaande systemen ontbreekt: je moet er
+maar achter komen waar je werk staat.
+
 ### 1.1 Dagstart (het startscherm — niet "zoek een patiënt")
 
 ```
@@ -23,7 +28,7 @@ Dit is de rol waarop de eerste vertical slice is gebouwd.
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-Per afspraak direct zichtbaar: welke zorgprogramma's spelen, of de voorbereiding
+Per afspraak direct zichtbaar: welke aandachtsgebieden spelen, of de voorbereiding
 compleet is (vragenlijst ingevuld, lab binnen), en wat er afwijkt. Geen dossier openen
 om te ontdekken dat het lab nog niet binnen is.
 
@@ -36,7 +41,7 @@ verhogen, niets doen met reden). Eén klik per patiënt, batchgewijs af te hande
 ### 1.3 Consult
 Het dossier in de bekende driedeling (context / tijdlijn / structuur, zie `docs/10` §4),
 maar met een vierde element: **de protocolkolom**. Die toont wat er voor déze patiënt
-in dit contact gedaan moet worden, samengevoegd over alle zorgprogramma's, met wat al
+in dit contact gedaan moet worden, samengevoegd over alle aandachtsgebieden, met wat al
 binnen is afgevinkt. Registreren gebeurt in de protocolkolom; het journaal wordt
 gevuld, niet andersom.
 

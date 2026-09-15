@@ -1,15 +1,17 @@
 import Fastify from 'fastify';
 import { SYSTEEM, DEMO_SEED_WAARSCHUWING } from '@zpe/terminology';
-import { vindVragenlijst, vragenlijsten, zorgprogrammas } from '@zpe/care-engine';
+import {
+  modules, ketens, vindVragenlijst, vragenlijsten, REGELSET_VERSIE, type PersoonlijkPlan,
+} from '@zpe/care-engine';
 import { terminologie } from './terminologie.js';
 import { InMemoryRepository } from './store.js';
 import {
-  dagstart, inclusieKandidaten, monitoringCohort, patientOverzicht,
-  praktijkSamenvatting, verwerkVragenlijst,
+  consultvoorbereiding, dagafsluiting, dagstart, instroom, monitoringCohort,
+  patientOverzicht, praktijkSamenvatting, registreerConsult, verwerkVragenlijst,
+  type ConsultRegistratie,
 } from './bff.js';
 
 const repo = new InMemoryRepository();
-
 const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'warn' } });
 
 // In productie staat hier een strikte allowlist; de dev-server draait op een andere poort.
@@ -20,38 +22,92 @@ app.addHook('onSend', async (_req, reply) => {
 });
 app.options('/*', async (_req, reply) => reply.code(204).send());
 
-// ── BFF: werkplek POH-Somatiek (docs/05) ────────────────────────────────────
+// ── Werkproces POH-Somatiek (docs/05) ───────────────────────────────────────
 
 app.get('/api/poh/dagstart', async () => dagstart(repo));
+app.get('/api/poh/voorbereiding', async () => consultvoorbereiding(repo));
 app.get('/api/poh/monitoring', async () => monitoringCohort(repo));
-app.get('/api/inclusie/kandidaten', async () => inclusieKandidaten(repo));
+app.get('/api/poh/instroom', async () => instroom(repo));
+app.get('/api/poh/afronden', async () => dagafsluiting(repo));
 app.get('/api/praktijk/samenvatting', async () => praktijkSamenvatting(repo));
-
-app.post<{ Body: { patientId: string; programmaId: string; besluit: 'includeer' | 'wijs-af' } }>(
-  '/api/inclusie/besluit',
-  async (req, reply) => {
-    const { patientId, programmaId, besluit } = req.body ?? {};
-    if (!repo.dossier(patientId)) return reply.code(404).send({ fout: 'patiënt niet gevonden' });
-    if (besluit === 'includeer') repo.includeer(patientId, programmaId);
-    else repo.wijsAf(patientId, programmaId);
-    return { patientId, programmaId, besluit, overzicht: patientOverzicht(repo, patientId) };
-  },
-);
 
 app.get<{ Params: { id: string } }>('/api/patient/:id', async (req, reply) => {
   const overzicht = patientOverzicht(repo, req.params.id);
   return overzicht ?? reply.code(404).send({ fout: 'patiënt niet gevonden' });
 });
 
-app.post<{ Params: { id: string }; Body: { intensiteit: string; reden?: string } }>(
-  '/api/patient/:id/intensiteit',
+/** Een suggestie afhandelen. Afwijzen mag altijd, maar vraagt een reden. */
+app.post<{ Params: { id: string }; Body: { regelId: string; actieId: string; reden?: string } }>(
+  '/api/patient/:id/suggestie',
   async (req, reply) => {
-    if (!repo.dossier(req.params.id)) return reply.code(404).send({ fout: 'patiënt niet gevonden' });
-    // Reden wordt in productie als Provenance vastgelegd (docs/04 §4).
-    repo.stelIntensiteitIn(req.params.id, req.body.intensiteit);
+    const dossier = repo.dossier(req.params.id);
+    if (!dossier) return reply.code(404).send({ fout: 'patiënt niet gevonden' });
+    const { regelId, actieId, reden } = req.body ?? {};
+
+    // Een paar acties hebben direct effect op het plan; de rest wordt vastgelegd.
+    if (actieId === 'extensief') {
+      repo.bewaarPersoonlijkPlan({ ...repo.persoonlijkPlan(req.params.id), intensiteit: 'extensief' });
+    }
+    if (regelId.startsWith('module-') && actieId === 'toevoegen') {
+      repo.markeerModuleBekend(req.params.id, regelId.replace('module-', ''));
+    }
+    repo.handelSuggestieAf(req.params.id, regelId, actieId, reden);
     return patientOverzicht(repo, req.params.id);
   },
 );
+
+/** Registratie vanuit het consult: metingen en SOEP in één handeling. */
+app.post<{ Params: { id: string }; Body: ConsultRegistratie }>(
+  '/api/patient/:id/consult',
+  async (req, reply) => {
+    const uitkomst = registreerConsult(repo, req.params.id, req.body ?? { metingen: [] });
+    if (!uitkomst) return reply.code(404).send({ fout: 'patiënt niet gevonden' });
+    return { uitkomst, overzicht: patientOverzicht(repo, req.params.id) };
+  },
+);
+
+/** Het persoonlijke plan aanpassen: modules, intervallen, intensiteit, voorkeuren. */
+app.post<{ Params: { id: string }; Body: Partial<PersoonlijkPlan> }>(
+  '/api/patient/:id/plan',
+  async (req, reply) => {
+    if (!repo.dossier(req.params.id)) return reply.code(404).send({ fout: 'patiënt niet gevonden' });
+    const huidig = repo.persoonlijkPlan(req.params.id);
+    repo.bewaarPersoonlijkPlan({ ...huidig, ...req.body, patientId: req.params.id });
+    return patientOverzicht(repo, req.params.id);
+  },
+);
+
+app.post<{ Body: { patientId: string; moduleId: string } }>(
+  '/api/poh/instroom/accepteer',
+  async (req, reply) => {
+    const { patientId, moduleId } = req.body ?? {};
+    if (!repo.dossier(patientId)) return reply.code(404).send({ fout: 'patiënt niet gevonden' });
+    repo.markeerModuleBekend(patientId, moduleId);
+    return patientOverzicht(repo, patientId);
+  },
+);
+
+// ── Protocol en verantwoording ──────────────────────────────────────────────
+
+app.get('/api/protocol', async () => ({
+  toelichting:
+    'Eén geïntegreerd protocol, opgebouwd uit aandachtsgebieden. Er is geen protocol per ' +
+    'aandoening; landelijke ketens worden achteraf afgeleid.',
+  regelsetVersie: REGELSET_VERSIE,
+  modules: modules.map((m) => ({
+    id: m.id, naam: m.naam, omschrijving: m.omschrijving, icoon: m.icoon, rol: m.rol,
+    richtlijnen: m.richtlijnen,
+    relevantie: m.relevantie.omschrijving,
+    items: m.items.map((i) => ({
+      code: i.code, naam: i.naam, basisIntervalDagen: i.basisIntervalDagen,
+      zelfAanleverbaar: i.zelfAanleverbaar, labVooraf: i.labVooraf,
+      intervalRegels: (i.intervalRegels ?? []).map((r) => ({ factor: r.factor, reden: r.reden })),
+    })),
+  })),
+  ketens: ketens.map((k) => ({
+    id: k.id, naam: k.naam, modules: k.modules, declaratie: k.declaratie,
+  })),
+}));
 
 // ── Terminologie (docs/02) ──────────────────────────────────────────────────
 
@@ -92,27 +148,13 @@ app.post<{ Params: { id: string }; Body: { antwoorden: Record<string, unknown>; 
   },
 );
 
-app.get('/api/zorgprogrammas', async () =>
-  zorgprogrammas.map((z) => ({
-    id: z.id, naam: z.naam, versie: z.versie, richtlijn: z.richtlijn,
-    activiteiten: z.activiteiten.map((a) => ({
-      id: a.id, naam: a.naam, soort: a.soort, rol: a.rol,
-      metingen: a.metingen.map((m) => ({ code: m.code, naam: m.naam, maxOuderdomDagen: m.maxOuderdomDagen })),
-    })),
-    declaratie: z.declaratie,
-  })));
-
 // ── FHIR-facade (docs/08 §5) ────────────────────────────────────────────────
-// Bewust dezelfde bron als de BFF hierboven: er is geen interne API die meer kan.
 
 app.get('/fhir/metadata', async () => ({
   resourceType: 'CapabilityStatement',
-  status: 'draft',
-  date: new Date().toISOString(),
-  publisher: 'Zorgplatform Eerstelijn',
-  kind: 'instance',
-  fhirVersion: '4.0.1',
-  format: ['json'],
+  status: 'draft', date: new Date().toISOString(),
+  publisher: 'Zorgplatform Eerstelijn', kind: 'instance',
+  fhirVersion: '4.0.1', format: ['json'],
   rest: [{
     mode: 'server',
     resource: [
@@ -126,18 +168,12 @@ app.get('/fhir/metadata', async () => ({
 }));
 
 function bundle(resources: unknown[]) {
-  return {
-    resourceType: 'Bundle',
-    type: 'searchset',
-    total: resources.length,
-    entry: resources.map((r) => ({ resource: r })),
-  };
+  return { resourceType: 'Bundle', type: 'searchset', total: resources.length,
+    entry: resources.map((r) => ({ resource: r })) };
 }
 
-app.get<{ Querystring: { _count?: string } }>('/fhir/Patient', async (req) => {
-  const max = Number(req.query._count ?? 50);
-  return bundle(repo.alleDossiers().slice(0, max).map((d) => d.patient));
-});
+app.get<{ Querystring: { _count?: string } }>('/fhir/Patient', async (req) =>
+  bundle(repo.alleDossiers().slice(0, Number(req.query._count ?? 50)).map((d) => d.patient)));
 
 app.get<{ Params: { id: string } }>('/fhir/Patient/:id', async (req, reply) => {
   const dossier = repo.dossier(req.params.id);
@@ -155,10 +191,9 @@ app.get<{ Querystring: { patient?: string } }>('/fhir/EpisodeOfCare', async (req
 app.get<{ Querystring: { patient?: string; code?: string } }>('/fhir/Observation', async (req, reply) => {
   if (!req.query.patient) return reply.code(400).send({ fout: 'parameter patient is verplicht' });
   const observaties = repo.dossier(req.query.patient)?.observaties ?? [];
-  const gefilterd = req.query.code
+  return bundle(req.query.code
     ? observaties.filter((o) => o.code.coding?.some((c) => c.code === req.query.code))
-    : observaties;
-  return bundle(gefilterd);
+    : observaties);
 });
 
 app.get<{ Querystring: { patient?: string } }>('/fhir/CarePlan', async (req, reply) => {
@@ -168,15 +203,17 @@ app.get<{ Querystring: { patient?: string } }>('/fhir/CarePlan', async (req, rep
   return bundle([{
     resourceType: 'CarePlan',
     id: `${req.query.patient}-zorgplan`,
-    status: 'active',
-    intent: 'plan',
+    status: 'active', intent: 'plan',
     subject: { reference: `Patient/${req.query.patient}` },
     period: { start: overzicht.zorgplan.contacten[0]?.datum },
+    // Eén zorgplan met categorieën per aandachtsgebied — niet één plan per aandoening.
+    category: overzicht.zorgplan.modules.map((m) => ({ text: m.naam })),
+    goal: overzicht.zorgplan.doelen.map((d) => ({ display: d.tekst })),
     activity: overzicht.zorgplan.contacten.map((c) => ({
       detail: {
         status: 'scheduled',
         scheduledTiming: { event: [c.datum] },
-        description: `${c.soort} (${c.duurMinuten} min) — ${c.programmas.join(' + ')}`,
+        description: `${c.soort} (${c.duurMinuten} min) — ${c.modules.join(' + ')}`,
         code: { text: c.metingen.map((m) => m.naam).join(', ') },
       },
     })),
@@ -189,6 +226,8 @@ app.get('/api/gezondheid', async () => ({
   status: 'ok',
   patienten: repo.alleDossiers().length,
   terminologieConcepten: terminologie.aantal(),
+  zorgmodules: modules.length,
+  regelsetVersie: REGELSET_VERSIE,
   systemen: SYSTEEM,
 }));
 
@@ -196,8 +235,9 @@ const poort = Number(process.env.PORT ?? 3000);
 app.listen({ port: poort, host: '0.0.0.0' })
   .then(() => {
     console.log(`API luistert op http://localhost:${poort}`);
-    console.log(`  BFF     : /api/poh/dagstart, /api/poh/monitoring, /api/inclusie/kandidaten`);
-    console.log(`  FHIR    : /fhir/metadata, /fhir/Patient, /fhir/CarePlan?patient=...`);
-    console.log(`  LET OP  : ${DEMO_SEED_WAARSCHUWING}`);
+    console.log(`  Werkproces : /api/poh/dagstart, /voorbereiding, /monitoring, /instroom, /afronden`);
+    console.log(`  Protocol   : /api/protocol  (${modules.length} aandachtsgebieden, regelset ${REGELSET_VERSIE})`);
+    console.log(`  FHIR       : /fhir/metadata, /fhir/CarePlan?patient=...`);
+    console.log(`  LET OP     : ${DEMO_SEED_WAARSCHUWING}`);
   })
   .catch((fout) => { app.log.error(fout); process.exit(1); });

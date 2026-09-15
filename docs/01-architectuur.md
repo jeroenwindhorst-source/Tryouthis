@@ -40,7 +40,7 @@ zonder dat je per as een aparte kopie bouwt. De drie assen:
 | --- | --- | --- |
 | **Patiënt** | "Geef mij het volledige dossier van deze persoon" | `(patient_id, resource_type, recorded_at DESC)` |
 | **Episode / probleem** | "Geef mij alles onder de episode DM2, ongeacht type" | `(episode_id, recorded_at DESC)` — episode-koppeling is verplicht op elke klinische resource |
-| **Populatie / concept** | "Geef mij alle patiënten met HbA1c > 64 én geen controle in 6 mnd" | uitgeklapte kolommen + GIN op JSONB + materialized views per zorgprogramma |
+| **Populatie / concept** | "Geef mij alle patiënten met HbA1c > 64 én geen controle in 6 mnd" | uitgeklapte kolommen + GIN op JSONB + materialized views per aandachtsgebied |
 
 Concreet in PostgreSQL:
 
@@ -99,14 +99,14 @@ niet door het model te verlaten.
 | `Encounter` | Contact (consult, visite, telefonisch, e-consult) |
 | `Observation` | Meetwaarden, SOEP-regels als gecodeerde observaties, PROMs |
 | `Composition` | Het journaal-deelcontact (S/O/E/P) als samenhangend geheel |
-| `CarePlan` | **Het geïntegreerde persoonsgerichte zorgplan** (één per patiënt) |
-| `PlanDefinition` / `ActivityDefinition` | Zorgprogramma-protocol (DM2, CVRM, COPD) |
+| `CarePlan` | **Het persoonlijke zorgplan** — één per mens, met een categorie per aandachtsgebied |
+| `PlanDefinition` / `ActivityDefinition` | Het geïntegreerde protocol: zorgmodules en monitoritems |
 | `Task` | Werkvoorraad: oproep, controle, uitslag beoordelen, terugbelverzoek |
 | `Questionnaire` / `QuestionnaireResponse` | Vragenlijsten met logica en triggers |
 | `Appointment` / `Schedule` / `Slot` | Agenda |
 | `MedicationRequest` / `MedicationStatement` | Medicatie |
 | `Goal` | Persoonlijke doelen (positieve gezondheid / eigen regie) |
-| `Group` | Populatie/cohort van een zorgprogramma |
+| `Group` | Populatie/cohort van een aandachtsgebied of keten |
 | `Provenance` / `AuditEvent` | Herkomst en logging |
 | `Flag` | Ruiters/attenties |
 
@@ -129,7 +129,7 @@ domeinlogica los van de opslag getest kan worden.
 ```
 packages/fhir-model   — FHIR R4-typen (subset), NL-profielextensies, dossier-views
 packages/terminology  — CodeSystems, referentieset, ICPC↔SNOMED mapping, zoeken
-packages/care-engine  — zorgprogramma's, inclusie, integraal plan, vragenlijstmotor
+packages/care-engine  — het protocol, instroom, zorgplan, beslisondersteuning, vragenlijsten
 apps/api              — FHIR-facade + BFF + seed
 apps/web              — werkplekken
 ```

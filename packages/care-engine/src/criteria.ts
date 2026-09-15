@@ -1,5 +1,5 @@
 import type { Dossier } from '@zpe/fhir-model';
-import { laatsteMeting, leeftijd, metingOuderdomDagen, numeriekeWaarde } from '@zpe/fhir-model';
+import { laatsteMeting, leeftijd, metingOuderdomDagen, metingReeks, numeriekeWaarde } from '@zpe/fhir-model';
 
 /**
  * Regel-DSL voor inclusie- en exclusiecriteria (docs/04 §1).
@@ -149,5 +149,61 @@ export function rookt(): Criterium {
     if (!code) return { voldaan: false, onderbouwing: 'rookstatus onbekend' };
     const rokend = code.code === '77176002';
     return { voldaan: rokend, onderbouwing: `rookstatus: ${code.display ?? code.code}` };
+  });
+}
+
+// ── Aanvullende predicaten voor het geïntegreerde protocol ──────────────────
+
+/** Meting ligt onder een drempel én is dat de laatste n metingen consequent geweest. */
+export function metingStabielOnder(
+  code: string, naam: string, drempel: number, aantalMetingen = 2,
+): Criterium {
+  return criterium(`stabiel:${code}<${drempel}`, `${naam} stabiel onder ${drempel}`, (d) => {
+    const reeks = metingReeks(d, code)
+      .map((o) => numeriekeWaarde(o))
+      .filter((x): x is number => typeof x === 'number');
+    if (reeks.length < aantalMetingen) {
+      return { voldaan: false, onderbouwing: `te weinig ${naam}-metingen voor een trend` };
+    }
+    const laatste = reeks.slice(-aantalMetingen);
+    const stabiel = laatste.every((x) => x < drempel);
+    return {
+      voldaan: stabiel,
+      onderbouwing: `${naam} laatste ${aantalMetingen} metingen: ${laatste.join(', ')}`,
+    };
+  });
+}
+
+/** Aantal actieve chronische middelen — grondslag voor medicatiebeoordeling. */
+export function minimaalChronischeMiddelen(aantal: number): Criterium {
+  return criterium(`polyfarmacie>=${aantal}`, `≥ ${aantal} chronische middelen`, (d) => {
+    const n = d.medicatie.filter((m) => m.status === 'active' && m.chronisch).length;
+    return { voldaan: n >= aantal, onderbouwing: `${n} chronische middelen` };
+  });
+}
+
+/** Aantal actieve episodes dat als chronisch telt — grondslag voor kwetsbaarheid. */
+export function minimaalChronischeEpisodes(aantal: number, icpcPrefixen: string[]): Criterium {
+  return criterium(`multimorbiditeit>=${aantal}`, `≥ ${aantal} chronische aandoeningen`, (d) => {
+    const treffers = d.episodes.filter(
+      (e) => e.status === 'active' &&
+        e.code.coding?.some((c) => icpcPrefixen.some((p) => c.code.startsWith(p))),
+    );
+    return {
+      voldaan: treffers.length >= aantal,
+      onderbouwing: treffers.length > 0
+        ? `${treffers.length} chronische aandoeningen: ${treffers.map((e) => e.titel).join(', ')}`
+        : 'geen chronische aandoeningen',
+    };
+  });
+}
+
+/** Er bestaat überhaupt een meting met deze code (ongeacht waarde). */
+export function heeftMeting(code: string, naam: string): Criterium {
+  return criterium(`heeft:${code}`, `${naam} ooit bepaald`, (d) => {
+    const o = laatsteMeting(d, code);
+    return o
+      ? { voldaan: true, onderbouwing: `${naam} bekend (${o.effectief.slice(0, 10)})` }
+      : { voldaan: false, onderbouwing: `${naam} nooit bepaald` };
   });
 }

@@ -1,53 +1,103 @@
 import { useState } from 'react';
+import { Icoon } from './iconen';
+import { api } from './api';
+import { useData } from './gebruik';
 import { Dagstart } from './schermen/Dagstart';
-import { Monitoring } from './schermen/Monitoring';
-import { Inclusie } from './schermen/Inclusie';
-import { Dossier } from './schermen/Dossier';
+import { Voorbereiden } from './schermen/Voorbereiden';
+import { Monitoren } from './schermen/Monitoren';
+import { Instroom } from './schermen/Instroom';
+import { Afronden } from './schermen/Afronden';
+import { Protocol } from './schermen/Protocol';
+import { Consult } from './schermen/Consult';
 import { Terminologie } from './schermen/Terminologie';
 
-type Scherm = 'dagstart' | 'monitoring' | 'inclusie' | 'terminologie';
+type Scherm =
+  | 'dagstart' | 'voorbereiden' | 'spreekuur' | 'monitoren' | 'afronden'
+  | 'instroom' | 'protocol' | 'terminologie';
 
-const TABS: { id: Scherm; label: string }[] = [
-  { id: 'dagstart', label: 'Dagstart' },
-  { id: 'monitoring', label: 'Monitoring' },
-  { id: 'inclusie', label: 'Inclusie & casefinding' },
-  { id: 'terminologie', label: 'Terminologie' },
+interface Ingang { id: Scherm; label: string; icoon: string }
+
+const WERKPROCES: Ingang[] = [
+  { id: 'dagstart', label: 'Dagstart', icoon: 'zon' },
+  { id: 'voorbereiden', label: 'Voorbereiden', icoon: 'klembord' },
+  { id: 'spreekuur', label: 'Spreekuur', icoon: 'agenda' },
+  { id: 'monitoren', label: 'Monitoren', icoon: 'radar' },
+  { id: 'afronden', label: 'Afronden', icoon: 'afvinken' },
+];
+
+const OVERZICHT: Ingang[] = [
+  { id: 'instroom', label: 'Instroom', icoon: 'instroom' },
+  { id: 'protocol', label: 'Het protocol', icoon: 'boek' },
+  { id: 'terminologie', label: 'Terminologie', icoon: 'tag' },
 ];
 
 export function App() {
   const [scherm, setScherm] = useState<Scherm>('dagstart');
   const [patientId, setPatientId] = useState<string | undefined>();
+  const dagstart = useData(() => api.dagstart());
 
-  const openPatient = (id: string) => setPatientId(id);
-  const sluitPatient = () => setPatientId(undefined);
+  const aantallen: Partial<Record<Scherm, { n: number; urgent?: boolean }>> = {};
+  for (const stap of dagstart.data?.stappen ?? []) {
+    aantallen[stap.id as Scherm] = { n: stap.aandacht || stap.aantal, urgent: stap.aandacht > 0 };
+  }
+
+  const open = (id: string) => { setPatientId(id); setScherm('spreekuur'); };
+  const ga = (id: string) => { setPatientId(undefined); setScherm(id as Scherm); };
+
+  const Ingangen = ({ lijst }: { lijst: Ingang[] }) => (
+    <>
+      {lijst.map((i) => {
+        const telling = aantallen[i.id];
+        return (
+          <button key={i.id} data-actief={scherm === i.id} onClick={() => ga(i.id)}>
+            <Icoon naam={i.icoon} />
+            {i.label}
+            {telling && telling.n > 0 && (
+              <span className="badge" data-toon={telling.urgent ? 'urgent' : undefined}>{telling.n}</span>
+            )}
+          </button>
+        );
+      })}
+    </>
+  );
 
   return (
-    <>
-      <div className="balk">
-        <div className="merk">Zorgplatform Eerstelijn<span>werkplek POH-Somatiek</span></div>
-        <div className="rechts">
-          <span>S. Bakker · POH-S</span>
-          <span>Huisartsenpraktijk De Linde</span>
+    <div className="app">
+      <nav className="zijbalk">
+        <div className="merk">
+          <Icoon naam="schild" grootte={20} />
+          <span>
+            Zorgplatform
+            <small>werkplek POH-Somatiek</small>
+          </span>
         </div>
-      </div>
 
-      <nav className="tabs">
-        {TABS.map((t) => (
-          <button key={t.id} data-actief={!patientId && scherm === t.id}
-            onClick={() => { setPatientId(undefined); setScherm(t.id); }}>
-            {t.label}
-          </button>
-        ))}
+        <div className="groep">Mijn werkproces</div>
+        <Ingangen lijst={WERKPROCES} />
+
+        <div className="groep">Praktijk</div>
+        <Ingangen lijst={OVERZICHT} />
+
+        <div className="voet">
+          Sanne Bakker · POH-S<br />
+          Huisartsenpraktijk De Linde
+        </div>
       </nav>
 
-      <main>
-        {patientId
-          ? <Dossier patientId={patientId} terug={sluitPatient} />
-          : scherm === 'dagstart' ? <Dagstart openPatient={openPatient} />
-          : scherm === 'monitoring' ? <Monitoring openPatient={openPatient} />
-          : scherm === 'inclusie' ? <Inclusie />
-          : <Terminologie />}
+      <main className="werkblad">
+        {scherm === 'dagstart' && <Dagstart gaNaar={ga} openPatient={open} />}
+        {scherm === 'voorbereiden' && <Voorbereiden openPatient={open} />}
+        {scherm === 'spreekuur' && (
+          patientId
+            ? <Consult patientId={patientId} terug={() => setPatientId(undefined)} />
+            : <Voorbereiden openPatient={open} />
+        )}
+        {scherm === 'monitoren' && <Monitoren openPatient={open} />}
+        {scherm === 'afronden' && <Afronden />}
+        {scherm === 'instroom' && <Instroom openPatient={open} />}
+        {scherm === 'protocol' && <Protocol />}
+        {scherm === 'terminologie' && <Terminologie />}
       </main>
-    </>
+    </div>
   );
 }

@@ -1,4 +1,4 @@
-/** Bouwt een synthetisch dossier voor de tests. Geen productiedata — nooit (docs/07 §4). */
+/** Synthetische dossiers voor de tests. Nooit productiedata (docs/07 §4). */
 export const HERKOMST = {
   bron: 'zorgverlener',
   vastgelegdOp: '2026-01-10T10:00:00+01:00',
@@ -6,7 +6,9 @@ export const HERKOMST = {
   auteurRol: 'poh-s',
 };
 
-export function maakDossier({ geboortedatum = '1958-04-02', episodes = [], observaties = [] } = {}) {
+export function maakDossier({
+  geboortedatum = '1958-04-02', episodes = [], observaties = [], medicatie = [], markeringen = [],
+} = {}) {
   return {
     patient: {
       resourceType: 'Patient',
@@ -37,18 +39,32 @@ export function maakDossier({ geboortedatum = '1958-04-02', episodes = [], obser
       patientId: 'pat-1',
       code: { coding: [{ system: 'http://loinc.org', code: o.code }] },
       effectief: o.op,
-      waarde: { value: o.waarde, unit: o.eenheid ?? '' },
+      waarde: o.code === '72166-2'
+        ? { code: { system: 'http://snomed.info/sct', code: o.snomed, display: o.display } }
+        : { value: o.waarde, unit: o.eenheid ?? '' },
       status: 'final',
       herkomst: o.herkomst ?? HERKOMST,
     })),
-    medicatie: [],
-    markeringen: [],
+    medicatie: medicatie.map((m, i) => ({
+      resourceType: 'MedicationStatement',
+      id: `med-${i + 1}`,
+      patientId: 'pat-1',
+      middel: { coding: [{ system: 'http://www.whocc.no/atc', code: m.atc }], text: m.naam },
+      dosering: m.dosering ?? '1dd1',
+      chronisch: m.chronisch ?? true,
+      status: 'active',
+      herkomst: HERKOMST,
+    })),
+    markeringen: markeringen.map((t, i) => ({
+      resourceType: 'Flag', id: `flag-${i + 1}`, patientId: 'pat-1',
+      soort: 'ruiter', tekst: t, actief: true, herkomst: HERKOMST,
+    })),
     taken: [],
     afspraken: [],
   };
 }
 
-/** Patiënt met DM2 + hypertensie + COPD — de casus uit docs/04 §2. */
+/** Diabetes + hypertensie + COPD: de casus waar drie losse trajecten ontstaan. */
 export function multimorbideDossier() {
   return maakDossier({
     geboortedatum: '1955-02-01',
@@ -62,6 +78,21 @@ export function multimorbideDossier() {
       { code: '8480-6', waarde: 148, eenheid: 'mmHg', op: '2026-08-01T09:00:00+02:00' },
       { code: '29463-7', waarde: 88, eenheid: 'kg', op: '2026-08-01T09:00:00+02:00' },
       { code: 'ccq-totaal', waarde: 1.8, op: '2026-06-15T09:00:00+02:00' },
+    ],
+  });
+}
+
+/** Alles al jaren op streefwaarde — de patiënt die minder zorg nodig heeft. */
+export function stabielDossier() {
+  return maakDossier({
+    geboortedatum: '1962-05-20',
+    episodes: [{ titel: 'Diabetes mellitus type 2', icpc: 'T90.02' }],
+    observaties: [
+      { code: '59261-8', waarde: 46, eenheid: 'mmol/mol', op: '2025-09-01T09:00:00+02:00' },
+      { code: '59261-8', waarde: 47, eenheid: 'mmol/mol', op: '2026-02-01T09:00:00+01:00' },
+      { code: '59261-8', waarde: 45, eenheid: 'mmol/mol', op: '2026-08-01T09:00:00+02:00' },
+      { code: '8480-6', waarde: 126, eenheid: 'mmHg', op: '2026-02-01T09:00:00+01:00' },
+      { code: '8480-6', waarde: 128, eenheid: 'mmHg', op: '2026-08-01T09:00:00+02:00' },
     ],
   });
 }

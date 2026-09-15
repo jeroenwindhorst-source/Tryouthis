@@ -9,7 +9,7 @@ praktijkmodel dat niet meer bestaat:
 | --- | --- |
 | De huisarts is de enige registrerende zorgverlener | POH-S, POH-GGZ, POH-Jeugd, doktersassistent, apotheker, diëtist, casemanager registreren allemaal |
 | Een consult is een los, episodisch moment | Chronische zorg is een doorlopend proces met monitoring tussen consulten door |
-| Eén patiënt heeft één probleem tegelijk | Multimorbiditeit is de norm; 3 zorgprogramma's = 3 losse oproepen |
+| Eén patiënt heeft één probleem tegelijk | Multimorbiditeit is de norm; 3 aandoeningen = 3 losse trajecten en 3 oproepen |
 | Selectie en oproep gebeurt buiten het systeem | Datadump → Excel → handmatig bellen → handmatig terugregistreren |
 | Een vragenlijst is een formulier | Een vragenlijst is een beslisboom die zorgprocessen aanstuurt |
 | Uitwisseling is een bijzaak (LSP/edifact) | Domeinoverstijgende uitwisseling is een wettelijke plicht (Wegiz, EHDS) |
@@ -34,14 +34,16 @@ Een **FHIR-native, procesgedreven informatiesysteem voor de eerste lijn** waarin
    **huisartsen-referentieset** (wat je mag registreren) en de rest van SNOMED CT
    (~385.000 concepten die je van buiten kunt ontvangen en moet kúnnen tonen, maar
    niet in hetzelfde registratieformaat).
-3. **Inclusie in zorgprogramma's uit het dossier zelf komt.** Geen datadump, geen
-   Excel. De inclusiecriteria zijn machine-leesbare regels over het dossier; het
-   systeem levert kandidaten, onderbouwing en een één-klik-inclusie met
-   declaratiegevolgen.
-4. **Multimorbiditeit leidt tot één plan.** Een patiënt met DM2 + CVRM + COPD krijgt
-   niet drie protocollen naast elkaar maar één geïntegreerd, persoonsgericht
-   zorgplan waarin overlappende controles worden samengevoegd en de intensiteit op
-   de persoon wordt afgestemd.
+3. **Er is één protocol, geen protocol per aandoening.** De bouwsteen is het
+   aandachtsgebied (glucoseregulatie, vaatrisico, nierfunctie, ademhaling, leefstijl,
+   mentaal welbevinden, medicatieveiligheid, kwetsbaarheid), niet de diagnose. Welk
+   gebied relevant is volgt uit het dossier; hoe vaak er gemeten wordt volgt uit de
+   feitelijke situatie van die mens. Zie ADR-0007 en `docs/04`.
+4. **Landelijke ketenzorg is een projectie, geen sturing.** DM-, CVRM- en
+   COPD-ketens worden automatisch afgeleid uit de geleverde zorg, puur voor declaratie
+   en verantwoording. Niemand registreert "voor de keten".
+5. **Casefinding komt uit het dossier zelf.** Geen datadump, geen Excel. De
+   relevantieregels draaien continu en leveren onderbouwde kandidaten.
 5. **Vragenlijsten motoren zijn, geen formulieren.** Een antwoord kan een
    vervolgvraag openen, een protocol starten, een taak aanmaken, de zorgverlener
    notificeren, zelfzorgadvies naar de patiënt sturen of de controlefrequentie

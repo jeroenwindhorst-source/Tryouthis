@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, type Ontvangst, type Treffer } from '../api';
+import { Icoon } from '../iconen';
 import { Kaart } from '../onderdelen';
 
 const NIVEAU_UITLEG: Record<string, string> = {
@@ -16,9 +17,8 @@ const VOORBEELDEN = [
 ];
 
 /**
- * Demonstratie van het drielagenmodel uit docs/02 §2. Het punt: de ~385.000 externe
- * SNOMED-concepten mogen nooit ongevraagd in een registratiescherm verschijnen, maar
- * moeten wél kunnen binnenkomen en getoond worden.
+ * Het drielagenmodel uit docs/02 §2: de ~385.000 externe SNOMED-concepten mogen nooit
+ * ongevraagd in een registratiescherm verschijnen, maar moeten wél kunnen binnenkomen.
  */
 export function Terminologie() {
   const [vraag, setVraag] = useState('diabetes');
@@ -26,15 +26,6 @@ export function Terminologie() {
   const [treffers, setTreffers] = useState<Treffer[]>([]);
   const [waarschuwing, setWaarschuwing] = useState('');
   const [ontvangst, setOntvangst] = useState<Ontvangst | undefined>();
-
-  // Zoek meteen bij openen, zodat het scherm niet leeg lijkt terwijl er een term staat.
-  const eersteKeer = useRef(true);
-  useEffect(() => {
-    if (!eersteKeer.current) return;
-    eersteKeer.current = false;
-    void zoek(vraag, breed);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const zoek = async (q: string, b: boolean) => {
     setVraag(q); setBreed(b);
@@ -44,50 +35,72 @@ export function Terminologie() {
     setWaarschuwing(resultaat.waarschuwing);
   };
 
+  const eersteKeer = useRef(true);
+  useEffect(() => {
+    if (!eersteKeer.current) return;
+    eersteKeer.current = false;
+    void zoek(vraag, breed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <>
-      {waarschuwing && <div className="notitie"><strong>Demoterminologie.</strong> {waarschuwing}</div>}
+      <div className="paginakop">
+        <div>
+          <h1>Terminologie</h1>
+          <div className="onder">ICPC-1 NL en SNOMED CT naast elkaar, met een harde grens</div>
+        </div>
+      </div>
 
-      <Kaart titel="Zoeken bij registratie"
-        kop={
-          <div className="segment" style={{ marginLeft: 12 }}>
-            <button data-actief={!breed} onClick={() => zoek(vraag, false)}>Alleen registreerbaar</button>
-            <button data-actief={breed} onClick={() => zoek(vraag, true)}>Ook externe concepten</button>
+      {waarschuwing && (
+        <div className="notitie" data-toon="waarschuwing">
+          <strong>Demoterminologie.</strong> {waarschuwing}
+        </div>
+      )}
+
+      <Kaart titel="Zoeken bij registratie" icoon="tag"
+        extra={
+          <div className="segment" style={{ marginLeft: 10 }}>
+            <button data-actief={!breed} onClick={() => zoek(vraag, false)}>alleen registreerbaar</button>
+            <button data-actief={breed} onClick={() => zoek(vraag, true)}>ook externe concepten</button>
           </div>
         }>
-        <div className="inhoud">
-          <input type="search" value={vraag} placeholder="Zoek op term, synoniem of ICPC-code (bijv. 'suikerziekte' of 'T90')"
-            onChange={(e) => zoek(e.target.value, breed)} />
-          <p className="reden" style={{ marginTop: 8 }}>
-            Standaard zoekt de zorgverlener alleen in wat hij mág registreren. Breder zoeken is een
-            bewuste handeling — anders krijg je 385.000 concepten in een registratiescherm.
-          </p>
-        </div>
+        <input type="search" value={vraag}
+          placeholder="Zoek op term, synoniem of ICPC-code — bijvoorbeeld 'suikerziekte' of 'T90'"
+          onChange={(e) => zoek(e.target.value, breed)} />
+        <p className="reden" style={{ marginTop: 8, marginBottom: 0 }}>
+          Standaard zoekt de zorgverlener alleen in wat hij mág registreren. Breder zoeken is een
+          bewuste handeling — anders krijg je 385.000 concepten in een registratiescherm.
+        </p>
+      </Kaart>
+
+      <Kaart titel="Treffers" telling={treffers.length} strak>
         <table>
           <thead>
             <tr>
-              <th style={{ width: 230 }}>Term</th>
+              <th style={{ width: 240 }}>Term</th>
               <th style={{ width: 90 }}>ICPC</th>
-              <th style={{ width: 110 }}>SNOMED</th>
+              <th style={{ width: 115 }}>SNOMED</th>
               <th>Niveau</th>
-              <th style={{ width: 95 }}>Match op</th>
+              <th style={{ width: 110 }}>Match op</th>
             </tr>
           </thead>
           <tbody>
             {treffers.map((t) => (
               <tr key={t.concept.snomed}>
-                <td className="nadruk">{t.concept.display}
-                  {t.concept.fsn && <div className="reden">{t.concept.fsn}</div>}
+                <td className="nadruk">
+                  {t.concept.display}
+                  {t.concept.fsn && <div className="mini">{t.concept.fsn}</div>}
                 </td>
-                <td>{t.concept.icpc1 ?? <span className="reden">—</span>}</td>
+                <td>{t.concept.icpc1 ?? <span className="mini">—</span>}</td>
                 <td style={{ fontVariantNumeric: 'tabular-nums' }}>{t.concept.snomed}</td>
                 <td>
-                  <span className="label" data-toon={t.concept.niveau === 'extern' ? 'extern' : 'ok'}>
+                  <span className="merkje" data-toon={t.concept.niveau === 'extern' ? 'extern' : 'ok'}>
                     {t.concept.niveau}
                   </span>
-                  <div className="reden">{NIVEAU_UITLEG[t.concept.niveau]}</div>
+                  <div className="mini">{NIVEAU_UITLEG[t.concept.niveau]}</div>
                 </td>
-                <td className="reden">{t.reden}</td>
+                <td className="mini">{t.reden}</td>
               </tr>
             ))}
             {treffers.length === 0 && <tr><td colSpan={5} className="leeg">Geen treffers.</td></tr>}
@@ -95,53 +108,52 @@ export function Terminologie() {
         </table>
       </Kaart>
 
-      <Kaart titel="Inkomende code van een externe partij">
-        <div className="inhoud">
-          <p className="reden" style={{ marginTop: 0 }}>
-            Wat gebeurt er als het ziekenhuis een SNOMED-code stuurt? Het origineel wordt nooit
-            weggegooid en nooit stilzwijgend vervangen — onze interpretatie komt ernaast.
-          </p>
-          <div className="knop-rij">
-            {VOORBEELDEN.map((v) => (
-              <button key={v.code} className="knop"
-                onClick={() => api.ontvang(v.code, v.display).then(setOntvangst)}>
-                {v.display} <span style={{ opacity: .6 }}>({v.wat})</span>
-              </button>
-            ))}
-          </div>
-          {ontvangst && (
-            <div style={{ marginTop: 12 }}>
-              <div className="rij">
-                <span className="sleutel">Advies</span>
-                <span className="waarde">
-                  <span className="label" data-toon={ontvangst.advies.startsWith('overnemen') ? 'ok' : 'extern'}>
-                    {ontvangst.advies}
-                  </span>
-                </span>
-              </div>
-              <div className="rij">
-                <span className="sleutel">Toelichting</span>
-                <span className="waarde" style={{ maxWidth: '70%', fontWeight: 400, textAlign: 'right' }}>
-                  {ontvangst.toelichting}
-                </span>
-              </div>
-              {ontvangst.gecodeerd.icpc1 && (
-                <div className="rij">
-                  <span className="sleutel">Eigen codering</span>
-                  <span className="waarde">
-                    {ontvangst.gecodeerd.icpc1.code} — {ontvangst.gecodeerd.icpc1.display}
-                  </span>
-                </div>
-              )}
-              {ontvangst.context && ontvangst.advies === 'tonen-als-extern-met-context' && (
-                <div className="rij">
-                  <span className="sleutel">Context in ons kader</span>
-                  <span className="waarde">{ontvangst.context.display} ({ontvangst.context.icpc1})</span>
-                </div>
-              )}
-            </div>
-          )}
+      <Kaart titel="Inkomende code van een externe partij" icoon="gesprek">
+        <p className="reden" style={{ marginTop: 0 }}>
+          Wat gebeurt er als het ziekenhuis een SNOMED-code stuurt? Het origineel wordt nooit
+          weggegooid en nooit stilzwijgend vervangen — onze interpretatie komt ernaast.
+        </p>
+        <div className="knop-rij">
+          {VOORBEELDEN.map((v) => (
+            <button key={v.code} className="knop"
+              onClick={() => api.ontvang(v.code, v.display).then(setOntvangst)}>
+              {v.display} <span className="mini">({v.wat})</span>
+            </button>
+          ))}
         </div>
+
+        {ontvangst && (
+          <div style={{ marginTop: 14 }}>
+            <div className="regel">
+              <span className="sleutel">Advies</span>
+              <span className="waarde">
+                <span className="merkje" data-toon={ontvangst.advies.startsWith('overnemen') ? 'ok' : 'extern'}>
+                  {ontvangst.advies}
+                </span>
+              </span>
+            </div>
+            <div className="regel">
+              <span className="sleutel">Toelichting</span>
+              <span className="waarde" style={{ maxWidth: '68%', fontWeight: 400, textAlign: 'right' }}>
+                {ontvangst.toelichting}
+              </span>
+            </div>
+            {ontvangst.gecodeerd.icpc1 && (
+              <div className="regel">
+                <span className="sleutel">Eigen codering</span>
+                <span className="waarde">
+                  {ontvangst.gecodeerd.icpc1.code} — {ontvangst.gecodeerd.icpc1.display}
+                </span>
+              </div>
+            )}
+            {ontvangst.context && ontvangst.advies === 'tonen-als-extern-met-context' && (
+              <div className="regel">
+                <span className="sleutel">Context in ons kader</span>
+                <span className="waarde">{ontvangst.context.display} ({ontvangst.context.icpc1})</span>
+              </div>
+            )}
+          </div>
+        )}
       </Kaart>
     </>
   );

@@ -1,15 +1,19 @@
-import type { Appointment, Dossier, Task } from '@zpe/fhir-model';
+import type { Dossier, Task } from '@zpe/fhir-model';
 import { laatsteMeting, leeftijd, metingReeks, numeriekeWaarde } from '@zpe/fhir-model';
 import {
-  METING_CODES, beoordeelInclusie, bouwZorgplan, planOproepen, verwerk,
-  vindVragenlijst, zorgprogrammas, type Intensiteit, type Zorgplan,
+  automatisering, bouwZorgplan, beoordeelInstroom, CODE, instroomOverzicht,
+  planOproepen, suggesties, verwerk, vindVragenlijst,
+  type Suggestie, type Zorgplan,
 } from '@zpe/care-engine';
 import { metingNaam } from './terminologie.js';
 import type { DossierRepository } from './store.js';
 
 /**
- * Taakgerichte samenstellingen per werkplek (docs/05). De FHIR-facade blijft
- * generiek; deze laag maakt er schermen van zonder klinische regels te bevatten.
+ * Samenstellingen per werkplek (docs/05). De FHIR-facade blijft generiek; deze laag
+ * maakt er schermen van. Bevat zelf geen klinische regels — die staan in care-engine.
+ *
+ * De indeling volgt het werkproces van de POH, niet de structuur van het dossier:
+ * voorbereiden → spreekuur → monitoren → afronden.
  */
 
 export function volledigeNaam(dossier: Dossier): string {
@@ -17,166 +21,252 @@ export function volledigeNaam(dossier: Dossier): string {
   return [n.voornaam ?? n.initialen, n.tussenvoegsel, n.achternaam].filter(Boolean).join(' ');
 }
 
-function actieveProgrammas(repo: DossierRepository, dossier: Dossier): string[] {
-  const reeds = repo.inclusies(dossier.patient.id);
-  if (reeds.length > 0) return reeds;
-  // Nog niet geïncludeerd: toon wat er inhoudelijk speelt, zodat de POH het ziet.
-  return beoordeelInclusie(dossier, [], zorgprogrammas, repo.peildatum(), repo.afwijzingen(dossier.patient.id))
-    .nieuweKandidaten.map((k) => k.programmaId);
+function planVoor(repo: DossierRepository, dossier: Dossier): Zorgplan {
+  return bouwZorgplan(dossier, repo.persoonlijkPlan(dossier.patient.id), { peildatum: repo.peildatum() });
 }
+
+function suggestiesVoor(repo: DossierRepository, dossier: Dossier, plan: Zorgplan): Suggestie[] {
+  const afgehandeld = repo.afgehandeldeSuggesties(dossier.patient.id);
+  return suggesties(dossier, plan, repo.peildatum()).filter((s) => !afgehandeld.includes(s.regelId));
+}
+
+// ── Signalen ────────────────────────────────────────────────────────────────
 
 export interface Signaal {
   soort: 'meetwaarde' | 'achterstand' | 'trend' | 'voorbereiding';
   ernst: 'informatief' | 'aandacht' | 'urgent';
   tekst: string;
+  module?: string;
 }
 
-/** Signalen op dossierniveau — de reden dat een patiënt op een lijst staat. */
 export function signalen(dossier: Dossier, peildatum: Date): Signaal[] {
   const lijst: Signaal[] = [];
 
-  const hba1c = numeriekeWaarde(laatsteMeting(dossier, METING_CODES.hba1c));
+  const hba1c = numeriekeWaarde(laatsteMeting(dossier, CODE.hba1c));
   if (hba1c !== undefined && hba1c > 64) {
-    lijst.push({ soort: 'meetwaarde', ernst: hba1c > 75 ? 'urgent' : 'aandacht',
-      tekst: `HbA1c ${hba1c} mmol/mol (streefwaarde afhankelijk van leeftijd en duur)` });
+    lijst.push({ soort: 'meetwaarde', ernst: hba1c > 75 ? 'urgent' : 'aandacht', module: 'glucose',
+      tekst: `HbA1c ${hba1c} mmol/mol` });
   }
 
-  const rr = numeriekeWaarde(laatsteMeting(dossier, METING_CODES.rrSys));
+  const rr = numeriekeWaarde(laatsteMeting(dossier, CODE.rrSys));
   if (rr !== undefined && rr >= 160) {
-    lijst.push({ soort: 'meetwaarde', ernst: rr >= 180 ? 'urgent' : 'aandacht',
-      tekst: `Bloeddruk systolisch ${rr} mmHg` });
+    lijst.push({ soort: 'meetwaarde', ernst: rr >= 180 ? 'urgent' : 'aandacht', module: 'vaatrisico',
+      tekst: `Bloeddruk ${rr} mmHg` });
   }
 
-  const egfr = numeriekeWaarde(laatsteMeting(dossier, METING_CODES.egfr));
+  const egfr = numeriekeWaarde(laatsteMeting(dossier, CODE.egfr));
   if (egfr !== undefined && egfr < 45) {
-    lijst.push({ soort: 'meetwaarde', ernst: egfr < 30 ? 'urgent' : 'aandacht',
+    lijst.push({ soort: 'meetwaarde', ernst: egfr < 30 ? 'urgent' : 'aandacht', module: 'nierfunctie',
       tekst: `eGFR ${egfr} ml/min` });
   }
 
-  const ccqReeks = metingReeks(dossier, METING_CODES.ccq).map((o) => numeriekeWaarde(o) ?? 0);
-  if (ccqReeks.length >= 2) {
-    const delta = Math.round((ccqReeks.at(-1)! - ccqReeks.at(-2)!) * 100) / 100;
+  const ccq = metingReeks(dossier, CODE.ccq).map(numeriekeWaarde).filter((x): x is number => typeof x === 'number');
+  if (ccq.length >= 2) {
+    const delta = Math.round((ccq.at(-1)! - ccq.at(-2)!) * 100) / 100;
     if (delta >= 0.4) {
-      lijst.push({ soort: 'trend', ernst: ccqReeks.at(-1)! >= 2 ? 'urgent' : 'aandacht',
-        tekst: `CCQ opgelopen van ${ccqReeks.at(-2)} naar ${ccqReeks.at(-1)} (+${delta})` });
-    } else if (ccqReeks.slice(-3).every((x) => x < 1) && ccqReeks.length >= 3) {
-      lijst.push({ soort: 'trend', ernst: 'informatief',
-        tekst: 'CCQ drie metingen stabiel onder 1,0 — minder frequente controle is passend' });
+      lijst.push({ soort: 'trend', ernst: ccq.at(-1)! >= 2 ? 'urgent' : 'aandacht', module: 'ademhaling',
+        tekst: `CCQ van ${ccq.at(-2)} naar ${ccq.at(-1)} (+${delta})` });
+    } else if (ccq.length >= 3 && ccq.slice(-3).every((x) => x < 1)) {
+      lijst.push({ soort: 'trend', ernst: 'informatief', module: 'ademhaling',
+        tekst: 'CCQ drie metingen stabiel — minder frequent volstaat' });
     }
   }
 
-  const laatsteHba1c = laatsteMeting(dossier, METING_CODES.hba1c);
-  const heeftDm2 = dossier.episodes.some((e) => e.code.coding?.some((c) => c.code.startsWith('T90.02')));
-  if (heeftDm2 && laatsteHba1c) {
-    const dagen = Math.floor((peildatum.getTime() - new Date(laatsteHba1c.effectief).getTime()) / 86_400_000);
+  const heeftGlucose = dossier.episodes.some((e) => e.code.coding?.some((c) => c.code.startsWith('T90')));
+  if (heeftGlucose) {
+    const o = laatsteMeting(dossier, CODE.hba1c);
+    const dagen = o ? Math.floor((peildatum.getTime() - new Date(o.effectief).getTime()) / 86_400_000) : Infinity;
     if (dagen > 365) {
-      lijst.push({ soort: 'achterstand', ernst: 'aandacht', tekst: `HbA1c ${dagen} dagen oud` });
+      lijst.push({ soort: 'achterstand', ernst: 'aandacht', module: 'glucose',
+        tekst: Number.isFinite(dagen) ? `HbA1c ${dagen} dagen oud` : 'HbA1c nooit bepaald' });
     }
-  } else if (heeftDm2) {
-    lijst.push({ soort: 'achterstand', ernst: 'aandacht', tekst: 'Nog geen HbA1c vastgelegd' });
   }
 
   return lijst;
 }
 
-export interface Dagregel {
-  tijd: string;
-  patientId: string;
+// ── 1. Dagstart: het werkproces in één blik ─────────────────────────────────
+
+export interface Processtap {
+  id: 'voorbereiden' | 'spreekuur' | 'monitoren' | 'afronden';
   naam: string;
-  leeftijd: number;
-  soort: string;
-  programmas: string[];
-  voorbereidingCompleet: boolean;
-  ontbreekt: string[];
-  signalen: Signaal[];
+  omschrijving: string;
+  /** Wat zie ik hier, als POH. */
+  watZieIk: string;
+  aantal: number;
+  aandacht: number;
 }
 
 export interface Dagstart {
   datum: string;
   zorgverlener: { naam: string; rol: string };
-  spreekuur: Dagregel[];
-  samenvatting: { afspraken: number; vragenAandacht: number; voorbereidingIncompleet: number };
-  werkvoorraad: { categorie: string; aantal: number; toelichting: string }[];
+  stappen: Processtap[];
+  automatisering: {
+    graad: number;
+    vandaagAutomatisch: { titel: string; aantal: number; toelichting: string }[];
+    wachtOpJou: number;
+  };
+  urgent: { patientId: string; naam: string; titel: string; bevinding: string }[];
 }
 
 export function dagstart(repo: DossierRepository): Dagstart {
   const peildatum = repo.peildatum();
   const datum = peildatum.toISOString().slice(0, 10);
-  const afspraken: Appointment[] = repo.spreekuur(datum);
+  const afspraken = repo.spreekuur(datum);
 
-  const spreekuur: Dagregel[] = afspraken.flatMap((afspraak) => {
+  const voorbereidingen = consultvoorbereiding(repo);
+  const monitoring = monitoringCohort(repo);
+  const afronden = dagafsluiting(repo);
+
+  // Automatisering over de patiënten van vandaag plus het monitoringcohort.
+  const relevante = new Set([...afspraken.map((a) => a.patientId), ...monitoring.slice(0, 25).map((m) => m.patientId)]);
+  const alleSuggesties: Suggestie[] = [];
+  for (const patientId of relevante) {
+    const dossier = repo.dossier(patientId);
+    if (!dossier) continue;
+    alleSuggesties.push(...suggestiesVoor(repo, dossier, planVoor(repo, dossier)));
+  }
+  const auto = automatisering(alleSuggesties);
+
+  const perTitel = new Map<string, number>();
+  for (const s of auto.automatischUitgevoerd) perTitel.set(s.titel, (perTitel.get(s.titel) ?? 0) + 1);
+
+  const urgent = alleSuggesties
+    .filter((s) => s.ernst === 'urgent')
+    .slice(0, 6)
+    .map((s) => ({
+      patientId: s.patientId,
+      naam: volledigeNaam(repo.dossier(s.patientId)!),
+      titel: s.titel,
+      bevinding: s.bevinding,
+    }));
+
+  return {
+    datum,
+    zorgverlener: { naam: 'Sanne Bakker', rol: 'POH-Somatiek' },
+    stappen: [
+      {
+        id: 'voorbereiden', naam: 'Voorbereiden', omschrijving: 'Spreekuur van vandaag klaarzetten',
+        watZieIk: 'Per patiënt wat er binnen is, wat ontbreekt en wat er besproken moet worden.',
+        aantal: voorbereidingen.length,
+        aandacht: voorbereidingen.filter((v) => !v.compleet).length,
+      },
+      {
+        id: 'spreekuur', naam: 'Spreekuur', omschrijving: 'Consulten voeren en registreren',
+        watZieIk: 'Het plan van deze patiënt, de suggesties, en registratie in één scherm.',
+        aantal: afspraken.length,
+        aandacht: voorbereidingen.filter((v) => v.signalen.some((s) => s.ernst !== 'informatief')).length,
+      },
+      {
+        id: 'monitoren', naam: 'Monitoren', omschrijving: 'Patiënten die ik op afstand volg',
+        watZieIk: 'Alleen wie afwijkt, met de trend erbij en een voorgestelde vervolgactie.',
+        aantal: monitoring.length,
+        aandacht: monitoring.filter((m) => m.signalen.length > 0).length,
+      },
+      {
+        id: 'afronden', naam: 'Afronden', omschrijving: 'Dag sluitend maken',
+        watZieIk: 'Openstaande registraties, verantwoording en wat automatisch is gedaan.',
+        aantal: afronden.punten.length,
+        aandacht: afronden.punten.filter((p) => p.blokkerend).length,
+      },
+    ],
+    automatisering: {
+      graad: auto.automatiseringsgraad,
+      vandaagAutomatisch: [...perTitel.entries()].map(([titel, aantal]) => ({
+        titel, aantal,
+        toelichting: auto.automatischUitgevoerd.find((s) => s.titel === titel)!.onderbouwing,
+      })),
+      wachtOpJou: auto.wachtOpMens.length,
+    },
+    urgent,
+  };
+}
+
+// ── 2. Consultvoorbereiding ─────────────────────────────────────────────────
+
+export interface Voorbereiding {
+  tijd: string;
+  patientId: string;
+  naam: string;
+  leeftijd: number;
+  soort: string;
+  modules: { id: string; naam: string; icoon: string }[];
+  compleet: boolean;
+  binnen: string[];
+  ontbreekt: string[];
+  signalen: Signaal[];
+  /** De twee tot drie dingen die dit consult echt moeten opleveren. */
+  gespreksonderwerpen: { titel: string; bevinding: string; ernst: string }[];
+  doelen: { tekst: string }[];
+}
+
+export function consultvoorbereiding(repo: DossierRepository): Voorbereiding[] {
+  const peildatum = repo.peildatum();
+  const datum = peildatum.toISOString().slice(0, 10);
+
+  return repo.spreekuur(datum).flatMap((afspraak): Voorbereiding[] => {
     const dossier = repo.dossier(afspraak.patientId);
     if (!dossier) return [];
-    const programmas = actieveProgrammas(repo, dossier);
-    const plan = zorgplanVoor(repo, dossier);
-    const eerstvolgend = plan.contacten[0];
-    const ontbreekt = (eerstvolgend?.metingen ?? [])
-      .filter((m) => m.labVooraf && (!m.laatsteOp || m.vervaltOp <= datum))
-      .map((m) => m.naam);
-    const vragenlijsten = eerstvolgend?.vragenlijsten ?? [];
-    if (vragenlijsten.length > 0 && dossier.patient.id.charCodeAt(6) % 3 === 0) {
+    const plan = planVoor(repo, dossier);
+    const eerste = plan.contacten[0];
+    const lijst = suggestiesVoor(repo, dossier, plan);
+
+    const binnen: string[] = [];
+    const ontbreekt: string[] = [];
+    for (const meting of eerste?.metingen ?? []) {
+      if (meting.laatsteOp && meting.vervaltOp > datum) binnen.push(`${meting.naam} ${meting.laatsteWaarde ?? ''}`.trim());
+      else ontbreekt.push(meting.naam);
+    }
+    if ((eerste?.vragenlijsten.length ?? 0) > 0 && dossier.patient.id.charCodeAt(6) % 3 === 0) {
       ontbreekt.push('voorbereidingsvragenlijst');
     }
+
     return [{
       tijd: afspraak.start.slice(11, 16),
       patientId: dossier.patient.id,
       naam: volledigeNaam(dossier),
       leeftijd: leeftijd(dossier, peildatum),
       soort: afspraak.soort,
-      programmas,
-      voorbereidingCompleet: ontbreekt.length === 0,
+      modules: plan.modules.map((m) => ({ id: m.id, naam: m.naam, icoon: m.icoon })),
+      compleet: ontbreekt.length === 0,
+      binnen,
       ontbreekt,
       signalen: signalen(dossier, peildatum),
+      gespreksonderwerpen: lijst
+        .filter((s) => s.klasse === 'klinisch')
+        .slice(0, 3)
+        .map((s) => ({ titel: s.titel, bevinding: s.bevinding, ernst: s.ernst })),
+      doelen: plan.doelen.map((d) => ({ tekst: d.tekst })),
     }];
   });
-
-  const monitoring = monitoringCohort(repo);
-  const kandidaten = inclusieKandidaten(repo);
-
-  return {
-    datum,
-    zorgverlener: { naam: 'S. Bakker', rol: 'POH-Somatiek' },
-    spreekuur,
-    samenvatting: {
-      afspraken: spreekuur.length,
-      vragenAandacht: spreekuur.filter((r) => r.signalen.some((s) => s.ernst !== 'informatief')).length,
-      voorbereidingIncompleet: spreekuur.filter((r) => !r.voorbereidingCompleet).length,
-    },
-    werkvoorraad: [
-      { categorie: 'Signalen uit monitoring', aantal: monitoring.filter((m) => m.signalen.length > 0).length,
-        toelichting: 'Patiënten op afstand gevolgd met een afwijking sinds de vorige beoordeling' },
-      { categorie: 'Inclusievoorstellen', aantal: kandidaten.length,
-        toelichting: 'Patiënten die aan de criteria van een zorgprogramma voldoen en nog niet zijn ingesloten' },
-      { categorie: 'Oproepen zonder respons', aantal: repo.taken().filter((t) => t.categorie === 'oproep' && t.status === 'requested').length,
-        toelichting: 'Uitnodigingen waarop nog niet is gereageerd' },
-    ],
-  };
 }
+
+// ── 3. Monitoring ───────────────────────────────────────────────────────────
 
 export interface MonitoringRegel {
   patientId: string;
   naam: string;
   leeftijd: number;
-  programmas: string[];
+  modules: { id: string; naam: string; icoon: string }[];
   signalen: Signaal[];
-  laatsteContact?: string;
-  voorstellen: { actie: string; omschrijving: string }[];
+  suggesties: Suggestie[];
 }
 
-/** Het monitoringcohort: gesorteerd op afwijking, niet op alfabet (docs/05 §1.2). */
 export function monitoringCohort(repo: DossierRepository): MonitoringRegel[] {
   const peildatum = repo.peildatum();
   const regels = repo.alleDossiers().flatMap((dossier): MonitoringRegel[] => {
-    const programmas = repo.inclusies(dossier.patient.id);
-    if (programmas.length === 0) return [];
+    const bekend = repo.bekendeModules(dossier.patient.id);
+    if (bekend.length === 0) return [];
+    const plan = planVoor(repo, dossier);
     const sig = signalen(dossier, peildatum);
+    if (plan.modules.length === 0) return [];
     return [{
       patientId: dossier.patient.id,
       naam: volledigeNaam(dossier),
       leeftijd: leeftijd(dossier, peildatum),
-      programmas,
+      modules: plan.modules.map((m) => ({ id: m.id, naam: m.naam, icoon: m.icoon })),
       signalen: sig,
-      voorstellen: voorstellenBij(sig),
+      suggesties: suggestiesVoor(repo, dossier, plan).filter((s) => s.klasse === 'klinisch').slice(0, 3),
     }];
   });
 
@@ -185,64 +275,92 @@ export function monitoringCohort(repo: DossierRepository): MonitoringRegel[] {
   return regels.sort((a, b) => gewicht(b) - gewicht(a));
 }
 
-function voorstellenBij(sig: Signaal[]): { actie: string; omschrijving: string }[] {
-  const voorstellen: { actie: string; omschrijving: string }[] = [];
-  if (sig.some((s) => s.ernst === 'urgent')) {
-    voorstellen.push({ actie: 'plan-afspraak', omschrijving: 'Afspraak inplannen binnen 2 weken' });
-  }
-  if (sig.some((s) => s.soort === 'achterstand')) {
-    voorstellen.push({ actie: 'lab-aanvraag', omschrijving: 'Lab aanvragen vóór het volgende contact' });
-  }
-  if (sig.some((s) => s.soort === 'trend' && s.ernst === 'informatief')) {
-    voorstellen.push({ actie: 'wijzig-intensiteit', omschrijving: 'Voorstel: intensiteit naar extensief' });
-  }
-  voorstellen.push({ actie: 'bericht', omschrijving: 'Bericht via portaal sturen' });
-  voorstellen.push({ actie: 'geen-actie', omschrijving: 'Geen actie, met reden vastleggen' });
-  return voorstellen;
+// ── 4. Instroom ─────────────────────────────────────────────────────────────
+
+export function instroom(repo: DossierRepository) {
+  return instroomOverzicht(
+    repo.alleDossiers(),
+    (id) => repo.bekendeModules(id),
+    (id) => repo.persoonlijkPlan(id),
+    repo.peildatum(),
+  );
 }
 
-export function zorgplanVoor(repo: DossierRepository, dossier: Dossier): Zorgplan {
-  const programmas = actieveProgrammas(repo, dossier);
-  const intensiteit = (repo.intensiteit(dossier.patient.id) ?? 'basis') as Intensiteit;
-  return bouwZorgplan(dossier, programmas, intensiteit, { peildatum: repo.peildatum() });
+// ── 5. Dagafsluiting ────────────────────────────────────────────────────────
+
+export interface Afsluitpunt {
+  categorie: string;
+  omschrijving: string;
+  aantal: number;
+  blokkerend: boolean;
+  bulkVeilig: boolean;
+  toelichting: string;
 }
 
-export interface KandidaatRegel {
-  patientId: string;
-  naam: string;
-  leeftijd: number;
-  programmaId: string;
-  programmaNaam: string;
-  onderbouwing: string;
-  gevolgen: string[];
-}
-
-/** Casefinding over de hele praktijk — vervangt de datadump-naar-Excel (docs/04 §1). */
-export function inclusieKandidaten(repo: DossierRepository): KandidaatRegel[] {
+export function dagafsluiting(repo: DossierRepository) {
   const peildatum = repo.peildatum();
-  return repo.alleDossiers().flatMap((dossier) => {
-    const resultaat = beoordeelInclusie(
-      dossier, repo.inclusies(dossier.patient.id), zorgprogrammas, peildatum,
-      repo.afwijzingen(dossier.patient.id),
-    );
-    return resultaat.nieuweKandidaten.map((k) => ({
-      patientId: dossier.patient.id,
-      naam: volledigeNaam(dossier),
-      leeftijd: leeftijd(dossier, peildatum),
-      programmaId: k.programmaId,
-      programmaNaam: k.programmaNaam,
-      onderbouwing: k.onderbouwing,
-      gevolgen: k.gevolgen ?? [],
-    }));
-  });
+  const datum = peildatum.toISOString().slice(0, 10);
+  const afspraken = repo.spreekuur(datum);
+
+  let indicatorenOnvolledig = 0;
+  let zonderVragenlijst = 0;
+  const ketenGaten = new Map<string, number>();
+
+  for (const afspraak of afspraken) {
+    const dossier = repo.dossier(afspraak.patientId);
+    if (!dossier) continue;
+    const plan = planVoor(repo, dossier);
+    for (const keten of plan.ketens) {
+      const gaten = keten.indicatoren.filter((i) => !i.voldaan).length;
+      if (gaten > 0) {
+        indicatorenOnvolledig++;
+        ketenGaten.set(keten.naam, (ketenGaten.get(keten.naam) ?? 0) + gaten);
+      }
+    }
+    if ((plan.contacten[0]?.vragenlijsten.length ?? 0) > 0) zonderVragenlijst++;
+  }
+
+  const punten: Afsluitpunt[] = [
+    {
+      categorie: 'Verantwoording',
+      omschrijving: 'Patiënten met ontbrekende ketenindicatoren',
+      aantal: indicatorenOnvolledig,
+      blokkerend: false,
+      bulkVeilig: true,
+      toelichting: [...ketenGaten.entries()].map(([naam, n]) => `${naam}: ${n} gaten`).join(' · ') ||
+        'Alle indicatoren zijn op orde.',
+    },
+    {
+      categorie: 'Voorbereiding volgende keer',
+      omschrijving: 'Vragenlijsten die klaargezet kunnen worden',
+      aantal: zonderVragenlijst,
+      blokkerend: false,
+      bulkVeilig: true,
+      toelichting: 'Logistiek werk zonder klinische beslissing — kan in één handeling.',
+    },
+    {
+      categorie: 'Openstaande taken',
+      omschrijving: 'Taken die vandaag zijn ontstaan en nog open staan',
+      aantal: repo.taken().filter((t) => t.status === 'requested').length,
+      blokkerend: repo.taken().some((t) => t.status === 'requested' && t.prioriteit === 'asap'),
+      bulkVeilig: false,
+      toelichting: 'Alles met een reden en een voorgestelde afhandeling.',
+    },
+  ];
+
+  return { datum, punten, afgerond: punten.every((p) => p.aantal === 0) };
 }
+
+// ── 6. Patiëntoverzicht ─────────────────────────────────────────────────────
 
 export function patientOverzicht(repo: DossierRepository, patientId: string) {
   const dossier = repo.dossier(patientId);
   if (!dossier) return undefined;
   const peildatum = repo.peildatum();
-  const plan = zorgplanVoor(repo, dossier);
+  const persoonlijk = repo.persoonlijkPlan(patientId);
+  const plan = bouwZorgplan(dossier, persoonlijk, { peildatum });
   const oproepen = planOproepen(plan, dossier.patient, { peildatum });
+  const lijst = suggestiesVoor(repo, dossier, plan);
 
   return {
     patient: {
@@ -257,8 +375,10 @@ export function patientOverzicht(repo: DossierRepository, patientId: string) {
     episodes: dossier.episodes.map((e) => ({
       id: e.id, titel: e.titel, status: e.status,
       icpc: e.code.coding?.find((c) => c.system.includes('icpc'))?.code,
-      snomed: e.code.coding?.find((c) => c.system.includes('snomed'))?.code,
       start: e.periode.start,
+    })),
+    medicatie: dossier.medicatie.map((m) => ({
+      naam: m.middel.text ?? '', atc: m.middel.coding?.[0]?.code, dosering: m.dosering, chronisch: m.chronisch,
     })),
     metingen: [...new Set(dossier.observaties.map((o) => o.code.coding?.[0]?.code))]
       .filter((c): c is string => Boolean(c))
@@ -266,8 +386,7 @@ export function patientOverzicht(repo: DossierRepository, patientId: string) {
         const reeks = metingReeks(dossier, code);
         const laatste = reeks.at(-1);
         return {
-          code,
-          naam: metingNaam(code),
+          code, naam: metingNaam(code),
           laatste: numeriekeWaarde(laatste),
           eenheid: (laatste?.waarde as { unit?: string })?.unit,
           op: laatste?.effectief.slice(0, 10),
@@ -276,9 +395,64 @@ export function patientOverzicht(repo: DossierRepository, patientId: string) {
       }),
     signalen: signalen(dossier, peildatum),
     zorgplan: plan,
+    persoonlijk,
+    suggesties: lijst,
+    automatisering: automatisering(lijst),
     oproepen,
-    inclusie: beoordeelInclusie(dossier, repo.inclusies(patientId), zorgprogrammas, peildatum, repo.afwijzingen(patientId)),
-    intensiteit: repo.intensiteit(patientId) ?? 'basis',
+    instroom: beoordeelInstroom(dossier, repo.bekendeModules(patientId), persoonlijk, peildatum),
+  };
+}
+
+// ── 7. Praktijkbeeld ────────────────────────────────────────────────────────
+
+export function praktijkSamenvatting(repo: DossierRepository) {
+  const dossiers = repo.alleDossiers();
+  const plannen = dossiers.map((d) => planVoor(repo, d));
+  const metZorg = plannen.filter((p) => p.modules.length > 0);
+
+  // De vergelijking met de huidige inrichting geldt alléén voor patiënten die daar ook
+  // daadwerkelijk in zitten. Wie onder geen enkele keten valt heeft nu niets om mee te
+  // vergelijken — dat is een aparte, en minstens zo interessante, bevinding.
+  const binnenKeten = metZorg.filter((p) => !p.vergelijking.valtBuitenKeten);
+  const buitenKeten = metZorg.filter((p) => p.vergelijking.valtBuitenKeten);
+  const multi = plannen.filter((p) => p.vergelijking.traditioneleTrajecten.length > 1);
+
+  const traditioneel = binnenKeten.reduce((s, p) => s + p.vergelijking.traditioneleContacten, 0);
+  const geintegreerd = binnenKeten.reduce((s, p) => s + p.vergelijking.geintegreerdeContacten, 0);
+  const minuten = binnenKeten.reduce((s, p) => s + p.vergelijking.bespaardeMinuten, 0);
+
+  const perModule = new Map<string, number>();
+  for (const plan of plannen) {
+    for (const module of plan.modules) perModule.set(module.naam, (perModule.get(module.naam) ?? 0) + 1);
+  }
+
+  // Onderwerpen die de losse ketens niet systematisch dekken maar hier wel meelopen.
+  const extra = new Map<string, number>();
+  for (const plan of binnenKeten) {
+    for (const onderwerp of plan.vergelijking.extraOnderwerpen) {
+      extra.set(onderwerp, (extra.get(onderwerp) ?? 0) + 1);
+    }
+  }
+
+  return {
+    patienten: dossiers.length,
+    metChronischeZorg: metZorg.length,
+    binnenKeten: binnenKeten.length,
+    buitenKeten: buitenKeten.length,
+    meerdereTrajecten: multi.length,
+    contactenTraditioneel: traditioneel,
+    contactenGeintegreerd: geintegreerd,
+    minderContactenPerJaar: traditioneel - geintegreerd,
+    /**
+     * Bewust met teken: het geïntegreerde plan levert mínder contacten op, maar die
+     * contacten zijn inhoudelijk breder. Netto kan de consulttijd daardoor stijgen.
+     * Dat verzwijgen zou het cijfer waardeloos maken.
+     */
+    verschilConsulttijdUren: Math.round((minuten / 60) * 10) / 10,
+    extraOnderwerpen: [...extra.entries()].map(([naam, aantal]) => ({ naam, aantal }))
+      .sort((a, b) => b.aantal - a.aantal),
+    modules: [...perModule.entries()].map(([naam, aantal]) => ({ naam, aantal }))
+      .sort((a, b) => b.aantal - a.aantal),
   };
 }
 
@@ -286,31 +460,122 @@ export function verwerkVragenlijst(vragenlijstId: string, antwoorden: Record<str
   const lijst = vindVragenlijst(vragenlijstId);
   if (!lijst) return undefined;
   return verwerk(
-    lijst,
-    antwoorden as Parameters<typeof verwerk>[1],
+    lijst, antwoorden as Parameters<typeof verwerk>[1],
     (historie as Parameters<typeof verwerk>[2]) ?? [],
   );
 }
 
-export function praktijkSamenvatting(repo: DossierRepository) {
-  const dossiers = repo.alleDossiers();
-  const plannen = dossiers.map((d) => zorgplanVoor(repo, d));
-  const metProgramma = plannen.filter((p) => p.programmas.length > 0);
-  const multimorbide = plannen.filter((p) => p.programmas.length > 1);
+export type { Task };
 
-  const zonder = metProgramma.reduce((s, p) => s + p.vergelijking.zonderSamenvoeging, 0);
-  const met = metProgramma.reduce((s, p) => s + p.vergelijking.metSamenvoeging, 0);
-  const minuten = metProgramma.reduce((s, p) => s + p.vergelijking.bespaardeMinuten, 0);
+// ── 8. Registratie vanuit het consult ───────────────────────────────────────
 
-  return {
-    patienten: dossiers.length,
-    metZorgprogramma: metProgramma.length,
-    multimorbide: multimorbide.length,
-    contactenZonderSamenvoeging: zonder,
-    contactenMetSamenvoeging: met,
-    bespaardeContactenPerJaar: zonder - met,
-    bespaardeUrenPerJaar: Math.round((minuten / 60) * 10) / 10,
-  };
+export interface ConsultRegistratie {
+  /** Getalwaarden én gecodeerde keuzes; een rookstatus is geen getal. */
+  metingen: { code: string; waarde?: number; keuze?: { code: string; display?: string } }[];
+  soep?: { S?: string; O?: string; E?: string; P?: string };
+  episodeId?: string;
 }
 
-export type { Task };
+export interface RegistratieUitkomst {
+  vastgelegd: { code: string; naam: string; waarde: number | string }[];
+  /** Ketenindicatoren die door deze registratie alsnog op orde zijn. */
+  verantwoordingGevuld: { keten: string; indicator: string }[];
+  /** Wat het systeem hierna zelf doet. */
+  vervolg: string[];
+}
+
+/**
+ * Legt de registratie van een consult vast en laat zien wat er automatisch uit volgt.
+ *
+ * Dit is het punt waar de belofte moet kloppen: de POH registreert één keer, en de
+ * ketenverantwoording, de planning en de oproepen volgen daaruit — zonder dat er
+ * ergens "voor de keten" of "voor de indicator" wordt ingevuld.
+ */
+export function registreerConsult(
+  repo: DossierRepository, patientId: string, registratie: ConsultRegistratie,
+): RegistratieUitkomst | undefined {
+  const dossier = repo.dossier(patientId);
+  if (!dossier) return undefined;
+  const peildatum = repo.peildatum();
+  const nu = peildatum.toISOString();
+
+  const voor = planVoor(repo, dossier);
+  const gatenVoor = new Set(
+    voor.ketens.flatMap((k) => k.indicatoren.filter((i) => !i.voldaan).map((i) => `${k.naam}|${i.naam}`)),
+  );
+
+  const herkomst = {
+    bron: 'zorgverlener' as const,
+    vastgelegdOp: nu,
+    auteurId: 'zv-poh-1',
+    auteurRol: 'poh-s' as const,
+  };
+
+  const observaties = registratie.metingen.map((m, i) => ({
+    resourceType: 'Observation' as const,
+    id: `${patientId}-reg-${Date.now()}-${i}`,
+    patientId,
+    episodeId: registratie.episodeId,
+    code: { coding: [{ system: 'http://loinc.org', code: m.code }] },
+    effectief: nu,
+    waarde: m.keuze
+      ? { code: { system: 'http://snomed.info/sct', code: m.keuze.code, display: m.keuze.display } }
+      : { value: m.waarde ?? 0, unit: '' },
+    status: 'final' as const,
+    herkomst,
+  }));
+
+  const soepRegels = Object.entries(registratie.soep ?? {})
+    .filter(([, tekst]) => Boolean(tekst?.trim()))
+    .map(([letter, tekst]) => ({ letter: letter as 'S' | 'O' | 'E' | 'P', tekst: tekst!.trim() }));
+
+  const deelcontact = soepRegels.length > 0 && registratie.episodeId
+    ? {
+        resourceType: 'Deelcontact' as const,
+        id: `${patientId}-dc-${Date.now()}`,
+        patientId,
+        encounterId: `${patientId}-enc-${Date.now()}`,
+        episodeId: registratie.episodeId,
+        regels: soepRegels,
+        afgerond: true,
+        herkomst,
+      }
+    : undefined;
+
+  repo.registreer(patientId, observaties, deelcontact);
+
+  const na = planVoor(repo, repo.dossier(patientId)!);
+  const verantwoordingGevuld: RegistratieUitkomst['verantwoordingGevuld'] = [];
+  for (const keten of na.ketens) {
+    for (const indicator of keten.indicatoren) {
+      if (indicator.voldaan && gatenVoor.has(`${keten.naam}|${indicator.naam}`)) {
+        verantwoordingGevuld.push({ keten: keten.naam, indicator: indicator.naam });
+      }
+    }
+  }
+
+  const vervolg: string[] = [];
+  if (na.contacten[0]) {
+    vervolg.push(`Volgend contact herberekend naar ${na.contacten[0].datum} (${na.contacten[0].duurMinuten} min).`);
+    if (na.contacten[0].labVooraf.length > 0) {
+      vervolg.push(`Labaanvraag voor ${na.contacten[0].labVooraf.join(', ')} wordt automatisch klaargezet.`);
+    }
+    if (na.contacten[0].vragenlijsten.length > 0) {
+      vervolg.push('De voorbereidende vragenlijst wordt tijdig via het portaal uitgezet.');
+    }
+  }
+  if (verantwoordingGevuld.length > 0) {
+    vervolg.push(
+      `${verantwoordingGevuld.length} ketenindicator(en) zijn hiermee op orde — zonder aparte registratie.`,
+    );
+  }
+
+  return {
+    vastgelegd: registratie.metingen.map((m) => ({
+      code: m.code, naam: metingNaam(m.code),
+      waarde: m.keuze?.display ?? m.keuze?.code ?? m.waarde ?? '',
+    })),
+    verantwoordingGevuld,
+    vervolg,
+  };
+}

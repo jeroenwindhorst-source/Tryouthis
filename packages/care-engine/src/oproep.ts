@@ -1,5 +1,10 @@
 import type { Herkomst, Patient, Task } from '@zpe/fhir-model';
+import { modules } from './protocol.js';
 import type { GeplandContact, Zorgplan } from './zorgplan.js';
+
+function moduleNamen(ids: string[]): string {
+  return ids.map((id) => modules.find((m) => m.id === id)?.naam.toLowerCase() ?? id).join(', ');
+}
 
 /**
  * Oproepproces (docs/04 §5). Vervangt Excel + handmatig bellen.
@@ -70,7 +75,7 @@ export function planOproepen(
       herinneringen: [{ op: isoDatum(uitnodigen + herinnering * DAG), kanaal: kanaal === 'portaal' ? 'sms' : kanaal }],
       escalatieOp: isoDatum(uitnodigen + escalatie * DAG),
       toelichting:
-        `Uitnodiging via ${kanaal} voor ${contact.programmas.join(' + ')} ` +
+        `Uitnodiging via ${kanaal} voor ${moduleNamen(contact.modules)} ` +
         `(${contact.duurMinuten} min). Geen respons na ${escalatie} dagen → terugbelverzoek voor de assistent.`,
     };
   });
@@ -87,7 +92,7 @@ export function oproepTaken(
     categorie: 'oproep',
     status: 'requested',
     prioriteit: 'routine',
-    omschrijving: `Oproep ${oproep.contact.programmas.join(' + ')} — ${oproep.contact.datum}`,
+    omschrijving: `Oproep ${moduleNamen(oproep.contact.modules)} — ${oproep.contact.datum}`,
     aanleiding:
       `Volgens het zorgplan is ${oproep.contact.metingen.map((m) => m.naam).join(', ')} ` +
       `toe aan herhaling op ${oproep.contact.datum}.`,

@@ -6,7 +6,7 @@ Niet "eerst alles bouwen en dan uitrollen", maar per fase één ding onomstoteli
 aantonen.
 
 ### Fase 0 — Fundament *(deze repo)*
-Datamodel, terminologielaag, zorgprogrammamotor, integraal zorgplan,
+Datamodel, terminologielaag, het geïntegreerde protocol, persoonlijk zorgplan,
 vragenlijstmotor, POH-werkplek als vertical slice. Draait op synthetische data.
 
 **Bewijs:** een patiënt met DM2 + CVRM + COPD krijgt aantoonbaar één samengevoegd
@@ -55,8 +55,9 @@ De POH-module eerst, omdat:
 
 1. **De ICPC-1 NL ↔ SNOMED-mapping** in het formaat uit `docs/02` §6 (CSV/Excel is prima).
 2. **Bevestiging van de lezing van het AHA-functiemodel** (oranje = gat, `docs/11`).
-3. **Keuze van het eerste zorgprogramma** voor diepe uitwerking (voorstel: DM2, omdat
-   het protocol het best gedefinieerd is en het volume het hoogst).
+3. **Diepe uitwerking van het aandachtsgebied hart- en vaatrisico** (CVRM), conform de
+   keuze die stedelijk al is gemaakt. Let wel: dat is een *module* binnen het ene
+   protocol, geen apart zorgprogramma.
 4. **Toegang tot een echt protocol** (bijv. de AHA-protocollen of die van een zorggroep)
    om de protocolmotor tegen de werkelijkheid te toetsen.
 5. **Contact met 1–2 praktijken** die als klankbord willen dienen — niet aan het eind,

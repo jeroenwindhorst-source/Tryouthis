@@ -1,5 +1,7 @@
-import type { Appointment, Dossier, Task } from '@zpe/fhir-model';
-import { beoordeelInclusie, zorgprogrammas } from '@zpe/care-engine';
+import type { Appointment, Deelcontact, Dossier, Observation, Task } from '@zpe/fhir-model';
+import {
+  beoordeelInstroom, leegPersoonlijkPlan, type PersoonlijkPlan,
+} from '@zpe/care-engine';
 import { genereerPraktijk, genereerSpreekuur, type Praktijk } from './populatie.js';
 
 /**
@@ -14,37 +16,56 @@ export interface DossierRepository {
   spreekuur(datum: string): Appointment[];
   taken(): Task[];
   voegTaakToe(taak: Task): void;
-  /** Programma's waarin een patiënt is geïncludeerd. */
-  inclusies(patientId: string): string[];
-  includeer(patientId: string, programmaId: string): void;
-  wijsAf(patientId: string, programmaId: string): void;
-  afwijzingen(patientId: string): string[];
-  intensiteit(patientId: string): string | undefined;
-  stelIntensiteitIn(patientId: string, intensiteit: string): void;
+  /** Het persoonlijke plan: modules, intervallen, doelen en voorkeuren van deze mens. */
+  persoonlijkPlan(patientId: string): PersoonlijkPlan;
+  bewaarPersoonlijkPlan(plan: PersoonlijkPlan): void;
+  /** Aandachtsgebieden die al eerder in beeld zijn geweest. */
+  bekendeModules(patientId: string): string[];
+  markeerModuleBekend(patientId: string, moduleId: string): void;
+  /** Suggesties die de zorgverlener heeft afgehandeld — komen niet terug. */
+  afgehandeldeSuggesties(patientId: string): string[];
+  handelSuggestieAf(patientId: string, regelId: string, besluit: string, reden?: string): void;
+  /** Registratie vanuit het consult: metingen en het SOEP-deelcontact. */
+  registreer(patientId: string, observaties: Observation[], deelcontact?: Deelcontact): void;
 }
 
 export class InMemoryRepository implements DossierRepository {
   private praktijk: Praktijk;
   private afspraken: Appointment[];
   private taakLijst: Task[] = [];
-  private geincludeerd = new Map<string, Set<string>>();
-  private afgewezen = new Map<string, Set<string>>();
-  private intensiteiten = new Map<string, string>();
+  private plannen = new Map<string, PersoonlijkPlan>();
+  private bekend = new Map<string, Set<string>>();
+  private afgehandeld = new Map<string, Map<string, { besluit: string; reden?: string }>>();
 
   constructor(praktijk?: Praktijk) {
     this.praktijk = praktijk ?? genereerPraktijk();
     this.afspraken = genereerSpreekuur(this.praktijk);
 
-    // Startsituatie: een deel van de patiënten zit al in de keten, de rest komt als
-    // casefinding-kandidaat in beeld. Zonder dit zou de demo suggereren dat een praktijk
-    // bij nul begint — terwijl de werkelijke situatie een half gevulde keten met
-    // achterstand is. Dát is het probleem dat de inclusiemotor oplost.
+    // Startsituatie: bij twee derde van de patiënten zijn de relevante aandachtsgebieden
+    // al eens gezien; bij de rest niet. Dat laatste is de achterstand die de praktijk
+    // nu met een datadump en een Excel probeert op te sporen.
     this.praktijk.dossiers.forEach((dossier, i) => {
-      if (i % 3 === 0) return;   // ongeveer een derde blijft achterstand
-      const resultaat = beoordeelInclusie(dossier, [], zorgprogrammas, this.praktijk.peildatum);
-      const inAanmerking = resultaat.nieuweKandidaten.map((k) => k.programmaId);
-      if (inAanmerking.length > 0) this.geincludeerd.set(dossier.patient.id, new Set(inAanmerking));
+      if (i % 3 === 0) return;
+      const resultaat = beoordeelInstroom(dossier, [], undefined, this.praktijk.peildatum);
+      const set = new Set(resultaat.nieuw.map((m) => m.moduleId));
+      if (set.size > 0) this.bekend.set(dossier.patient.id, set);
     });
+
+    // Een paar patiënten hebben expliciete persoonlijke afspraken — anders lijkt
+    // personalisatie een theoretische mogelijkheid in plaats van dagelijks gebruik.
+    const metPlan = this.praktijk.dossiers.filter((_, i) => i % 11 === 4);
+    for (const dossier of metPlan) {
+      this.plannen.set(dossier.patient.id, {
+        ...leegPersoonlijkPlan(dossier.patient.id),
+        voorkeuren: { maxContactenPerJaar: 2 },
+        doelen: [{
+          id: `${dossier.patient.id}-doel-1`,
+          tekst: 'Ik wil zonder rollator naar de markt kunnen blijven lopen.',
+          gekoppeldeModules: ['leefstijl', 'vaatrisico'],
+          afgesprokenOp: this.praktijk.peildatum.toISOString().slice(0, 10),
+        }],
+      });
+    }
   }
 
   peildatum(): Date { return this.praktijk.peildatum; }
@@ -58,22 +79,33 @@ export class InMemoryRepository implements DossierRepository {
   taken(): Task[] { return this.taakLijst; }
   voegTaakToe(taak: Task): void { this.taakLijst.push(taak); }
 
-  inclusies(patientId: string): string[] { return [...(this.geincludeerd.get(patientId) ?? [])]; }
-  includeer(patientId: string, programmaId: string): void {
-    const set = this.geincludeerd.get(patientId) ?? new Set();
-    set.add(programmaId);
-    this.geincludeerd.set(patientId, set);
-    this.afgewezen.get(patientId)?.delete(programmaId);
+  persoonlijkPlan(patientId: string): PersoonlijkPlan {
+    return this.plannen.get(patientId) ?? leegPersoonlijkPlan(patientId);
   }
-  wijsAf(patientId: string, programmaId: string): void {
-    const set = this.afgewezen.get(patientId) ?? new Set();
-    set.add(programmaId);
-    this.afgewezen.set(patientId, set);
+  bewaarPersoonlijkPlan(plan: PersoonlijkPlan): void {
+    this.plannen.set(plan.patientId, plan);
   }
-  afwijzingen(patientId: string): string[] { return [...(this.afgewezen.get(patientId) ?? [])]; }
 
-  intensiteit(patientId: string): string | undefined { return this.intensiteiten.get(patientId); }
-  stelIntensiteitIn(patientId: string, intensiteit: string): void {
-    this.intensiteiten.set(patientId, intensiteit);
+  bekendeModules(patientId: string): string[] { return [...(this.bekend.get(patientId) ?? [])]; }
+  markeerModuleBekend(patientId: string, moduleId: string): void {
+    const set = this.bekend.get(patientId) ?? new Set();
+    set.add(moduleId);
+    this.bekend.set(patientId, set);
+  }
+
+  registreer(patientId: string, observaties: Observation[], deelcontact?: Deelcontact): void {
+    const dossier = this.dossier(patientId);
+    if (!dossier) return;
+    dossier.observaties.push(...observaties);
+    if (deelcontact) dossier.deelcontacten.push(deelcontact);
+  }
+
+  afgehandeldeSuggesties(patientId: string): string[] {
+    return [...(this.afgehandeld.get(patientId)?.keys() ?? [])];
+  }
+  handelSuggestieAf(patientId: string, regelId: string, besluit: string, reden?: string): void {
+    const kaart = this.afgehandeld.get(patientId) ?? new Map();
+    kaart.set(regelId, { besluit, reden });
+    this.afgehandeld.set(patientId, kaart);
   }
 }

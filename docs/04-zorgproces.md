@@ -1,144 +1,148 @@
-# 04 — Zorgprogramma's, inclusie en het integrale zorgplan
+# 04 — Het geïntegreerde protocol
 
-## 1. Casefinding en inclusie zonder Excel
+> Dit hoofdstuk is herschreven na ADR-0007. Waar eerder zorgprogramma's per aandoening
+> stonden, staat nu één protocol opgebouwd uit aandachtsgebieden.
 
-**Nu:** datadump uit het HIS → Excel → POH loopt regels langs → includeert → registreert
-terug → declaratie. Doorlooptijd: dagen. Foutgevoelig. Niet reproduceerbaar.
+## 1. Waarom niet één protocol per aandoening
 
-**Straks:** de inclusiecriteria zijn machine-leesbare regels over het dossier zelf.
+Een mens heeft zelden één probleem. Zodra de aandoening het organiserende principe van
+het protocol wordt, volgt de rest onvermijdelijk:
 
-```ts
-const dm2: Zorgprogramma = {
-  id: 'dm2',
-  naam: 'Diabetes mellitus type 2',
-  inclusie: alle([
-    heeftActieveEpisode(['T90.02']),
-    ofwel([ minimaleLeeftijd(18) ]),
-  ]),
-  exclusie: enigeVan([
-    heeftActieveEpisode(['T89']),              // DM type 1 → andere keten
-    heeftMarkering('behandeld-elders'),
-    heeftMarkering('palliatief'),
-  ]),
-  // ...
-}
-```
+- drie aandoeningen → drie protocollen → drie oproepen → drie consulten;
+- een inclusiebesluit per programma, als administratief moment;
+- registratie die per keten wordt gedacht ("dit doe ik voor de DM-keten");
+- alles wat in geen enkele keten past — mentaal welbevinden, leefstijl,
+  medicatieveiligheid, kwetsbaarheid — valt tussen wal en schip.
 
-De motor levert per kandidaat:
+Achteraf samenvoegen verzacht dat, maar lost het niet op. Daarom is de bouwsteen hier
+geen aandoening maar een **zorgmodule**: een aandachtsgebied.
 
-- **status**: `kandidaat` / `geïncludeerd` / `uitgesloten` / `afgewezen`
-- **onderbouwing**: welke criteria raakten, met de concrete dossiergegevens erbij
-- **actie**: één klik → episode aangemaakt/gekoppeld, zorgplan bijgewerkt,
-  declaratiegebeurtenis vastgelegd, oproepritme gestart
+## 2. De acht aandachtsgebieden
 
-En, minstens zo belangrijk: **de motor draait continu**. Een patiënt die vandaag aan de
-criteria gaat voldoen, staat morgen op de lijst. Niemand hoeft een dump te vragen.
-
-## 2. Waarom drie zorgpaden nu drie keer werk zijn
-
-Een patiënt met DM2, hypertensie en COPD komt in de huidige inrichting drie keer per
-jaar langs voor DM2, drie keer voor CVRM en twee keer voor COPD. Acht contacten. Elk
-met een eigen protocol, een eigen oproep, een eigen registratieset — en grotendeels
-dezelfde metingen.
-
-Dat is niet alleen inefficiënt; het is slechte zorg. De patiënt ervaart drie ziektes in
-plaats van één leven, en niemand kijkt naar het geheel.
-
-## 3. De samenvoeglogica
-
-Het integrale zorgplan voegt samen op drie niveaus:
-
-### 3.1 Metingen
-Elke protocolactiviteit declareert welke `Observation`-codes hij nodig heeft en hoe
-"vers" die moeten zijn. Overlappende eisen worden één meting.
-
-```
-DM2  : HbA1c (≤3 mnd), RR (≤3 mnd), gewicht (≤3 mnd), eGFR (≤12 mnd), voet (≤12 mnd), funduscopie (≤24 mnd)
-CVRM : RR (≤3 mnd), LDL (≤12 mnd), eGFR (≤12 mnd), roken (≤12 mnd), gewicht (≤12 mnd)
-COPD : spirometrie (≤12 mnd), CCQ (≤6 mnd), roken (≤12 mnd), gewicht (≤12 mnd)
-                                   ↓ samenvoegen
-Contact Q1 : HbA1c, RR, gewicht, CCQ, roken         (dekt DM2 + CVRM + COPD)
-Contact Q2 : HbA1c, RR
-Jaarcontrole: + eGFR, LDL, spirometrie, voetonderzoek
-```
-
-### 3.2 Contactmomenten
-Activiteiten die binnen een instelbaar venster (standaard 6 weken) vallen, worden
-samengevoegd tot één afspraak met een berekende duur. Acht contacten worden er drie tot
-vier — en die zijn inhoudelijk vollediger dan de acht losse.
-
-### 3.3 Beoordeling
-Er is één integrale beoordeling per contact, geen drie protocollen achter elkaar. De
-zorgverlener ziet per programma de stand van zaken, maar registreert één keer.
-
-## 4. Persoonsgericht: intensiteit als expliciete knop
-
-Protocol is een startpunt, geen dwangbuis. Het zorgplan kent een `intensiteit` die de
-POH tijdens het consult mag wijzigen — dit is de processtap *Zorgpad (inzetten/wijzigen)*
-uit `docs/12`.
-
-| Intensiteit | Betekenis | Effect op planning |
+| Module | Waar het over gaat | Relevant wanneer |
 | --- | --- | --- |
-| `extensief` | stabiel, weinig risico, patiënt wil rust | 1× per jaar, rest via monitoring |
-| `basis` | protocol volgen | volgens richtlijn |
-| `intensief` | ontregeld, recente wijziging, hoog risico | frequenter, korter interval |
-| `eigen-regie` | patiënt monitort zelf, meldt zich bij afwijking | geen oproep, wel bewaking op uitblijven |
-| `palliatief` | streefwaarden vervallen, comfort leidend | protocol uit, alleen wat de patiënt wil |
+| **Glucoseregulatie** | Bloedsuiker en wat dat betekent | DM-episode, bloedglucoseverlagend middel, of HbA1c ooit ≥ 48 |
+| **Hart- en vaatrisico** | Bloeddruk, cholesterol, risicoverlaging | HVZ, hypertensie, dyslipidemie, diabetes, nierschade, statine, of ≥ 50 jaar en rookt |
+| **Nierfunctie** | Hoe de nieren het doen; bepaalt medicatieveiligheid | Nierschade, diabetes, hypertensie, of eGFR < 60 |
+| **Ademhaling en longen** | Benauwdheid, hoesten, longaanvallen voorkomen | COPD, astma, of inhalatiemedicatie |
+| **Leefstijl** | Roken, bewegen, voeding, gewicht | elke chronische zorgvraag |
+| **Mentaal welbevinden** | Hoe het van binnen gaat, en wat iemand belangrijk vindt | elke chronische zorgvraag |
+| **Medicatieveiligheid** | Kloppen alle middelen samen nog | ≥ 5 chronische middelen, of ≥ 75 jaar met ≥ 3, of eGFR < 45 |
+| **Kwetsbaarheid** | Zelfredzaamheid en benodigde steun | ≥ 75 jaar met ≥ 2 chronische aandoeningen |
 
-Elke wijziging legt reden en auteur vast. Elke wijziging heeft direct gevolg voor
-oproep, jaarplanning en indicatoren — geen parallelle administratie.
+Let op de laatste vier. Die dekt geen enkele landelijke keten systematisch, en juist
+daar zit een groot deel van de winst bij multimorbiditeit.
 
-Belangrijk: afwijken van het protocol is een **geregistreerde, verantwoorde keuze**, geen
-ontbrekende registratie. Dat is precies het verschil dat indicatorensystemen nu niet
-kunnen maken, waardoor persoonsgerichte zorg als "niet-compliant" wordt gescoord.
+## 3. Drie lagen bepalen het plan
 
-## 5. Oproepproces
+### Laag 1 — het protocol
+Elke module heeft monitoritems met een basisinterval volgens richtlijn. Dat is het
+vertrekpunt, niet de uitkomst.
 
-De jaarplanning van het zorgplan genereert `Task`s van categorie `oproep`. Per patiënt
-kiest het systeem het kanaal op basis van voorkeur en eerdere respons:
+### Laag 2 — de situatie van déze patiënt
+Intervalregels passen dat interval aan op basis van de werkelijke waarden:
+
+```
+HbA1c        twee metingen onder 53          → ×2,0   halfjaarlijks volstaat
+             boven 64                         → ×0,5   korter tot het beter is
+Bloeddruk    twee metingen op streefwaarde   → ×2,0
+             boven 160                        → ×0,5
+eGFR         onder 45                         → ×0,5
+             onder 30                         → ×0,25  en overleg met de huisarts
+CCQ          drie metingen onder 1,0          → ×2,0
+             boven 2,0                        → ×0,5
+Rookstatus   patiënt rookt                    → ×0,5   actief bespreken
+```
+
+De voorzichtigste regel wint: een korter interval gaat vóór een langer. Niet het
+ziektelabel maar de toestand bepaalt hoe vaak iemand gezien wordt.
+
+### Laag 3 — de persoon
+Wat de zorgverlener en de patiënt samen afspreken, overrulet laag 1 en 2:
+
+| Keuze | Effect |
+| --- | --- |
+| Module handmatig uit | Valt uit het plan, met vastgelegde reden en auteur |
+| Module handmatig aan | Wordt meegenomen ook zonder automatische grondslag |
+| Eigen interval per meting | Absoluut, overrulet protocol én situatie |
+| `maxContactenPerJaar` | Alle intervallen worden opgerekt tot het past — mét expliciete vermelding hoeveel later metingen daardoor komen |
+| `liefstThuismeting` | Thuis meetbare items bepalen niet langer het bezoekritme |
+| Intensiteit | `rustig` ×1,6 · `volgens plan` ×1,0 · `intensief` ×0,6 · `eigen regie` ×2,0 · `palliatief` protocol uit |
+
+Elke afwijking is een **geregistreerde, verantwoorde keuze** — geen ontbrekende
+registratie. Dat is precies het onderscheid dat indicatorensystemen nu niet maken,
+waardoor persoonsgerichte zorg als non-compliant wordt gescoord.
+
+## 4. Van items naar contacten
+
+1. Alle relevante modules leveren hun monitoritems.
+2. Items die in meerdere modules voorkomen worden samengevoegd tot één meting; het
+   kortste interval wint. Een bloeddruk telt dan voor vaatrisico én glucoseregulatie.
+3. Het bezoekritme volgt uit het kortste benodigde interval — je kunt niet minder vaak
+   komen dan je vaakst benodigde meting.
+4. Elk meetmoment wordt toegewezen aan het láátste bezoek dat nog vóór de vervaldatum
+   valt. Zo verloopt er nooit iets, en ontstaan er geen halfvolle extra afspraken.
+
+## 5. Instroom in plaats van inclusie
+
+De vraag is niet langer "voldoet deze patiënt aan de inclusiecriteria van programma X",
+maar: **welk aandachtsgebied is voor deze mens relevant geworden?** Dat is een
+zorginhoudelijke vraag die in één zin te beantwoorden is, met de onderbouwing erbij.
+
+De relevantieregels draaien continu over het dossier. Wie vandaag aan de criteria gaat
+voldoen, staat morgen in beeld. Geen dump, geen Excel, geen inclusiebesluit als apart
+administratief moment.
+
+## 6. Ketenzorg blijft bestaan — als projectie
+
+Declaratie, ketencontracten en indicatorenrapportage draaien in Nederland op programma's
+per aandoening. Die werkelijkheid negeren betekent dat een praktijk haar financiering
+breekt.
+
+De koppeling gebeurt daarom automatisch en achteraf (`packages/care-engine/src/ketenkoppeling.ts`):
+
+```
+patiëntdossier ──► relevante modules ──► één plan ──► geleverde zorg
+                                                          │
+                                                          ▼
+                                       ketenbijdragen: DM · CVRM · COPD · ouderenzorg
+                                       grondslag · indicatoren · prestatiecode
+```
+
+Niemand registreert "voor de keten". Er wordt zorg geleverd, en het systeem leidt af
+waar dat bewijs voor oplevert. In de werkplek staat dat onder **Verantwoording**,
+bewust als achtergrondinformatie en niet als werkinstructie.
+
+## 7. Oproepproces
+
+De jaarplanning genereert `Task`s van categorie `oproep`. Kanaalkeuze volgt de voorkeur
+van de patiënt en de eerdere respons:
 
 ```
 oproep gepland
-  ├─ portaal-bericht + zelf inplannen      (voorkeur, hoogste respons)
+  ├─ portaalbericht + zelf inplannen      (voorkeur, hoogste respons)
   ├─ sms met plan-link
   ├─ e-mail
-  └─ terugbelverzoek voor de assistent      (alleen als digitaal niet kan/werkt)
+  └─ terugbelverzoek voor de assistent     (alleen als digitaal niet kan of werkt)
 ```
 
 Geen respons na *n* dagen → automatische herinnering → daarna pas een mens. Uitblijvende
-respons is geen stilte maar een werkitem met reden: dat is de functie *Monitoring
-uitval* uit `docs/11`.
+respons is geen stilte maar een werkitem met reden: de functie *Monitoring uitval* uit
+het AHA-functiemodel (`docs/11`).
 
-## 6. Protocoldefinitie als data, niet als code
+Bij `eigen regie` worden geen oproepen verstuurd, maar wordt wél bewaakt of metingen
+uitblijven — eigen regie mag geen stilte worden.
 
-Zorgprogramma's zijn `PlanDefinition`-achtige documenten die door een functioneel
-beheerder (niet door een programmeur) worden onderhouden en versioneerbaar zijn:
+## 8. Wat hiervan in de repo zit
 
-```ts
-interface Zorgprogramma {
-  id: string
-  naam: string
-  versie: string
-  richtlijn: { naam: string; url?: string; versie: string }   // NHG-standaard
-  inclusie: Criterium
-  exclusie: Criterium
-  activiteiten: ProtocolActiviteit[]
-  indicatoren: Indicator[]
-  declaratie?: { keten: string; prestatiecode?: string }
-}
 ```
-
-Versionering is niet-onderhandelbaar: als de NHG-standaard wijzigt, moet je kunnen
-terugzien onder welke versie een patiënt destijds is behandeld. Dat is
-verantwoordingsplicht én, zodra er beslissingsondersteuning in zit, MDR-plicht.
-
-## 7. Wat hiervan in de repo zit
-
-`packages/care-engine` implementeert:
-
-- `criteria.ts` — de regel-DSL voor inclusie/exclusie
-- `zorgprogramma.ts` — het protocoltype + drie echte programma's (DM2, CVRM, COPD)
-- `inclusie.ts` — casefinding over een dossier, met onderbouwing
-- `zorgplan.ts` — de samenvoegmotor (het hart)
-- `oproep.ts` — planning en kanaalkeuze
-- `vragenlijst.ts` — de motor uit `docs/06`
+packages/care-engine/src/
+  criteria.ts            regel-DSL met leesbare onderbouwing
+  protocol.ts            het geïntegreerde protocol: 8 modules, monitoritems, intervalregels
+  ketenkoppeling.ts      projectie naar DM / CVRM / COPD / ouderenzorg
+  zorgplan.ts            drie lagen → items → contacten (het hart)
+  instroom.ts            casefinding op moduleniveau
+  beslisondersteuning.ts klinische en logistieke regels (docs/13)
+  oproep.ts              planning en kanaalkeuze
+  vragenlijst.ts         de motor uit docs/06
+```

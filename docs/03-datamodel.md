@@ -14,7 +14,7 @@ Patient
       │    └── Composition    het deelcontact: S / O / E / P
       ├── Observation[]       metingen binnen deze episode (HbA1c, RR, eGFR)
       ├── MedicationRequest[] medicatie gekoppeld aan deze episode
-      ├── CarePlan-activity   de zorgprogramma-activiteiten die hierop slaan
+      ├── CarePlan-activity   de monitoritems die op deze episode slaan
       └── DocumentReference[] brieven, uitslagen
 ```
 
@@ -95,14 +95,15 @@ create index on observation_numeric (code, effective_at desc, value);
 ```
 
 Zonder deze projectie duurt "alle patiënten met HbA1c > 64 mmol/mol en geen controle in
-6 maanden" seconden in plaats van milliseconden. Met tien zorgprogramma's en een
+6 maanden" seconden in plaats van milliseconden. Met acht aandachtsgebieden en een
 dagstart die elke ochtend door 40 zorgverleners wordt geopend, is dat het verschil
 tussen een werkend systeem en een omzeild systeem.
 
 ## 5. Het zorgplan
 
-Er is **één** `CarePlan` per patiënt. Niet één per zorgprogramma. Dat is de
-belangrijkste modelkeuze van dit project.
+Er is **één** `CarePlan` per patiënt, opgebouwd uit aandachtsgebieden — niet uit
+zorgprogramma's per aandoening. Dat is de belangrijkste modelkeuze van dit project
+(ADR-0007).
 
 ```ts
 interface IntegraalZorgplan {

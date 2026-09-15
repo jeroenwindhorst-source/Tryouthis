@@ -1,112 +1,168 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bouwZorgplan, beoordeelInclusie, planOproepen } from '../dist/index.js';
-import { maakDossier, multimorbideDossier } from './helpers.js';
+import {
+  bouwZorgplan, leegPersoonlijkPlan, beoordeelInstroom, planOproepen, ketenbijdragen,
+} from '../dist/index.js';
+import { maakDossier, multimorbideDossier, stabielDossier } from './helpers.js';
 
 const PEILDATUM = new Date('2026-09-15T08:00:00+02:00');
+const opties = { peildatum: PEILDATUM };
 
-test('multimorbiditeit: drie zorgprogramma’s worden samengevoegd tot minder contacten', () => {
-  const dossier = multimorbideDossier();
-  const plan = bouwZorgplan(dossier, ['dm2', 'cvrm', 'copd'], 'basis', { peildatum: PEILDATUM });
-
-  assert.ok(plan.contacten.length > 0, 'er moet een planning zijn');
-  assert.ok(
-    plan.vergelijking.metSamenvoeging < plan.vergelijking.zonderSamenvoeging,
-    `samenvoeging moet contacten besparen; nu ${plan.vergelijking.metSamenvoeging} vs ${plan.vergelijking.zonderSamenvoeging}`,
+function plan(dossier, aanpassing = {}) {
+  return bouwZorgplan(
+    dossier,
+    { ...leegPersoonlijkPlan(dossier.patient.id), ...aanpassing },
+    opties,
   );
-  assert.ok(plan.vergelijking.bespaardeContacten >= 3,
-    `verwacht minstens 3 bespaarde contacten, kreeg ${plan.vergelijking.bespaardeContacten}`);
-  assert.ok(plan.vergelijking.bespaardeMinuten > 0, 'samenvoeging moet ook consulttijd besparen');
-});
+}
 
-test('een gedeelde meting wordt één keer gepland en telt voor meerdere programma’s', () => {
-  const dossier = multimorbideDossier();
-  const plan = bouwZorgplan(dossier, ['dm2', 'cvrm', 'copd'], 'basis', { peildatum: PEILDATUM });
-
-  // Bloeddruk zit in zowel DM2 als CVRM; gewicht in alle drie.
-  const gedeeld = plan.contacten.flatMap((c) => c.metingen).filter((m) => m.programmas.length > 1);
-  assert.ok(gedeeld.length > 0, 'er moet minstens één gedeelde meting zijn');
-
-  for (const contact of plan.contacten) {
-    const codes = contact.metingen.map((m) => m.code);
-    assert.equal(new Set(codes).size, codes.length, 'binnen één contact mag geen meting dubbel staan');
+test('het plan kent geen zorgprogramma’s, alleen aandachtsgebieden', () => {
+  const p = plan(multimorbideDossier());
+  assert.ok(p.modules.length >= 4, `verwacht meerdere modules, kreeg ${p.modules.length}`);
+  for (const contact of p.contacten) {
+    assert.ok(Array.isArray(contact.modules) && contact.modules.length > 0);
+    assert.equal(contact.programmas, undefined, 'een contact hoort niet naar een programma te verwijzen');
   }
-
-  const rr = plan.contacten.flatMap((c) => c.metingen).find((m) => m.code === '8480-6');
-  assert.ok(rr, 'bloeddruk moet gepland zijn');
-  assert.ok(rr.programmas.includes('dm2') && rr.programmas.includes('cvrm'),
-    'bloeddruk moet voor DM2 én CVRM tellen');
 });
 
-test('geen enkele meting wordt later gepland dan de datum waarop hij verloopt', () => {
-  const dossier = multimorbideDossier();
-  const plan = bouwZorgplan(dossier, ['dm2', 'cvrm', 'copd'], 'basis', { peildatum: PEILDATUM });
+test('drie aandoeningen leveren één plan met minder contacten dan losse trajecten', () => {
+  const p = plan(multimorbideDossier());
+  assert.ok(p.vergelijking.traditioneleTrajecten.length >= 3,
+    `verwacht ≥3 traditionele trajecten, kreeg ${p.vergelijking.traditioneleTrajecten.length}`);
+  assert.ok(p.vergelijking.geintegreerdeContacten < p.vergelijking.traditioneleContacten,
+    `${p.vergelijking.geintegreerdeContacten} vs ${p.vergelijking.traditioneleContacten}`);
+  assert.ok(p.vergelijking.bespaardeMinuten > 0);
+});
 
-  for (const contact of plan.contacten) {
+test('een meting die meerdere aandachtsgebieden bedient, wordt één keer gepland', () => {
+  const p = plan(multimorbideDossier());
+  for (const contact of p.contacten) {
+    const codes = contact.metingen.map((m) => m.code);
+    assert.equal(new Set(codes).size, codes.length, 'geen dubbele metingen binnen één contact');
+  }
+  const gedeeld = p.contacten.flatMap((c) => c.metingen).filter((m) => m.modules.length > 1);
+  assert.ok(gedeeld.length > 0, 'er moet minstens één gedeelde meting zijn');
+});
+
+test('geen meting wordt later gepland dan de datum waarop zij verloopt', () => {
+  const p = plan(multimorbideDossier());
+  for (const contact of p.contacten) {
     for (const meting of contact.metingen) {
       assert.ok(contact.datum <= meting.vervaltOp,
-        `${meting.naam} vervalt ${meting.vervaltOp} maar staat gepland op ${contact.datum}`);
+        `${meting.naam} vervalt ${meting.vervaltOp} maar staat op ${contact.datum}`);
     }
   }
 });
 
-test('intensiteit stuurt de planning: extensief plant minder, intensief meer', () => {
-  const dossier = multimorbideDossier();
-  const opties = { peildatum: PEILDATUM };
-  const basis = bouwZorgplan(dossier, ['dm2', 'cvrm', 'copd'], 'basis', opties);
-  const extensief = bouwZorgplan(dossier, ['dm2', 'cvrm', 'copd'], 'extensief', opties);
-  const intensief = bouwZorgplan(dossier, ['dm2', 'cvrm', 'copd'], 'intensief', opties);
+test('het interval volgt uit de situatie, niet uit het ziektelabel', () => {
+  const ontregeld = plan(multimorbideDossier());
+  const stabiel = plan(stabielDossier());
 
-  assert.ok(extensief.contacten.length <= basis.contacten.length,
-    'extensief mag niet méér contacten opleveren dan basis');
-  assert.ok(intensief.contacten.length >= basis.contacten.length,
-    'intensief moet minstens zoveel contacten opleveren als basis');
+  const hba1cOntregeld = ontregeld.modules.flatMap((m) => m.items).find((i) => i.code === '59261-8');
+  const hba1cStabiel = stabiel.modules.flatMap((m) => m.items).find((i) => i.code === '59261-8');
+
+  assert.ok(hba1cOntregeld.intervalDagen < hba1cStabiel.intervalDagen,
+    `ontregeld (${hba1cOntregeld.intervalDagen}d) hoort korter dan stabiel (${hba1cStabiel.intervalDagen}d)`);
+  assert.match(hba1cOntregeld.intervalReden, /64/);
+  assert.match(hba1cStabiel.intervalReden, /onder controle/);
 });
 
-test('palliatieve intensiteit zet het protocol uit, met uitleg', () => {
+test('een module handmatig uitzetten werkt, met vastgelegde reden', () => {
   const dossier = multimorbideDossier();
-  const plan = bouwZorgplan(dossier, ['dm2', 'cvrm', 'copd'], 'palliatief', { peildatum: PEILDATUM });
-  assert.equal(plan.contacten.length, 0);
-  assert.ok(plan.toelichting.join(' ').includes('palliatief'));
+  const zonder = plan(dossier, {
+    moduleKeuzes: [{
+      moduleId: 'ademhaling', aan: false,
+      reden: 'wordt door de longarts gevolgd', door: 'S. Bakker', op: '2026-09-15',
+    }],
+  });
+  assert.ok(!zonder.modules.some((m) => m.id === 'ademhaling'));
+  assert.ok(zonder.nietActief.some((m) => m.id === 'ademhaling' && m.herkomst === 'handmatig-uit'));
+  assert.ok(zonder.consequenties.some((c) => c.includes('longarts')));
 });
 
-test('eigen regie levert geen oproepen op', () => {
+test('de patiënt kan een maximum aan contacten stellen; het plan past zich aan', () => {
   const dossier = multimorbideDossier();
-  const plan = bouwZorgplan(dossier, ['dm2', 'cvrm'], 'eigen-regie', { peildatum: PEILDATUM });
-  assert.deepEqual(planOproepen(plan, dossier.patient, { peildatum: PEILDATUM }), []);
+  const standaard = plan(dossier);
+  const beperkt = plan(dossier, { voorkeuren: { maxContactenPerJaar: 2 } });
+
+  assert.ok(beperkt.contacten.length <= standaard.contacten.length);
+  assert.ok(beperkt.contacten.length <= 3, `verwacht hooguit 3 contacten, kreeg ${beperkt.contacten.length}`);
+  assert.ok(beperkt.consequenties.some((c) => c.includes('maximaal 2 contacten')),
+    'de gevolgen van die keuze moeten expliciet benoemd worden');
 });
 
-test('inclusie herkent kandidaten en levert onderbouwing', () => {
-  const dossier = multimorbideDossier();
-  const resultaat = beoordeelInclusie(dossier, [], undefined, PEILDATUM);
+test('een persoonlijke intervalafspraak overrulet protocol én situatie', () => {
+  const p = plan(multimorbideDossier(), {
+    itemKeuzes: [{ code: '59261-8', intervalDagen: 180, reden: 'patiënt wil niet vaker prikken' }],
+  });
+  const hba1c = p.modules.flatMap((m) => m.items).find((i) => i.code === '59261-8');
+  assert.equal(hba1c.intervalDagen, 180);
+  assert.match(hba1c.intervalReden, /persoonlijke afspraak/);
+});
 
-  const ids = resultaat.nieuweKandidaten.map((k) => k.programmaId).sort();
-  assert.deepEqual(ids, ['copd', 'cvrm', 'dm2']);
-  for (const kandidaat of resultaat.nieuweKandidaten) {
-    assert.ok(kandidaat.onderbouwing.length > 0, 'elke kandidaat moet een onderbouwing hebben');
-    assert.ok((kandidaat.gevolgen ?? []).length > 0, 'gevolgen van inclusie moeten zichtbaar zijn');
+test('palliatief beleid zet het protocol uit en zegt wat dat betekent', () => {
+  const p = plan(multimorbideDossier(), { intensiteit: 'palliatief' });
+  assert.equal(p.contacten.length, 0);
+  assert.equal(p.modules.length, 0);
+  assert.ok(p.consequenties.some((c) => c.includes('bewuste keuze')));
+});
+
+test('eigen regie levert geen oproepen op, maar wel bewaking', () => {
+  const dossier = multimorbideDossier();
+  const p = plan(dossier, { intensiteit: 'eigen-regie' });
+  assert.deepEqual(planOproepen(p, dossier.patient, opties), []);
+  assert.ok(p.consequenties.some((c) => c.includes('geen stilte')));
+});
+
+test('ketens worden automatisch afgeleid en sturen het plan niet aan', () => {
+  const p = plan(multimorbideDossier());
+  const ids = p.ketens.map((k) => k.ketenId).sort();
+  assert.deepEqual(ids, ['copd', 'cvrm', 'dm']);
+  for (const keten of p.ketens) {
+    assert.ok(keten.grondslag.length > 0, 'elke keten moet zeggen waarom hij van toepassing is');
+    assert.ok(keten.declaratie.prestatiecode.length > 0);
+    assert.ok(keten.indicatoren.length > 0);
   }
 });
 
-test('exclusie: DM type 1 hoort niet in de DM2-keten', () => {
-  const dossier = maakDossier({
-    episodes: [
-      { titel: 'Diabetes mellitus type 2', icpc: 'T90.02' },
-      { titel: 'Diabetes mellitus type 1', icpc: 'T89' },
-    ],
-  });
-  const resultaat = beoordeelInclusie(dossier, [], undefined, PEILDATUM);
-  const dm2 = resultaat.beoordelingen.find((b) => b.programmaId === 'dm2');
-  assert.equal(dm2.status, 'uitgesloten');
+test('indicatoren tonen welke verantwoording nog ontbreekt', () => {
+  const dossier = multimorbideDossier();
+  const bijdragen = ketenbijdragen(dossier, ['glucose', 'vaatrisico'], PEILDATUM);
+  const dm = bijdragen.find((k) => k.ketenId === 'dm');
+  assert.ok(dm.volledigheid < 1, 'niet alle indicatoren zijn gevuld in dit dossier');
+  const ontbrekend = dm.indicatoren.filter((i) => !i.voldaan);
+  assert.ok(ontbrekend.every((i) => i.toelichting.length > 0), 'elk gat moet een toelichting hebben');
 });
 
-test('leeftijdscriterium sluit een te jonge patiënt uit van COPD-ketenzorg', () => {
+test('instroom is een zorginhoudelijke vraag, geen inclusiebesluit', () => {
+  const resultaat = beoordeelInstroom(multimorbideDossier(), [], undefined, PEILDATUM);
+  const nieuw = resultaat.nieuw.map((m) => m.moduleId).sort();
+  assert.ok(nieuw.includes('glucose') && nieuw.includes('vaatrisico') && nieuw.includes('ademhaling'));
+  for (const module of resultaat.nieuw) {
+    assert.ok(module.onderbouwing.length > 0);
+  }
+});
+
+test('een module wordt niet relevant zonder grondslag in het dossier', () => {
   const dossier = maakDossier({
-    geboortedatum: '1998-01-01',
-    episodes: [{ titel: 'Chronische bronchitis/COPD', icpc: 'R95' }],
+    geboortedatum: '1990-01-01',
+    episodes: [{ titel: 'Artrose overig', icpc: 'L91' }],
   });
-  const resultaat = beoordeelInclusie(dossier, [], undefined, PEILDATUM);
-  const copd = resultaat.beoordelingen.find((b) => b.programmaId === 'copd');
-  assert.equal(copd.status, 'uitgesloten');
-  assert.match(copd.onderbouwing, /leeftijd/);
+  const resultaat = beoordeelInstroom(dossier, [], undefined, PEILDATUM);
+  assert.equal(resultaat.nieuw.length, 0, 'artrose alleen activeert geen chronische aandachtsgebieden');
+});
+
+test('medicatieveiligheid komt op bij polyfarmacie, ongeacht diagnose', () => {
+  const dossier = maakDossier({
+    geboortedatum: '1944-03-03',
+    episodes: [{ titel: 'Hypertensie zonder orgaanbeschadiging', icpc: 'K86' }],
+    medicatie: [
+      { atc: 'C09AA05', naam: 'Ramipril' }, { atc: 'C07AB07', naam: 'Bisoprolol' },
+      { atc: 'C10AA01', naam: 'Simvastatine' }, { atc: 'A02BC01', naam: 'Omeprazol' },
+      { atc: 'N02BE01', naam: 'Paracetamol' },
+    ],
+  });
+  const p = plan(dossier);
+  assert.ok(p.modules.some((m) => m.id === 'medicatieveiligheid'),
+    'vijf chronische middelen horen medicatieveiligheid te activeren');
 });

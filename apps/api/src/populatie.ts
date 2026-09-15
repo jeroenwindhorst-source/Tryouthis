@@ -1,5 +1,7 @@
-import type { Dossier, EpisodeOfCare, Herkomst, Observation, Patient, Appointment } from '@zpe/fhir-model';
-import { METING_CODES } from '@zpe/care-engine';
+import type {
+  Appointment, Dossier, EpisodeOfCare, Herkomst, MedicationStatement, Observation, Patient,
+} from '@zpe/fhir-model';
+import { CODE } from '@zpe/care-engine';
 
 /**
  * Synthetische praktijkpopulatie.
@@ -36,6 +38,30 @@ const SJABLONEN: Record<string, EpisodeSjabloon> = {
   lipiden: { icpc: 'T93', titel: 'Vetstofwisselingsstoornis' },
   nierschade: { icpc: 'U99.01', titel: 'Chronische nierschade' },
   artrose: { icpc: 'L91', titel: 'Artrose overig' },
+};
+
+const MIDDELEN: Record<string, { atc: string; naam: string; dosering: string }[]> = {
+  dm2: [
+    { atc: 'A10BA02', naam: 'Metformine 500mg', dosering: '2dd1' },
+    { atc: 'A10BJ02', naam: 'Liraglutide', dosering: '1dd1' },
+  ],
+  hypertensie: [
+    { atc: 'C09AA05', naam: 'Ramipril 5mg', dosering: '1dd1' },
+    { atc: 'C03CA01', naam: 'Furosemide 40mg', dosering: '1dd1' },
+    { atc: 'C08CA01', naam: 'Amlodipine 5mg', dosering: '1dd1' },
+  ],
+  lipiden: [{ atc: 'C10AA01', naam: 'Simvastatine 40mg', dosering: '1dd1' }],
+  hvz: [
+    { atc: 'B01AC06', naam: 'Acetylsalicylzuur 80mg', dosering: '1dd1' },
+    { atc: 'C07AB07', naam: 'Bisoprolol 2,5mg', dosering: '1dd1' },
+  ],
+  copd: [
+    { atc: 'R03BB04', naam: 'Tiotropium', dosering: '1dd1 inhalatie' },
+    { atc: 'R03AC02', naam: 'Salbutamol', dosering: 'zo nodig' },
+  ],
+  astma: [{ atc: 'R03BA02', naam: 'Budesonide', dosering: '2dd1 inhalatie' }],
+  artrose: [{ atc: 'N02BE01', naam: 'Paracetamol 500mg', dosering: '3dd2' }],
+  nierschade: [{ atc: 'A02BC01', naam: 'Omeprazol 20mg', dosering: '1dd1' }],
 };
 
 function herkomstVan(auteurId: string, rol: Herkomst['auteurRol'], op: string): Herkomst {
@@ -134,33 +160,73 @@ export function genereerPraktijk(opties: GeneratieOpties = {}): Praktijk {
     if (aandoeningen.includes('dm2')) {
       const achterstand = willekeurig() < 0.3;
       for (const dagen of achterstand ? [400] : [30, 130, 240]) {
-        meting(METING_CODES.hba1c, rond(tussen(44, 84)), 'mmol/mol', dagen);
+        meting(CODE.hba1c, rond(tussen(44, 84)), 'mmol/mol', dagen);
       }
-      if (willekeurig() < 0.7) meting(METING_CODES.voet, 1, 'Simms', Math.floor(tussen(60, 500)));
-      if (willekeurig() < 0.6) meting(METING_CODES.fundus, 1, '', Math.floor(tussen(100, 900)));
+      if (willekeurig() < 0.7) meting(CODE.voet, 1, 'Simms', Math.floor(tussen(60, 500)));
+      if (willekeurig() < 0.6) meting(CODE.fundus, 1, '', Math.floor(tussen(100, 900)));
     }
     if (aandoeningen.includes('hypertensie') || aandoeningen.includes('hvz') || aandoeningen.includes('dm2')) {
       for (const dagen of [Math.floor(tussen(10, 120)), Math.floor(tussen(150, 300))]) {
-        meting(METING_CODES.rrSys, Math.round(tussen(118, 172)), 'mmHg', dagen);
-        meting(METING_CODES.rrDia, Math.round(tussen(68, 104)), 'mmHg', dagen);
+        meting(CODE.rrSys, Math.round(tussen(118, 172)), 'mmHg', dagen);
+        meting(CODE.rrDia, Math.round(tussen(68, 104)), 'mmHg', dagen);
       }
-      if (willekeurig() < 0.75) meting(METING_CODES.ldl, rond(tussen(1.4, 4.6), 1), 'mmol/l', Math.floor(tussen(40, 420)));
+      if (willekeurig() < 0.75) meting(CODE.ldl, rond(tussen(1.4, 4.6), 1), 'mmol/l', Math.floor(tussen(40, 420)));
     }
     if (aandoeningen.includes('copd')) {
       const basis = tussen(0.4, 2.6);
       const afnames = Math.floor(tussen(2, 4));
       for (let k = afnames; k >= 1; k--) {
         const drift = willekeurig() < 0.25 ? tussen(0.3, 1.2) : tussen(-0.2, 0.25);
-        meting(METING_CODES.ccq, rond(Math.max(0, basis + drift * (afnames - k)), 1), '', k * 90, 'poh-s');
+        meting(CODE.ccq, rond(Math.max(0, basis + drift * (afnames - k)), 1), '', k * 90, 'poh-s');
       }
-      if (willekeurig() < 0.7) meting(METING_CODES.fev1, rond(tussen(1.1, 3.0), 2), 'l', Math.floor(tussen(80, 500)));
+      if (willekeurig() < 0.7) meting(CODE.fev1, rond(tussen(1.1, 3.0), 2), 'l', Math.floor(tussen(80, 500)));
     }
-    if (willekeurig() < 0.8) meting(METING_CODES.gewicht, rond(tussen(58, 118), 1), 'kg', Math.floor(tussen(20, 400)));
-    if (willekeurig() < 0.7) meting(METING_CODES.egfr, Math.round(tussen(32, 98)), 'ml/min', Math.floor(tussen(40, 500)));
+    if (willekeurig() < 0.8) meting(CODE.gewicht, rond(tussen(58, 118), 1), 'kg', Math.floor(tussen(20, 400)));
+    if (willekeurig() < 0.7) meting(CODE.egfr, Math.round(tussen(32, 98)), 'ml/min', Math.floor(tussen(40, 500)));
+
+    // Rookstatus is een gecodeerde observatie, geen vrije tekst — voorwaarde om er
+    // regels op te kunnen draaien (docs/03 §4).
+    if (aandoeningen.length > 0 && willekeurig() < 0.8) {
+      const rookt = willekeurig() < (aandoeningen.includes('copd') ? 0.55 : 0.2);
+      const op = datumMinDagen(peildatum, Math.floor(tussen(30, 500)));
+      observaties.push({
+        resourceType: 'Observation',
+        id: `${id}-obs-rook`,
+        patientId: id,
+        code: { coding: [{ system: 'http://loinc.org', code: CODE.roken }] },
+        effectief: op,
+        waarde: {
+          code: rookt
+            ? { system: 'http://snomed.info/sct', code: '77176002', display: 'Roker' }
+            : { system: 'http://snomed.info/sct', code: '8517006', display: 'Ex-roker' },
+        },
+        status: 'final',
+        herkomst: herkomstVan('zv-poh-1', 'poh-s', op),
+      });
+    }
+
+    const medicatie: MedicationStatement[] = [];
+    for (const sleutel of aandoeningen) {
+      for (const middel of MIDDELEN[sleutel] ?? []) {
+        if (willekeurig() > 0.62) continue;
+        const start = datumMinDagen(peildatum, Math.floor(tussen(100, 2500)));
+        medicatie.push({
+          resourceType: 'MedicationStatement',
+          id: `${id}-med-${medicatie.length + 1}`,
+          patientId: id,
+          middel: { coding: [{ system: 'http://www.whocc.no/atc', code: middel.atc }], text: middel.naam },
+          dosering: middel.dosering,
+          chronisch: true,
+          status: 'active',
+          begin: start.slice(0, 10),
+          herkomst: herkomstVan('zv-huisarts-1', 'huisarts', start),
+        });
+      }
+    }
 
     dossiers.push({
       patient, episodes, condities: [], contacten: [], deelcontacten: [],
-      observaties, medicatie: [], markeringen: [], taken: [], afspraken: [],
+      observaties, medicatie, markeringen: [], taken: [], afspraken: [],
     });
   }
 
@@ -186,7 +252,7 @@ export function genereerSpreekuur(praktijk: Praktijk, zaad = 42): Appointment[] 
       eindeMinuten: 20,
       soort: willekeurig() < 0.15 ? 'e-consult' : 'consult',
       afspraakType: 'chronische-controle',
-      uitvoerder: { id: 'zv-poh-1', naam: 'S. Bakker', rol: 'poh-s' },
+      uitvoerder: { id: 'zv-poh-1', naam: 'Sanne Bakker', rol: 'poh-s' },
       status: 'booked',
       reden: 'Chronische controle',
     });
