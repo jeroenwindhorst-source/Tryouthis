@@ -3,13 +3,11 @@ import { SYSTEEM, DEMO_SEED_WAARSCHUWING } from '@zpe/terminology';
 import {
   modules, ketens, vindVragenlijst, vragenlijsten, REGELSET_VERSIE, type PersoonlijkPlan,
 } from '@zpe/care-engine';
-import { terminologie } from './terminologie.js';
-import { InMemoryRepository } from './store.js';
 import {
-  consultvoorbereiding, dagafsluiting, dagstart, instroom, monitoringCohort,
-  patientOverzicht, praktijkSamenvatting, registreerConsult, verwerkVragenlijst,
-  type ConsultRegistratie,
-} from './bff.js';
+  consultvoorbereiding, dagafsluiting, dagstart, instroom, InMemoryRepository,
+  monitoringCohort, patientOverzicht, praktijkSamenvatting, registreerConsult,
+  terminologie, verwerkVragenlijst, type ConsultRegistratie,
+} from '@zpe/praktijk';
 
 const repo = new InMemoryRepository();
 const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'warn' } });

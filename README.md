@@ -88,8 +88,21 @@ npm install
 npm run build
 npm test            # 44 tests: terminologie, protocol, planning, beslisregels, vragenlijsten
 
-npm run api         # API op http://localhost:3000
-npm run web         # werkplek op http://localhost:5173
+npm run web         # werkplek op http://localhost:5173 — draait zónder server
+```
+
+De werkplek draait standaard **volledig in de browser**: `@zpe/praktijk` bevat geen HTTP
+en geen Node-afhankelijkheden, dus dezelfde motor die in de server draait, draait ook in
+het tabblad. Handig voor demo's, maar vooral een bewijs dat de domeinlaag echt losstaat
+van het transport — voorwaarde voor de FHIR-facade uit [`docs/08`](docs/08-interoperabiliteit.md).
+
+Wil je tegen de echte API aan werken (dezelfde endpoints die externe partijen zien):
+
+```bash
+npm run api                              # Fastify op http://localhost:3000
+VITE_BACKEND=http npm run web            # werkplek praat nu over HTTP
+
+npm --workspace @zpe/web run build:standalone   # losstaande bundel, zonder server
 ```
 
 De API genereert bij het starten een deterministische synthetische praktijk van
@@ -116,9 +129,10 @@ packages/
   terminology/  ICPC-1 NL ↔ SNOMED CT, referentieset, zoeken, ontvangst
   care-engine/  protocol · ketenkoppeling · instroom · zorgplan · beslisondersteuning
                 · vragenlijsten · oproep
+  praktijk/     samenstelling tot schermen + synthetische praktijk — géén HTTP
 apps/
-  api/          FHIR-facade, werkproces-endpoints, synthetische populatie
-  web/          werkplek POH-Somatiek
+  api/          FHIR-facade en werkproces-endpoints over `praktijk`
+  web/          werkplek POH-Somatiek (browser of HTTP, zelfde interface)
 ```
 
 Modulegrenzen: `terminology` kent `fhir-model`; `care-engine` kent beide maar bevat geen

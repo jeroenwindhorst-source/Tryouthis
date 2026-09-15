@@ -53,6 +53,8 @@
 
 * { box-sizing: border-box; }
 
+html, body { height: 100%; }
+
 body {
   margin: 0;
   font: 13.5px/1.55 "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
@@ -65,7 +67,7 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -.01em; }
 
 /* ── Raamwerk ─────────────────────────────────────────────────────────────── */
 
-.app { display: grid; grid-template-columns: 224px minmax(0, 1fr); min-height: 100vh; }
+.app { display: grid; grid-template-columns: 224px minmax(0, 1fr); min-height: 100%; }
 @media (max-width: 1000px) { .app { grid-template-columns: 1fr; } }
 
 .zijbalk {

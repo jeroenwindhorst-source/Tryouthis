@@ -7,3 +7,4 @@ dist/
 coverage/
 apps/web/dist/
 .DS_Store
+apps/web/dist-standalone/

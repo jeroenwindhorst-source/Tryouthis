@@ -1,4 +1,14 @@
-/** Dunne client op de BFF. Geen klinische logica hier — die hoort in care-engine. */
+/**
+ * Toegang tot de praktijklaag. Geen klinische logica hier — die hoort in care-engine.
+ *
+ * Twee smaken, dezelfde interface:
+ *  - **lokaal** (standaard): de motor draait in de browser. Geen server nodig.
+ *  - **http**: praat met de Fastify-API, dezelfde endpoints die externe partijen zien.
+ *
+ * Kies http met `VITE_BACKEND=http npm run web`.
+ */
+
+import { lokaleApi } from './lokaal';
 
 async function haal<T>(pad: string): Promise<T> {
   const antwoord = await fetch(pad);
@@ -190,7 +200,7 @@ export interface Ontvangst {
   gecodeerd: { niveau: string; icpc1?: { code: string; display?: string }; snomed?: { code: string; display?: string } };
 }
 
-export const api = {
+const httpApi = {
   dagstart: () => haal<Dagstart>('/api/poh/dagstart'),
   voorbereiding: () => haal<Voorbereiding[]>('/api/poh/voorbereiding'),
   monitoring: () => haal<MonitoringRegel[]>('/api/poh/monitoring'),
@@ -218,6 +228,14 @@ export const api = {
       codings: [{ system: 'http://snomed.info/sct', code, display }], bron: 'Ziekenhuis (demo)',
     }),
 };
+
+/**
+ * De browserversie importeert de hele domeinlaag; dat mag alleen als hij ook gebruikt
+ * wordt, anders zit die code voor niets in de http-bundel. Vite schudt dat er niet uit
+ * bij een statische import, dus de keuze valt hier expliciet.
+ */
+export const api: typeof httpApi =
+  import.meta.env.VITE_BACKEND === 'http' ? httpApi : (lokaleApi as unknown as typeof httpApi);
 
 export const MODULE_NAAM: Record<string, string> = {
   glucose: 'Glucose', vaatrisico: 'Vaatrisico', nierfunctie: 'Nierfunctie',

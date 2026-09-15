@@ -81,6 +81,9 @@ export function App() {
         <div className="voet">
           Sanne Bakker · POH-S<br />
           Huisartsenpraktijk De Linde
+          <div style={{ marginTop: 8, opacity: .8 }}>
+            Demo · 48 synthetische patiënten
+          </div>
         </div>
       </nav>
 

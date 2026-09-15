@@ -1,0 +1,13 @@
+/**
+ * De praktijklaag: samenstelling van dossier, protocol en beslisregels tot de
+ * schermen van een werkplek — plus een synthetische praktijk om op te draaien.
+ *
+ * Bewust géén HTTP. Daardoor draait deze laag zowel in de Fastify-server (apps/api)
+ * als volledig in de browser (apps/web), zonder dat er een regel logica verandert.
+ * Dat is niet alleen handig voor een demo: het bewijst dat de domeinlaag echt los
+ * staat van het transport, wat een voorwaarde is voor de FHIR-facade uit docs/08.
+ */
+export * from './populatie.js';
+export * from './terminologie.js';
+export * from './store.js';
+export * from './bff.js';

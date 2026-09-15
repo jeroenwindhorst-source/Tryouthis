@@ -5,6 +5,7 @@
   "references": [
     { "path": "../../packages/fhir-model" },
     { "path": "../../packages/terminology" },
-    { "path": "../../packages/care-engine" }
+    { "path": "../../packages/care-engine" },
+    { "path": "../../packages/praktijk" }
   ]
 }
