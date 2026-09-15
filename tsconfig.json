@@ -1,0 +1,9 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/fhir-model" },
+    { "path": "packages/terminology" },
+    { "path": "packages/care-engine" },
+    { "path": "apps/api" }
+  ]
+}
