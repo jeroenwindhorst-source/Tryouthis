@@ -1,11 +1,16 @@
-import type { Dossier, Task } from '@zpe/fhir-model';
+import type { Dossier, Rol, Task } from '@zpe/fhir-model';
 import { laatsteMeting, leeftijd, metingReeks, numeriekeWaarde } from '@zpe/fhir-model';
 import {
   automatisering, bouwZorgplan, beoordeelInstroom, CODE, instroomOverzicht,
   planOproepen, suggesties, verwerk, vindVragenlijst,
   type Suggestie, type Zorgplan,
 } from '@zpe/care-engine';
+import { NIVEAU_UITLEG } from '@zpe/configuratie';
 import { metingNaam } from './terminologie.js';
+import { configuratie, configuratieLagen } from './configuratie-demo.js';
+import {
+  groepeerAutorisaties, type Autorisatiegroep, type Triageverzoek, type WachtkamerIntake,
+} from './werkvoorraad.js';
 import type { DossierRepository } from './store.js';
 
 /**
@@ -100,6 +105,8 @@ export interface Processtap {
 export interface Dagstart {
   datum: string;
   zorgverlener: { naam: string; rol: string };
+  /** De dag als tijdlijn — het eerste dat een zorgverlener wil zien. */
+  agenda: AgendaRegel[];
   stappen: Processtap[];
   automatisering: {
     graad: number;
@@ -144,6 +151,7 @@ export function dagstart(repo: DossierRepository): Dagstart {
   return {
     datum,
     zorgverlener: { naam: 'Sanne Bakker', rol: 'POH-Somatiek' },
+    agenda: agenda(repo, 'poh-s'),
     stappen: [
       {
         id: 'voorbereiden', naam: 'Voorbereiden', omschrijving: 'Spreekuur van vandaag klaarzetten',
@@ -198,6 +206,9 @@ export interface Voorbereiding {
   /** De twee tot drie dingen die dit consult echt moeten opleveren. */
   gespreksonderwerpen: { titel: string; bevinding: string; ernst: string }[];
   doelen: { tekst: string }[];
+  zelfredzaamheid?: { gemiddelde: number; niveau: string; knelpunten: string[] };
+  /** Voorbereiding uit de wachtkamer, geleverd door een ingebedde partnerapp. */
+  intake?: WachtkamerIntake;
 }
 
 export function consultvoorbereiding(repo: DossierRepository): Voorbereiding[] {
@@ -237,6 +248,14 @@ export function consultvoorbereiding(repo: DossierRepository): Voorbereiding[] {
         .slice(0, 3)
         .map((s) => ({ titel: s.titel, bevinding: s.bevinding, ernst: s.ernst })),
       doelen: plan.doelen.map((d) => ({ tekst: d.tekst })),
+      zelfredzaamheid: plan.zelfredzaamheid
+        ? {
+            gemiddelde: plan.zelfredzaamheid.gemiddelde,
+            niveau: plan.zelfredzaamheid.niveau,
+            knelpunten: plan.zelfredzaamheid.knelpunten.map((k) => k.domein.naam),
+          }
+        : undefined,
+      intake: repo.intakes().find((i) => i.patientId === dossier.patient.id),
     }];
   });
 }
@@ -250,6 +269,7 @@ export interface MonitoringRegel {
   modules: { id: string; naam: string; icoon: string }[];
   signalen: Signaal[];
   suggesties: Suggestie[];
+  zelfredzaamheid?: { gemiddelde: number; niveau: string; richting?: string };
 }
 
 export function monitoringCohort(repo: DossierRepository): MonitoringRegel[] {
@@ -267,11 +287,27 @@ export function monitoringCohort(repo: DossierRepository): MonitoringRegel[] {
       modules: plan.modules.map((m) => ({ id: m.id, naam: m.naam, icoon: m.icoon })),
       signalen: sig,
       suggesties: suggestiesVoor(repo, dossier, plan).filter((s) => s.klasse === 'klinisch').slice(0, 3),
+      zelfredzaamheid: plan.zelfredzaamheid && plan.zelfredzaamheid.gemiddelde > 0
+        ? {
+            gemiddelde: plan.zelfredzaamheid.gemiddelde,
+            niveau: plan.zelfredzaamheid.niveau,
+            richting: plan.zelfredzaamheid.trend?.richting,
+          }
+        : undefined,
     }];
   });
 
-  const gewicht = (r: MonitoringRegel): number =>
-    r.signalen.reduce((s, x) => s + (x.ernst === 'urgent' ? 100 : x.ernst === 'aandacht' ? 10 : 1), 0);
+  // Lage of dalende zelfredzaamheid weegt mee in de volgorde: wie het zelf niet redt,
+  // hoort niet onderaan te staan omdat de waarden toevallig meevallen.
+  const gewicht = (r: MonitoringRegel): number => {
+    const signaal = r.signalen.reduce(
+      (s, x) => s + (x.ernst === 'urgent' ? 100 : x.ernst === 'aandacht' ? 10 : 1), 0,
+    );
+    const z = r.zelfredzaamheid;
+    if (!z) return signaal;
+    return signaal + (z.gemiddelde < 2.5 ? 60 : z.gemiddelde < 3.5 ? 20 : 0)
+      + (z.richting === 'achteruit' ? 40 : 0);
+  };
   return regels.sort((a, b) => gewicht(b) - gewicht(a));
 }
 
@@ -400,6 +436,7 @@ export function patientOverzicht(repo: DossierRepository, patientId: string) {
     automatisering: automatisering(lijst),
     oproepen,
     instroom: beoordeelInstroom(dossier, repo.bekendeModules(patientId), persoonlijk, peildatum),
+    intake: repo.intakes().find((i) => i.patientId === patientId),
   };
 }
 
@@ -577,5 +614,184 @@ export function registreerConsult(
     })),
     verantwoordingGevuld,
     vervolg,
+  };
+}
+
+// ── 9. Agenda ───────────────────────────────────────────────────────────────
+
+export interface AgendaRegel {
+  id: string;
+  tijd: string;
+  duurMinuten: number;
+  soort: string;
+  titel: string;
+  patientId?: string;
+  naam?: string;
+  leeftijd?: number;
+  reden?: string;
+  modules: { id: string; naam: string; icoon: string }[];
+  /** Kort signaal per regel, zodat de agenda zelf al vertelt waar het om gaat. */
+  aandacht?: string;
+  voorbereid?: boolean;
+  intakeKlaar?: boolean;
+}
+
+/** De dag van één rol, als tijdlijn. Blokken en patiëntafspraken door elkaar. */
+export function agenda(repo: DossierRepository, rol: Rol): AgendaRegel[] {
+  const peildatum = repo.peildatum();
+  const intakes = repo.intakes();
+
+  return repo.agenda(rol).map((item): AgendaRegel => {
+    const dossier = item.patientId ? repo.dossier(item.patientId) : undefined;
+    if (!dossier) {
+      return {
+        id: item.id, tijd: item.start.slice(11, 16), duurMinuten: item.duurMinuten,
+        soort: item.soort, titel: item.titel, modules: [],
+      };
+    }
+    const plan = planVoor(repo, dossier);
+    const sig = signalen(dossier, peildatum);
+    const zwaarste = sig.find((s) => s.ernst === 'urgent') ?? sig.find((s) => s.ernst === 'aandacht');
+    const eerste = plan.contacten[0];
+    const ontbreekt = (eerste?.metingen ?? []).filter((m) => m.labVooraf && !m.laatsteOp).length;
+
+    return {
+      id: item.id,
+      tijd: item.start.slice(11, 16),
+      duurMinuten: item.duurMinuten,
+      soort: item.soort,
+      titel: item.titel,
+      patientId: dossier.patient.id,
+      naam: item.naam ?? volledigeNaam(dossier),
+      leeftijd: leeftijd(dossier, peildatum),
+      reden: item.reden,
+      modules: plan.modules.map((m) => ({ id: m.id, naam: m.naam, icoon: m.icoon })),
+      aandacht: zwaarste?.tekst,
+      voorbereid: rol === 'poh-s' ? ontbreekt === 0 : undefined,
+      intakeKlaar: intakes.some((i) => i.patientId === dossier.patient.id),
+    };
+  });
+}
+
+// ── 10. Doktersassistent ────────────────────────────────────────────────────
+
+export interface AssistentOverzicht {
+  datum: string;
+  zorgverlener: { naam: string; rol: string };
+  agenda: AgendaRegel[];
+  stroom: {
+    triageNieuw: number;
+    viaPortaal: number;
+    viaTelefoon: number;
+    zelfzorgAfgevangen: number;
+  };
+  autorisatieIngediend: number;
+  triage: Triageverzoek[];
+}
+
+export function assistentOverzicht(repo: DossierRepository): AssistentOverzicht {
+  const triage = repo.triage().filter((t) => t.status === 'nieuw');
+  return {
+    datum: repo.peildatum().toISOString().slice(0, 10),
+    zorgverlener: { naam: 'Ilse Hendriks', rol: 'Doktersassistent' },
+    agenda: agenda(repo, 'assistent'),
+    stroom: {
+      triageNieuw: triage.length,
+      viaPortaal: triage.filter((t) => t.kanaal === 'portaal').length,
+      viaTelefoon: triage.filter((t) => t.kanaal !== 'portaal').length,
+      zelfzorgAfgevangen: triage.filter((t) => t.zelftriage?.bestemming === 'zelfzorg').length,
+    },
+    autorisatieIngediend: repo.autorisaties().filter((a) => a.status === 'open').length,
+    triage,
+  };
+}
+
+// ── 11. Huisarts ────────────────────────────────────────────────────────────
+
+export interface HuisartsOverzicht {
+  datum: string;
+  zorgverlener: { naam: string; rol: string };
+  agenda: AgendaRegel[];
+  autorisatie: {
+    open: number;
+    routine: number;
+    vraagtOordeel: number;
+    groepen: Autorisatiegroep[];
+  };
+  /** Wat het team vandaag heeft vastgelegd, met herkomst. */
+  team: { rol: string; naam: string; registraties: number; toelichting: string }[];
+}
+
+export function huisartsOverzicht(repo: DossierRepository): HuisartsOverzicht {
+  const open = repo.autorisaties().filter((a) => a.status === 'open');
+  const groepen = groepeerAutorisaties(repo.autorisaties());
+  const datum = repo.peildatum().toISOString().slice(0, 10);
+
+  const deelcontactenVandaag = repo.alleDossiers()
+    .flatMap((d) => d.deelcontacten)
+    .filter((dc) => dc.herkomst.vastgelegdOp.startsWith(datum));
+
+  const intakes = repo.intakes();
+
+  return {
+    datum,
+    zorgverlener: { naam: 'Daan Verhoeven', rol: 'Huisarts' },
+    agenda: agenda(repo, 'huisarts'),
+    autorisatie: {
+      open: open.length,
+      routine: open.filter((a) => a.routine).length,
+      vraagtOordeel: open.filter((a) => !a.routine).length,
+      groepen,
+    },
+    team: [
+      {
+        rol: 'poh-s', naam: 'Sanne Bakker',
+        registraties: deelcontactenVandaag.filter((dc) => dc.herkomst.auteurRol === 'poh-s').length,
+        toelichting: 'Chronische controles, vastgelegd in dezelfde episodes als jij gebruikt.',
+      },
+      {
+        rol: 'assistent', naam: 'Ilse Hendriks',
+        registraties: repo.triage().filter((t) => t.status === 'afgehandeld').length,
+        toelichting: 'Triage en verrichtingen; afgehandelde zorgvragen van vandaag.',
+      },
+      {
+        rol: 'systeem', naam: `${intakes[0]?.app.naam ?? 'Partnerapp'} (wachtkamer)`,
+        registraties: intakes.filter((i) => i.bevestigd).length,
+        toelichting: 'Voorbereiding uit de wachtkamer. Telt pas mee ná bevestiging door een mens.',
+      },
+    ],
+  };
+}
+
+// ── 12. Wachtkamer-intakes ──────────────────────────────────────────────────
+
+export function intakes(repo: DossierRepository) {
+  return repo.intakes();
+}
+
+export function intakeVoor(repo: DossierRepository, patientId: string) {
+  return repo.intakes().find((i) => i.patientId === patientId);
+}
+
+// ── 13. Beheer ──────────────────────────────────────────────────────────────
+
+export function beheer() {
+  const effectief = configuratie();
+  return {
+    lagen: configuratieLagen.map((laag) => ({
+      niveau: laag.niveau,
+      naam: laag.naam,
+      beheerder: laag.beheerder,
+      gewijzigdOp: laag.gewijzigdOp,
+      uitleg: NIVEAU_UITLEG[laag.niveau],
+      instellingen: Object.keys(laag.instellingen),
+    })),
+    instellingen: Object.entries(effectief).map(([sleutel, item]) => ({
+      sleutel,
+      waarde: item.waarde,
+      niveau: item.niveau,
+      bron: item.bron,
+      overschreven: item.overschreven,
+    })),
   };
 }

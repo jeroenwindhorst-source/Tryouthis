@@ -4,9 +4,10 @@ import {
   modules, ketens, vindVragenlijst, vragenlijsten, REGELSET_VERSIE, type PersoonlijkPlan,
 } from '@zpe/care-engine';
 import {
-  consultvoorbereiding, dagafsluiting, dagstart, instroom, InMemoryRepository,
-  monitoringCohort, patientOverzicht, praktijkSamenvatting, registreerConsult,
-  terminologie, verwerkVragenlijst, type ConsultRegistratie,
+  agenda, assistentOverzicht, beheer, consultvoorbereiding, dagafsluiting, dagstart,
+  huisartsOverzicht, instroom, InMemoryRepository, intakes, monitoringCohort,
+  patientOverzicht, praktijkSamenvatting, registreerConsult, terminologie,
+  verwerkVragenlijst, type ConsultRegistratie,
 } from '@zpe/praktijk';
 
 const repo = new InMemoryRepository();
@@ -85,6 +86,48 @@ app.post<{ Body: { patientId: string; moduleId: string } }>(
   },
 );
 
+// ── Andere rollen: doktersassistent en huisarts (docs/05) ───────────────────
+
+app.get('/api/assistent/overzicht', async () => assistentOverzicht(repo));
+app.get('/api/huisarts/overzicht', async () => huisartsOverzicht(repo));
+
+app.get<{ Params: { rol: string } }>('/api/agenda/:rol', async (req) =>
+  agenda(repo, req.params.rol as 'poh-s' | 'assistent' | 'huisarts'));
+
+app.post<{ Params: { id: string } }>('/api/triage/:id/afhandelen', async (req) => {
+  repo.handelTriageAf(req.params.id);
+  return assistentOverzicht(repo);
+});
+
+/** Routineverzoeken in één handeling accorderen — het verschil met 163 losse regels. */
+app.post<{ Body: { ids: string[] } }>('/api/autorisatie/accordeer', async (req) => {
+  repo.accordeer(req.body?.ids ?? []);
+  return huisartsOverzicht(repo);
+});
+
+app.post<{ Params: { id: string }; Body: { reden: string } }>(
+  '/api/autorisatie/:id/afwijzen',
+  async (req) => {
+    repo.wijsAutorisatieAf(req.params.id, req.body?.reden ?? 'geen reden opgegeven');
+    return huisartsOverzicht(repo);
+  },
+);
+
+// ── Ingebedde partnerapps ───────────────────────────────────────────────────
+
+app.get('/api/intakes', async () => intakes(repo));
+
+app.post<{ Params: { id: string } }>('/api/intake/:id/bevestig', async (req, reply) => {
+  const intake = repo.intakes().find((i) => i.id === req.params.id);
+  if (!intake) return reply.code(404).send({ fout: 'intake niet gevonden' });
+  repo.bevestigIntake(req.params.id);
+  return { intake: repo.intakes().find((i) => i.id === req.params.id) };
+});
+
+// ── Configuratie (docs/14) ──────────────────────────────────────────────────
+
+app.get('/api/beheer', async () => beheer());
+
 // ── Protocol en verantwoording ──────────────────────────────────────────────
 
 app.get('/api/protocol', async () => ({
@@ -151,7 +194,7 @@ app.post<{ Params: { id: string }; Body: { antwoorden: Record<string, unknown>; 
 app.get('/fhir/metadata', async () => ({
   resourceType: 'CapabilityStatement',
   status: 'draft', date: new Date().toISOString(),
-  publisher: 'Zorgplatform Eerstelijn', kind: 'instance',
+  publisher: 'Cadans', kind: 'instance',
   fhirVersion: '4.0.1', format: ['json'],
   rest: [{
     mode: 'server',

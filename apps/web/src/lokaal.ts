@@ -1,7 +1,8 @@
 import {
-  consultvoorbereiding, dagafsluiting, dagstart, instroom, InMemoryRepository,
-  monitoringCohort, patientOverzicht, praktijkSamenvatting, registreerConsult,
-  terminologie, type ConsultRegistratie,
+  agenda, assistentOverzicht, beheer, consultvoorbereiding, dagafsluiting, dagstart,
+  huisartsOverzicht, instroom, InMemoryRepository, intakes, monitoringCohort,
+  patientOverzicht, praktijkSamenvatting, registreerConsult, terminologie,
+  type ConsultRegistratie,
 } from '@zpe/praktijk';
 import { ketens, modules, REGELSET_VERSIE, type PersoonlijkPlan } from '@zpe/care-engine';
 import { DEMO_SEED_WAARSCHUWING } from '@zpe/terminology';
@@ -29,6 +30,28 @@ export const lokaleApi = {
   instroom: () => traag(instroom(repo)),
   afronden: () => traag(dagafsluiting(repo)),
   praktijk: () => traag(praktijkSamenvatting(repo)),
+  assistent: () => traag(assistentOverzicht(repo)),
+  huisarts: () => traag(huisartsOverzicht(repo)),
+  agenda: (rol: string) => traag(agenda(repo, rol as 'poh-s' | 'assistent' | 'huisarts')),
+  beheer: () => traag(beheer()),
+  intakes: () => traag(intakes(repo)),
+
+  handelTriageAf: (id: string) => {
+    repo.handelTriageAf(id);
+    return traag(assistentOverzicht(repo));
+  },
+  accordeer: (ids: string[]) => {
+    repo.accordeer(ids);
+    return traag(huisartsOverzicht(repo));
+  },
+  wijsAutorisatieAf: (id: string, reden: string) => {
+    repo.wijsAutorisatieAf(id, reden);
+    return traag(huisartsOverzicht(repo));
+  },
+  bevestigIntake: (id: string) => {
+    repo.bevestigIntake(id);
+    return traag({ intake: repo.intakes().find((i) => i.id === id)! });
+  },
 
   protocol: () => traag({
     toelichting:

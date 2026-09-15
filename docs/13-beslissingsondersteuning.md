@@ -45,8 +45,15 @@ Vier eisen, alle vier afgedwongen door tests:
    aanbeveling. Een advies dat je niet kunt narekenen is geen advies maar een orakel.
 2. **Elke actie zegt wat er gebeurt.** Geen knop zonder `gevolg`.
 3. **Afwijzen kan altijd**, met reden. Die reden is het beste verbetersignaal dat er is.
-4. **Regel-id en versie zijn zichtbaar.** Zonder herleidbaarheid is een advies niet
-   verantwoordbaar — en bij een MDR-audit niet houdbaar.
+4. **Regel-id, versie én bron zijn zichtbaar.** Onder elke suggestie staat waarop hij
+   berust, met een klikbare verwijzing naar de richtlijn — NHG-standaard, behandelrichtlijn
+   of internationale bron — inclusief paragraaf en versie. Zonder herleidbaarheid is een
+   advies niet verantwoordbaar en bij een MDR-audit niet houdbaar.
+
+   De URL's volgen het patroon van `richtlijnen.nhg.org` en moeten bij release tegen de
+   actuele index worden gecontroleerd: standaarden worden hernoemd en samengevoegd, en
+   een dode link ondermijnt precies het vertrouwen dat de verwijzing moet opbouwen.
+   Daarom is de naam altijd het primaire signaal en de link secundair.
 
 ## 3. De regels
 
@@ -61,6 +68,7 @@ Vier eisen, alle vier afgedwongen door tests:
 | `mentaal-laag` | gezondheidsoppervlakte ≤ 5 | Agenderen als gespreksonderwerp; eventueel POH-GGZ |
 | `afschalen-stabiel` | drie metingen op streefwaarde | **Minder** vaak controleren |
 | `module-*` | aandachtsgebied nieuw relevant | Toevoegen aan het plan |
+| `zelfredzaamheid-gedaald` | score lager dan bij de vorige afname | Vaker contact, of overleg met wijkteam (`docs/15`) |
 
 ### Logistiek — mag automatisch
 

@@ -52,12 +52,19 @@ mogelijk, een afhandeling in bulk. Doel: de dag is aantoonbaar af, in minuten.
 
 ## 2. Doktersassistent
 
+> Geïmplementeerd in de werkplek: dagstart met eigen agenda, en een triagescherm waarin
+> digitale en telefonische instroom door hetzelfde model lopen.
+
 Startscherm is de **stroom**, niet de agenda: binnenkomende triages (digitaal én
 telefonisch), terugbelverzoeken, herhaalrecepten, post en uitslagen die gerouteerd
 moeten worden. Meerdere dossiers tegelijk open (overgenomen uit HealthConnected,
 `docs/10` §4). Triage volgens één model, ongeacht kanaal (`docs/12` §2.2).
 
 ## 3. Huisarts
+
+> Geïmplementeerd in de werkplek: dagstart met spreekuur, een autorisatiescherm dat de
+> stapel splitst in "vraagt jouw oordeel" en "routine, veilig in bulk", en een
+> teamoverzicht met herkomst per registratie.
 
 Startscherm is de **autorisatiestroom en het spreekuur**. Het autorisatiescherm is
 bewust anders dan nu: geen lijst van 163 regels, maar gegroepeerd op type en risico,
@@ -83,3 +90,5 @@ Vragenlijsten, thuismetingen, herhaalmedicatie, berichten, zelfzorgadvies.
    consumenten-UI met veel witruimte (bevestigd door alle drie de bestaande systemen).
 6. **Herkomst is altijd zichtbaar** — wie, wanneer, mens of AI, bevestigd of niet.
 7. **Toetsenbord eerst.** Elke veelgebruikte actie heeft een sneltoets; muis is optioneel.
+8. **De agenda staat op het startscherm.** Elke rol begint met de eigen dag als tijdlijn,
+   inclusief blokken (telefonisch spreekuur, visites, overleg) — niet alleen patiëntafspraken.

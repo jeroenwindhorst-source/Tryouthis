@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { api, type Suggestie } from '../api';
 import { useData } from '../gebruik';
 import { Icoon } from '../iconen';
-import { Fout, Kaart, Laden, Leeg, ModuleChips, Signalen, SuggestieKaart } from '../onderdelen';
+import {
+  Fout, Kaart, Laden, Leeg, ModuleChips, Signalen, SuggestieKaart, Zelfredzaamheidsmeter,
+} from '../onderdelen';
 
 /**
  * Monitoring als eigen processtap (docs/12 §2.4) — de stap die in geen enkel bestaand
@@ -62,6 +64,12 @@ export function Monitoren({ openPatient }: { openPatient: (id: string) => void }
                         </button>
                         <div className="mini">{regel.leeftijd} jaar</div>
                         <div style={{ marginTop: 5 }}><ModuleChips modules={regel.modules} /></div>
+                        {regel.zelfredzaamheid && (
+                          <div style={{ marginTop: 7 }}>
+                            <Zelfredzaamheidsmeter {...regel.zelfredzaamheid} compact />
+                            <div className="mini">zelfredzaamheid</div>
+                          </div>
+                        )}
                       </div>
 
                       <div style={{ flex: 1, minWidth: 220 }}>

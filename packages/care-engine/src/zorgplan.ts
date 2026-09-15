@@ -2,6 +2,9 @@ import type { Dossier, Rol } from '@zpe/fhir-model';
 import { laatsteMeting, numeriekeWaarde } from '@zpe/fhir-model';
 import { ketenbijdragen, traditioneleKetens, type Ketenbijdrage } from './ketenkoppeling.js';
 import { modules as alleModules, type Invoer, type Monitoritem, type Zorgmodule } from './protocol.js';
+import {
+  beoordeelZelfredzaamheid, type Zelfredzaamheid, type Zelfredzaamheidsbeeld,
+} from './zelfredzaamheid.js';
 
 /**
  * HET PERSOONLIJKE ZORGPLAN
@@ -53,6 +56,11 @@ export interface ItemKeuze {
 export interface PersoonlijkPlan {
   patientId: string;
   intensiteit: Intensiteit;
+  /**
+   * Hoeveel deze mens zelf kan. Staat los van de klinische toestand en weegt even zwaar:
+   * bij dezelfde waarden heeft de een meer contact nodig dan de ander (zelfredzaamheid.ts).
+   */
+  zelfredzaamheid?: Zelfredzaamheid;
   /** Handmatig aan- of uitgezette modules. Altijd met reden — afwijken is een keuze. */
   moduleKeuzes: ModuleKeuze[];
   itemKeuzes: ItemKeuze[];
@@ -122,6 +130,8 @@ export interface GeplandContact {
 export interface Zorgplan {
   patientId: string;
   intensiteit: Intensiteit;
+  /** Het zelfredzaamheidsbeeld en wat het met dit plan doet. */
+  zelfredzaamheid?: Zelfredzaamheidsbeeld;
   modules: ActieveModule[];
   /** Modules die zijn beoordeeld maar niet actief zijn — transparant, niet verborgen. */
   nietActief: { id: string; naam: string; herkomst: ModuleHerkomst; onderbouwing: string }[];
@@ -162,7 +172,7 @@ const isoDatum = (ms: number): string => new Date(ms).toISOString().slice(0, 10)
 /** Bepaalt het interval van één item: protocol → situatie → persoon. */
 function bepaalInterval(
   item: Monitoritem, dossier: Dossier, peildatum: Date,
-  intensiteitFactor: number, itemKeuzes: ItemKeuze[],
+  intensiteitFactor: number, itemKeuzes: ItemKeuze[], zelfredzaamheidFactor: number,
 ): { dagen: number; reden: string } {
   const keuze = itemKeuzes.find((k) => k.code === item.code);
   if (keuze) {
@@ -180,13 +190,16 @@ function bepaalInterval(
     }
   }
 
-  const dagen = Math.max(14, Math.round(item.basisIntervalDagen * factor * intensiteitFactor));
+  const dagen = Math.max(
+    14, Math.round(item.basisIntervalDagen * factor * intensiteitFactor * zelfredzaamheidFactor),
+  );
   return { dagen, reden };
 }
 
 /** Bepaalt welke modules actief zijn en waarom. */
 function bepaalModules(
   dossier: Dossier, persoonlijk: PersoonlijkPlan, peildatum: Date, intensiteitFactor: number,
+  beeld?: Zelfredzaamheidsbeeld,
 ): { actief: ActieveModule[]; nietActief: Zorgplan['nietActief'] } {
   const actief: ActieveModule[] = [];
   const nietActief: Zorgplan['nietActief'] = [];
@@ -211,6 +224,13 @@ function bepaalModules(
     } else if (relevantie.voldaan) {
       herkomst = 'automatisch';
       onderbouwing = relevantie.onderbouwing;
+    } else if (beeld?.raaktModules.includes(module.id)) {
+      // Een laag scorend leefdomein maakt een aandachtsgebied relevant, ook zonder
+      // diagnose. Dat is precies het geval dat een diagnosegestuurd systeem mist.
+      herkomst = 'automatisch';
+      const knelpunt = beeld.knelpunten.find((k) => k.domein.id === 'geestelijke-gezondheid'
+        || k.domein.id === 'adl' || k.domein.id === 'sociaal-netwerk' || k.domein.id === 'verslaving');
+      onderbouwing = `zelfredzaamheid: ${knelpunt?.domein.naam.toLowerCase() ?? 'leefdomein'} scoort laag`;
     } else {
       herkomst = 'niet-relevant';
       onderbouwing = relevantie.onderbouwing;
@@ -224,7 +244,9 @@ function bepaalModules(
     const items = module.items
       .filter((item) => !item.relevantie || item.relevantie.evalueer(dossier, peildatum).voldaan)
       .map((item): GepiandItem => {
-        const interval = bepaalInterval(item, dossier, peildatum, intensiteitFactor, persoonlijk.itemKeuzes);
+        const interval = bepaalInterval(
+          item, dossier, peildatum, intensiteitFactor, persoonlijk.itemKeuzes, beeld?.factor ?? 1,
+        );
         const laatste = laatsteMeting(dossier, item.code);
         return {
           code: item.code, naam: item.naam, modules: [module.id],
@@ -392,15 +414,18 @@ export function bouwZorgplan(
   const minimumInterval = opties.minimumIntervalDagen ?? 28;
   const basisDuur = opties.basisDuurMinuten ?? 10;
   const intensiteitFactor = INTENSITEIT_FACTOR[persoonlijk.intensiteit];
+  const beeld = persoonlijk.zelfredzaamheid
+    ? beoordeelZelfredzaamheid(persoonlijk.zelfredzaamheid)
+    : undefined;
 
   const toelichting: string[] = [];
   const consequenties: string[] = [];
   const moduleRol = new Map<string, Rol>(alleModules.map((m: Zorgmodule) => [m.id, m.rol]));
 
   if (persoonlijk.intensiteit === 'palliatief') {
-    const { actief, nietActief } = bepaalModules(dossier, persoonlijk, peildatumDate, 1);
+    const { actief, nietActief } = bepaalModules(dossier, persoonlijk, peildatumDate, 1, beeld);
     return {
-      patientId: dossier.patient.id, intensiteit: persoonlijk.intensiteit,
+      patientId: dossier.patient.id, intensiteit: persoonlijk.intensiteit, zelfredzaamheid: beeld,
       modules: [], nietActief: [...nietActief, ...actief.map((m) => ({
         id: m.id, naam: m.naam, herkomst: 'handmatig-uit' as ModuleHerkomst,
         onderbouwing: 'protocol uitgezet vanwege palliatief beleid',
@@ -419,7 +444,9 @@ export function bouwZorgplan(
     };
   }
 
-  const { actief, nietActief } = bepaalModules(dossier, persoonlijk, peildatumDate, intensiteitFactor);
+  const { actief, nietActief } = bepaalModules(
+    dossier, persoonlijk, peildatumDate, intensiteitFactor, beeld,
+  );
   let items = voegItemsSamen(actief);
 
   // Persoonlijke voorkeur: maximaal aantal contacten per jaar. De patiënt bepaalt.
@@ -473,6 +500,30 @@ export function bouwZorgplan(
       'systematisch; in dit plan horen ze er gewoon bij.',
     );
   }
+  if (beeld && beeld.factor !== 1) {
+    toelichting.push(
+      `Zelfredzaamheid ${beeld.gemiddelde} van 5 (${beeld.niveau}): alle intervallen zijn met ` +
+      `factor ${beeld.factor} aangepast — ${beeld.factor < 1 ? 'vaker' : 'minder vaak'} contact bij ` +
+      'dezelfde klinische waarden.',
+    );
+  }
+  if (beeld?.knelpunten.length) {
+    consequenties.push(
+      `Knelpunten in zelfredzaamheid: ${beeld.knelpunten.map((k) => k.domein.naam.toLowerCase()).join(', ')}. ` +
+      beeld.betekenis,
+    );
+  }
+  if (beeld && !beeld.digitaalBereikbaar) {
+    consequenties.push(
+      'Digitale oproep is voor deze patiënt niet passend; uitnodigingen gaan telefonisch of per brief.',
+    );
+  }
+  if (beeld?.trend?.richting === 'achteruit') {
+    consequenties.push(
+      `Zelfredzaamheid is ${Math.abs(beeld.trend.verschil)} punt gedaald sinds de vorige afname. ` +
+      'Dat weegt zwaarder dan een enkele afwijkende meetwaarde.',
+    );
+  }
   if (persoonlijk.intensiteit !== 'basis') {
     toelichting.push(
       `Intensiteit '${persoonlijk.intensiteit}': alle intervallen zijn met factor ${intensiteitFactor} aangepast.`,
@@ -495,6 +546,7 @@ export function bouwZorgplan(
   return {
     patientId: dossier.patient.id,
     intensiteit: persoonlijk.intensiteit,
+    zelfredzaamheid: beeld,
     modules: actief,
     nietActief,
     contacten,

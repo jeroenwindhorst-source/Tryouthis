@@ -68,6 +68,23 @@ export interface Monitoritem {
   vragenlijst?: string;
 }
 
+/**
+ * Verwijzing naar de bron van een advies.
+ *
+ * De URL's volgen het patroon van richtlijnen.nhg.org. Ze moeten bij release tegen de
+ * actuele NHG-index gecontroleerd worden: standaarden worden hernoemd en samengevoegd,
+ * en een dode link ondermijnt precies het vertrouwen dat deze verwijzing moet opbouwen.
+ * Daarom is de naam altijd het primaire signaal en de link secundair.
+ */
+export interface Richtlijn {
+  naam: string;
+  versie: string;
+  /** Paragraaf of hoofdstuk, als het advies daar specifiek uit volgt. */
+  paragraaf?: string;
+  url?: string;
+  uitgever?: string;
+}
+
 export interface Zorgmodule {
   id: ModuleId;
   naam: string;
@@ -80,7 +97,7 @@ export interface Zorgmodule {
   uitsluiting?: Criterium;
   items: Monitoritem[];
   rol: Rol;
-  richtlijnen: { naam: string; versie: string }[];
+  richtlijnen: Richtlijn[];
 }
 
 // Codes uit de terminologieseed (packages/terminology/src/seed.ts).
@@ -122,7 +139,8 @@ export const modules: Zorgmodule[] = [
     omschrijving: 'Hoe uw bloedsuiker zich gedraagt en wat dat voor u betekent.',
     icoon: 'druppel',
     rol: 'poh-s',
-    richtlijnen: [{ naam: 'NHG-Standaard Diabetes mellitus type 2', versie: 'M01' }],
+    richtlijnen: [{ naam: 'NHG-Standaard Diabetes mellitus type 2', versie: 'M01', uitgever: 'NHG',
+      url: 'https://richtlijnen.nhg.org/standaarden/diabetes-mellitus-type-2' }],
     relevantie: enigeVan([
       heeftActieveEpisode(['T90', 'T89', 'B85.01']),
       heeftMedicatie('A10', 'bloedglucoseverlagend middel'),
@@ -167,7 +185,8 @@ export const modules: Zorgmodule[] = [
     omschrijving: 'Uw bloeddruk, cholesterol en wat u kunt doen om risico te verlagen.',
     icoon: 'hart',
     rol: 'poh-s',
-    richtlijnen: [{ naam: 'NHG-Standaard Cardiovasculair risicomanagement', versie: 'M84' }],
+    richtlijnen: [{ naam: 'NHG-Standaard Cardiovasculair risicomanagement', versie: 'M84', uitgever: 'NHG',
+      url: 'https://richtlijnen.nhg.org/standaarden/cardiovasculair-risicomanagement' }],
     relevantie: enigeVan([
       heeftActieveEpisode(['K74', 'K75', 'K76', 'K77', 'K89', 'K90']),  // doorgemaakte HVZ
       heeftActieveEpisode(['K86', 'K87']),                              // hypertensie
@@ -214,7 +233,8 @@ export const modules: Zorgmodule[] = [
     omschrijving: 'Hoe uw nieren het doen; dat bepaalt mede welke medicijnen veilig zijn.',
     icoon: 'nier',
     rol: 'poh-s',
-    richtlijnen: [{ naam: 'NHG-Standaard Chronische nierschade', versie: 'M109' }],
+    richtlijnen: [{ naam: 'NHG-Standaard Chronische nierschade', versie: 'M109', uitgever: 'NHG',
+      url: 'https://richtlijnen.nhg.org/standaarden/chronische-nierschade' }],
     relevantie: enigeVan([
       heeftActieveEpisode(['U99']),
       heeftActieveEpisode(['T90', 'T89']),
@@ -243,7 +263,12 @@ export const modules: Zorgmodule[] = [
     omschrijving: 'Uw benauwdheid, hoesten en conditie, en hoe u een longaanval voorkomt.',
     icoon: 'long',
     rol: 'poh-s',
-    richtlijnen: [{ naam: 'NHG-Standaard COPD', versie: 'M26' }, { naam: 'NHG-Standaard Astma bij volwassenen', versie: 'M27' }],
+    richtlijnen: [
+      { naam: 'NHG-Standaard COPD', versie: 'M26', uitgever: 'NHG',
+        url: 'https://richtlijnen.nhg.org/standaarden/copd' },
+      { naam: 'NHG-Standaard Astma bij volwassenen', versie: 'M27', uitgever: 'NHG',
+        url: 'https://richtlijnen.nhg.org/standaarden/astma-bij-volwassenen' },
+    ],
     relevantie: enigeVan([
       heeftActieveEpisode(['R95', 'R96']),
       heeftMedicatie('R03', 'luchtwegverwijder of inhalatiecorticosteroïd'),
@@ -277,7 +302,8 @@ export const modules: Zorgmodule[] = [
     omschrijving: 'Roken, bewegen, voeding en gewicht — waar u zelf het meeste invloed heeft.',
     icoon: 'blad',
     rol: 'poh-s',
-    richtlijnen: [{ naam: 'NHG-Zorgmodule Leefstijl', versie: '2024' }],
+    richtlijnen: [{ naam: 'NHG-Zorgmodule Leefstijl', versie: '2024', uitgever: 'NHG',
+      url: 'https://richtlijnen.nhg.org/behandelrichtlijnen/stoppen-met-roken' }],
     relevantie: heeftChronischeZorgvraag,
     items: [
       {
@@ -298,7 +324,8 @@ export const modules: Zorgmodule[] = [
     omschrijving: 'Hoe het met u gaat van binnen, en wat u belangrijk vindt in uw leven.',
     icoon: 'hoofd',
     rol: 'poh-s',
-    richtlijnen: [{ naam: 'Positieve Gezondheid', versie: '2024' }],
+    richtlijnen: [{ naam: 'Mijn Positieve Gezondheid', versie: '2024', uitgever: 'Institute for Positive Health',
+      url: 'https://www.iph.nl/positieve-gezondheid/wat-is-het/' }],
     relevantie: heeftChronischeZorgvraag,
     items: [
       { code: CODE.mpg, naam: 'Mijn Positieve Gezondheid', basisIntervalDagen: JAAR, duurMinuten: 5,
@@ -313,7 +340,8 @@ export const modules: Zorgmodule[] = [
     omschrijving: 'Of al uw medicijnen samen nog kloppen en of u ze goed kunt gebruiken.',
     icoon: 'pil',
     rol: 'huisarts',
-    richtlijnen: [{ naam: 'Multidisciplinaire richtlijn Polyfarmacie bij ouderen', versie: '2020' }],
+    richtlijnen: [{ naam: 'Multidisciplinaire richtlijn Polyfarmacie bij ouderen', versie: '2020', uitgever: 'NHG/NVKG',
+      url: 'https://richtlijnen.nhg.org/multidisciplinaire-richtlijnen/polyfarmacie-bij-ouderen' }],
     relevantie: enigeVan([
       minimaalChronischeMiddelen(5),
       alle([minimaleLeeftijd(75), minimaalChronischeMiddelen(3)]),
@@ -331,7 +359,8 @@ export const modules: Zorgmodule[] = [
     omschrijving: 'Of u nog goed uit de voeten kunt en welke steun daarbij helpt.',
     icoon: 'schild',
     rol: 'poh-s',
-    richtlijnen: [{ naam: 'NHG-Standaard Complexe ouderenzorg', versie: 'M77' }],
+    richtlijnen: [{ naam: 'NHG-Standaard Complexe ouderenzorg', versie: 'M77', uitgever: 'NHG',
+      url: 'https://richtlijnen.nhg.org/standaarden/complexe-ouderenzorg' }],
     relevantie: alle([
       minimaleLeeftijd(75),
       minimaalChronischeEpisodes(2, CHRONISCHE_ICPC),

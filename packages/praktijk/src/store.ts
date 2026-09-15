@@ -1,8 +1,15 @@
-import type { Appointment, Deelcontact, Dossier, Observation, Task } from '@zpe/fhir-model';
+import type { Appointment, Deelcontact, Dossier, Observation, Rol, Task } from '@zpe/fhir-model';
 import {
   beoordeelInstroom, leegPersoonlijkPlan, type PersoonlijkPlan,
 } from '@zpe/care-engine';
-import { genereerPraktijk, genereerSpreekuur, type Praktijk } from './populatie.js';
+import {
+  genereerPraktijk, genereerSpreekuur, genereerZelfredzaamheid, type Praktijk,
+} from './populatie.js';
+import { appsVoor } from './configuratie-demo.js';
+import {
+  genereerAgenda, genereerAutorisaties, genereerIntakes, genereerTriage,
+  type AgendaItem, type Autorisatieverzoek, type Triageverzoek, type WachtkamerIntake,
+} from './werkvoorraad.js';
 
 /**
  * Opslaginterface. De in-memory implementatie hieronder en de Postgres-implementatie
@@ -27,6 +34,19 @@ export interface DossierRepository {
   handelSuggestieAf(patientId: string, regelId: string, besluit: string, reden?: string): void;
   /** Registratie vanuit het consult: metingen en het SOEP-deelcontact. */
   registreer(patientId: string, observaties: Observation[], deelcontact?: Deelcontact): void;
+
+  /** De agenda van één rol, of van de hele praktijk. */
+  agenda(rol?: Rol): AgendaItem[];
+  /** Triage-instroom van vandaag: telefonisch én digitaal, in één stroom. */
+  triage(): Triageverzoek[];
+  handelTriageAf(id: string): void;
+  /** Autorisatieverzoeken die op de huisarts wachten. */
+  autorisaties(): Autorisatieverzoek[];
+  accordeer(ids: string[]): void;
+  wijsAutorisatieAf(id: string, reden: string): void;
+  /** Wat ingebedde partnerapps in de wachtkamer hebben opgeleverd. */
+  intakes(): WachtkamerIntake[];
+  bevestigIntake(id: string): void;
 }
 
 export class InMemoryRepository implements DossierRepository {
@@ -34,12 +54,33 @@ export class InMemoryRepository implements DossierRepository {
   private afspraken: Appointment[];
   private taakLijst: Task[] = [];
   private plannen = new Map<string, PersoonlijkPlan>();
+  private agendaItems: AgendaItem[];
+  private triageLijst: Triageverzoek[];
+  private autorisatieLijst: Autorisatieverzoek[];
+  private intakeLijst: WachtkamerIntake[];
   private bekend = new Map<string, Set<string>>();
   private afgehandeld = new Map<string, Map<string, { besluit: string; reden?: string }>>();
 
   constructor(praktijk?: Praktijk) {
     this.praktijk = praktijk ?? genereerPraktijk();
     this.afspraken = genereerSpreekuur(this.praktijk);
+    this.agendaItems = [
+      ...genereerAgenda(this.praktijk),
+      ...this.afspraken.map((a): AgendaItem => ({
+        id: a.id, start: a.start, duurMinuten: a.eindeMinuten, rol: 'poh-s',
+        patientId: a.patientId, naam: this.naamVan(a.patientId),
+        soort: a.soort, titel: 'Chronische controle', reden: a.reden, status: 'gepland',
+      })),
+    ].sort((a, b) => a.start.localeCompare(b.start));
+    this.triageLijst = genereerTriage(this.praktijk);
+    this.autorisatieLijst = genereerAutorisaties(this.praktijk);
+
+    const wachtkamerApp = appsVoor('wachtkamer')[0];
+    this.intakeLijst = wachtkamerApp
+      ? genereerIntakes(this.praktijk, this.agendaItems.filter((a) => a.rol === 'poh-s'), {
+          id: wachtkamerApp.id, naam: wachtkamerApp.naam, leverancier: wachtkamerApp.leverancier,
+        })
+      : [];
 
     // Startsituatie: bij twee derde van de patiënten zijn de relevante aandachtsgebieden
     // al eens gezien; bij de rest niet. Dat laatste is de achterstand die de praktijk
@@ -51,12 +92,22 @@ export class InMemoryRepository implements DossierRepository {
       if (set.size > 0) this.bekend.set(dossier.patient.id, set);
     });
 
-    // Een paar patiënten hebben expliciete persoonlijke afspraken — anders lijkt
-    // personalisatie een theoretische mogelijkheid in plaats van dagelijks gebruik.
+    // Zelfredzaamheid is bij deze praktijk de leidende factor voor contactfrequentie,
+    // dus hij hoort bij vrijwel iedereen in beeld te zijn — niet bij een enkeling.
+    this.praktijk.dossiers.forEach((dossier, i) => {
+      const bekend = this.bekend.get(dossier.patient.id);
+      if (!bekend || bekend.size === 0) return;
+      this.plannen.set(dossier.patient.id, {
+        ...leegPersoonlijkPlan(dossier.patient.id),
+        zelfredzaamheid: genereerZelfredzaamheid(dossier, this.praktijk.peildatum, 9000 + i),
+      });
+    });
+
+    // Een paar patiënten hebben daarnaast expliciete afspraken over contactfrequentie.
     const metPlan = this.praktijk.dossiers.filter((_, i) => i % 11 === 4);
     for (const dossier of metPlan) {
       this.plannen.set(dossier.patient.id, {
-        ...leegPersoonlijkPlan(dossier.patient.id),
+        ...this.persoonlijkPlan(dossier.patient.id),
         voorkeuren: { maxContactenPerJaar: 2 },
         doelen: [{
           id: `${dossier.patient.id}-doel-1`,
@@ -68,7 +119,39 @@ export class InMemoryRepository implements DossierRepository {
     }
   }
 
+  private naamVan(patientId: string): string {
+    const dossier = this.dossier(patientId);
+    if (!dossier) return patientId;
+    const n = dossier.patient.naam;
+    return [n.voornaam, n.tussenvoegsel, n.achternaam].filter(Boolean).join(' ');
+  }
+
   peildatum(): Date { return this.praktijk.peildatum; }
+
+  agenda(rol?: Rol): AgendaItem[] {
+    return rol ? this.agendaItems.filter((a) => a.rol === rol) : this.agendaItems;
+  }
+  triage(): Triageverzoek[] { return this.triageLijst; }
+  handelTriageAf(id: string): void {
+    const verzoek = this.triageLijst.find((t) => t.id === id);
+    if (verzoek) verzoek.status = 'afgehandeld';
+  }
+  autorisaties(): Autorisatieverzoek[] { return this.autorisatieLijst; }
+  accordeer(ids: string[]): void {
+    const set = new Set(ids);
+    for (const verzoek of this.autorisatieLijst) {
+      if (set.has(verzoek.id)) verzoek.status = 'geaccordeerd';
+    }
+  }
+  wijsAutorisatieAf(id: string, reden: string): void {
+    const verzoek = this.autorisatieLijst.find((v) => v.id === id);
+    if (verzoek) { verzoek.status = 'afgewezen'; verzoek.aanleiding = `${verzoek.aanleiding} — afgewezen: ${reden}`; }
+  }
+  intakes(): WachtkamerIntake[] { return this.intakeLijst; }
+  bevestigIntake(id: string): void {
+    const intake = this.intakeLijst.find((i) => i.id === id);
+    if (intake) intake.bevestigd = true;
+  }
   alleDossiers(): Dossier[] { return this.praktijk.dossiers; }
   dossier(patientId: string): Dossier | undefined {
     return this.praktijk.dossiers.find((d) => d.patient.id === patientId);

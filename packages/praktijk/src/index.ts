@@ -8,6 +8,8 @@
  * staat van het transport, wat een voorwaarde is voor de FHIR-facade uit docs/08.
  */
 export * from './populatie.js';
+export * from './werkvoorraad.js';
+export * from './configuratie-demo.js';
 export * from './terminologie.js';
 export * from './store.js';
 export * from './bff.js';

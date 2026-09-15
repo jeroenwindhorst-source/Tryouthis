@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { api } from '../api';
 import { useData } from '../gebruik';
 import { Icoon } from '../iconen';
-import { ErnstMerk, Fout, Kaart, Laden, Leeg, ModuleChips } from '../onderdelen';
+import {
+  ErnstMerk, Fout, IntakeKaart, Kaart, Laden, Leeg, ModuleChips, Zelfredzaamheidsmeter,
+} from '../onderdelen';
 
 /**
  * Consultvoorbereiding — in de procesplaat de stap die vóór het consult hoort te
@@ -58,7 +60,18 @@ export function Voorbereiden({ openPatient }: { openPatient: (id: string) => voi
             </header>
 
             <div className="body">
-              <div style={{ marginBottom: 12 }}><ModuleChips modules={v.modules} /></div>
+              <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+                <ModuleChips modules={v.modules} />
+                {v.zelfredzaamheid && (
+                  <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span className="mini">zelfredzaamheid</span>
+                    <Zelfredzaamheidsmeter gemiddelde={v.zelfredzaamheid.gemiddelde}
+                      niveau={v.zelfredzaamheid.niveau} />
+                  </span>
+                )}
+              </div>
+
+              {v.intake && <IntakeKaart intake={v.intake} />}
 
               <div className="raster2">
                 <div>
@@ -120,7 +133,7 @@ export function Voorbereiden({ openPatient }: { openPatient: (id: string) => voi
                         <Icoon naam="doel" grootte={13} /> Eigen doel van de patiënt
                       </div>
                       {v.doelen.map((d) => (
-                        <div key={d.tekst} style={{ fontSize: 12.5, marginTop: 3, color: '#24544f' }}>“{d.tekst}”</div>
+                        <div key={d.tekst} style={{ fontSize: 12.5, marginTop: 3, color: 'var(--merk-diep)' }}>“{d.tekst}”</div>
                       ))}
                     </div>
                   )}

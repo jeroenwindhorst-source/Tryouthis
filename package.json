@@ -1,8 +1,8 @@
 {
-  "name": "zorgplatform-eerstelijn",
+  "name": "cadans",
   "private": true,
   "version": "0.1.0",
-  "description": "FHIR-native huisartsinformatiesysteem voor teamgebaseerde, persoonsgerichte eerstelijnszorg",
+  "description": "Cadans — FHIR-native huisartsinformatiesysteem voor teamgebaseerde, persoonsgerichte eerstelijnszorg",
   "license": "UNLICENSED",
   "workspaces": [
     "packages/*",

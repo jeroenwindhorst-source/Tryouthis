@@ -37,7 +37,7 @@ export interface SuggestieActie {
 export interface Suggestie {
   id: string; regelId: string; regelVersie: string; patientId: string;
   soort: string; titel: string; bevinding: string; onderbouwing: string;
-  richtlijn?: { naam: string; paragraaf?: string };
+  richtlijn?: { naam: string; versie?: string; paragraaf?: string; url?: string; uitgever?: string };
   ernst: Ernst; klasse: 'logistiek' | 'klinisch'; automatisch: boolean;
   rol: string; acties: SuggestieActie[];
 }
@@ -47,9 +47,67 @@ export interface Processtap {
   naam: string; omschrijving: string; watZieIk: string; aantal: number; aandacht: number;
 }
 
+export interface AgendaRegel {
+  id: string; tijd: string; duurMinuten: number; soort: string; titel: string;
+  patientId?: string; naam?: string; leeftijd?: number; reden?: string;
+  modules: ModuleChip[]; aandacht?: string; voorbereid?: boolean; intakeKlaar?: boolean;
+}
+
+export interface WachtkamerIntake {
+  id: string; patientId: string; naam: string;
+  app: { id: string; naam: string; leverancier: string };
+  opgenomenOp: string; duurSeconden: number;
+  hulpvraag: string; anamnese: string;
+  codesuggesties: { icpc: string; display: string; vertrouwen: number }[];
+  metingen: { code: string; naam: string; waarde: number; eenheid: string }[];
+  bevestigd: boolean;
+}
+
+export interface Triageverzoek {
+  id: string; patientId: string; naam: string; leeftijd: number;
+  binnenOp: string; kanaal: string; hulpvraag: string;
+  zelftriage?: { urgentie: string; bestemming: string; toelichting: string };
+  status: string;
+}
+
+export interface Autorisatieverzoek {
+  id: string; patientId: string; naam: string; soort: string;
+  omschrijving: string; aanleiding: string;
+  ingediendDoor: { naam: string; rol: string };
+  ingediendOp: string; routine: boolean; redenGeenRoutine?: string; status: string;
+}
+
+export interface Autorisatiegroep {
+  soort: string; titel: string; toelichting: string;
+  routine: Autorisatieverzoek[]; vraagtOordeel: Autorisatieverzoek[];
+}
+
+export interface AssistentOverzicht {
+  datum: string;
+  zorgverlener: { naam: string; rol: string };
+  agenda: AgendaRegel[];
+  stroom: { triageNieuw: number; viaPortaal: number; viaTelefoon: number; zelfzorgAfgevangen: number };
+  autorisatieIngediend: number;
+  triage: Triageverzoek[];
+}
+
+export interface HuisartsOverzicht {
+  datum: string;
+  zorgverlener: { naam: string; rol: string };
+  agenda: AgendaRegel[];
+  autorisatie: { open: number; routine: number; vraagtOordeel: number; groepen: Autorisatiegroep[] };
+  team: { rol: string; naam: string; registraties: number; toelichting: string }[];
+}
+
+export interface Beheer {
+  lagen: { niveau: string; naam: string; beheerder: string; gewijzigdOp: string; uitleg: string; instellingen: string[] }[];
+  instellingen: { sleutel: string; waarde: unknown; niveau: string; bron: string; overschreven: { niveau: string; bron: string }[] }[];
+}
+
 export interface Dagstart {
   datum: string;
   zorgverlener: { naam: string; rol: string };
+  agenda: AgendaRegel[];
   stappen: Processtap[];
   automatisering: {
     graad: number;
@@ -65,11 +123,14 @@ export interface Voorbereiding {
   signalen: Signaal[];
   gespreksonderwerpen: { titel: string; bevinding: string; ernst: Ernst }[];
   doelen: { tekst: string }[];
+  zelfredzaamheid?: { gemiddelde: number; niveau: string; knelpunten: string[] };
+  intake?: WachtkamerIntake;
 }
 
 export interface MonitoringRegel {
   patientId: string; naam: string; leeftijd: number;
   modules: ModuleChip[]; signalen: Signaal[]; suggesties: Suggestie[];
+  zelfredzaamheid?: { gemiddelde: number; niveau: string; richting?: string };
 }
 
 export interface InstroomRegel {
@@ -114,8 +175,17 @@ export interface Ketenbijdrage {
   volledigheid: number;
 }
 
+export interface Zelfredzaamheidsbeeld {
+  gemiddelde: number; niveau: string; factor: number; betekenis: string;
+  knelpunten: { domein: { id: string; naam: string; zorgbetekenis: string }; score: number }[];
+  sterk: { domein: { id: string; naam: string }; score: number }[];
+  digitaalBereikbaar: boolean; raaktModules: string[];
+  trend?: { verschil: number; richting: string };
+}
+
 export interface Zorgplan {
   patientId: string; intensiteit: string;
+  zelfredzaamheid?: Zelfredzaamheidsbeeld;
   modules: ActieveModule[];
   nietActief: { id: string; naam: string; herkomst: string; onderbouwing: string }[];
   contacten: GeplandContact[];
@@ -150,6 +220,7 @@ export interface PatientOverzicht {
   automatisering: { automatischUitgevoerd: Suggestie[]; wachtOpMens: Suggestie[]; automatiseringsgraad: number };
   oproepen: { uitnodigenOp: string; kanaal: string; escalatieOp: string; toelichting: string }[];
   instroom: { nieuw: { moduleId: string; naam: string; onderbouwing: string }[] };
+  intake?: WachtkamerIntake;
 }
 
 export interface RegistratieUitkomst {
@@ -170,7 +241,7 @@ export interface Protocol {
   toelichting: string; regelsetVersie: string;
   modules: {
     id: string; naam: string; omschrijving: string; icoon: string; rol: string;
-    richtlijnen: { naam: string; versie: string }[]; relevantie: string;
+    richtlijnen: { naam: string; versie: string; url?: string; uitgever?: string }[]; relevantie: string;
     items: {
       code: string; naam: string; basisIntervalDagen: number;
       zelfAanleverbaar?: boolean; labVooraf?: boolean;
@@ -207,6 +278,17 @@ const httpApi = {
   instroom: () => haal<InstroomRegel[]>('/api/poh/instroom'),
   afronden: () => haal<Afsluiting>('/api/poh/afronden'),
   praktijk: () => haal<Praktijksamenvatting>('/api/praktijk/samenvatting'),
+  assistent: () => haal<AssistentOverzicht>('/api/assistent/overzicht'),
+  huisarts: () => haal<HuisartsOverzicht>('/api/huisarts/overzicht'),
+  agenda: (rol: string) => haal<AgendaRegel[]>(`/api/agenda/${rol}`),
+  beheer: () => haal<Beheer>('/api/beheer'),
+  intakes: () => haal<WachtkamerIntake[]>('/api/intakes'),
+  handelTriageAf: (id: string) => stuur<AssistentOverzicht>(`/api/triage/${id}/afhandelen`, {}),
+  accordeer: (ids: string[]) => stuur<HuisartsOverzicht>('/api/autorisatie/accordeer', { ids }),
+  wijsAutorisatieAf: (id: string, reden: string) =>
+    stuur<HuisartsOverzicht>(`/api/autorisatie/${id}/afwijzen`, { reden }),
+  bevestigIntake: (id: string) =>
+    stuur<{ intake: WachtkamerIntake }>(`/api/intake/${id}/bevestig`, {}),
   protocol: () => haal<Protocol>('/api/protocol'),
   patient: (id: string) => haal<PatientOverzicht>(`/api/patient/${id}`),
   suggestie: (patientId: string, regelId: string, actieId: string, reden?: string) =>

@@ -1,7 +1,7 @@
 import { api, type Processtap } from '../api';
 import { useData } from '../gebruik';
 import { Icoon } from '../iconen';
-import { Fout, Kaart, Laden } from '../onderdelen';
+import { Agenda, Fout, Kaart, Laden } from '../onderdelen';
 
 const STAP_ICOON: Record<Processtap['id'], string> = {
   voorbereiden: 'klembord', spreekuur: 'agenda', monitoren: 'radar', afronden: 'afvinken',
@@ -57,6 +57,10 @@ export function Dagstart({ gaNaar, openPatient }: {
       </div>
 
       <div className="raster2">
+        <Kaart titel="Mijn dag" icoon="agenda" telling={`${data.agenda.length} in de agenda`}>
+          <Agenda regels={data.agenda} openPatient={openPatient} />
+        </Kaart>
+
         <div>
           <div className="automatisch">
             <h3><Icoon naam="bliksem" /> Het systeem heeft dit vandaag al voor je gedaan</h3>
@@ -66,16 +70,15 @@ export function Dagstart({ gaNaar, openPatient }: {
                   <li key={x.titel}><strong>{x.aantal}×</strong> {x.titel.toLowerCase()}</li>
                 ))}
               </ul>
-            ) : <div style={{ fontSize: 12.5, color: '#12684d' }}>Niets automatisch gedaan vandaag.</div>}
-            <div style={{ marginTop: 10, fontSize: 12, color: '#0b5c43' }}>
+            ) : <div style={{ fontSize: 12.5, color: 'var(--ok)' }}>Niets automatisch gedaan vandaag.</div>}
+            <div style={{ marginTop: 10, fontSize: 12, color: 'var(--ok)' }}>
               {data.automatisering.graad}% van het werk dat het systeem signaleerde is logistiek en
               draait zonder tussenkomst. De overige {data.automatisering.wachtOpJou} punten zijn
               klinische beslissingen — die blijven bij jou.
             </div>
           </div>
 
-          <Kaart titel="Vraagt vandaag als eerste aandacht" icoon="waarschuwing"
-            telling={data.urgent.length}>
+          <Kaart titel="Vraagt als eerste aandacht" icoon="waarschuwing" telling={data.urgent.length}>
             {data.urgent.length === 0
               ? <div className="mini">Niets urgents. Dat is ook informatie.</div>
               : (
@@ -94,24 +97,24 @@ export function Dagstart({ gaNaar, openPatient }: {
                 </div>
               )}
           </Kaart>
-        </div>
 
-        <Kaart titel="Hoe dit scherm werkt" icoon="boek">
-          <p style={{ marginTop: 0, color: 'var(--ink-2)', fontSize: 12.5 }}>
-            De vier kaarten hierboven zijn je werkproces, in volgorde. Je begint links en eindigt
-            rechts. Elke kaart zegt wat je er vindt, zodat je niet hoeft te zoeken waar je werk staat.
-          </p>
-          <ul className="uitleg">
-            <li><strong>Voorbereiden</strong> — is het lab binnen, is de vragenlijst ingevuld, waar gaat dit gesprek over?</li>
-            <li><strong>Spreekuur</strong> — het plan van deze mens, de suggesties en je registratie in één scherm.</li>
-            <li><strong>Monitoren</strong> — alleen wie afwijkt. Wie stabiel is, hoeft niet langs.</li>
-            <li><strong>Afronden</strong> — wat er open staat en wat er automatisch is geregeld.</li>
-          </ul>
-          <p style={{ color: 'var(--ink-2)', fontSize: 12.5, marginBottom: 0 }}>
-            Er staat nergens een zorgprogramma. Je werkt met aandachtsgebieden per mens; de
-            koppeling naar ketenzorg en declaratie gebeurt automatisch op de achtergrond.
-          </p>
-        </Kaart>
+          <Kaart titel="Hoe dit scherm werkt" icoon="boek">
+            <p style={{ marginTop: 0, color: 'var(--ink-2)', fontSize: 12.5 }}>
+              De vier kaarten bovenaan zijn je werkproces, in volgorde. Je begint links en eindigt
+              rechts. Elke kaart zegt wat je er vindt, zodat je niet hoeft te zoeken waar je werk staat.
+            </p>
+            <ul className="uitleg">
+              <li><strong>Voorbereiden</strong> — is het lab binnen, is de vragenlijst ingevuld, waar gaat dit gesprek over?</li>
+              <li><strong>Spreekuur</strong> — het plan van deze mens, de suggesties en je registratie in één scherm.</li>
+              <li><strong>Monitoren</strong> — alleen wie afwijkt. Wie stabiel is, hoeft niet langs.</li>
+              <li><strong>Afronden</strong> — wat er open staat en wat er automatisch is geregeld.</li>
+            </ul>
+            <p style={{ color: 'var(--ink-2)', fontSize: 12.5, marginBottom: 0 }}>
+              Er staat nergens een zorgprogramma. Je werkt met aandachtsgebieden per mens; de
+              koppeling naar ketenzorg en declaratie gebeurt automatisch op de achtergrond.
+            </p>
+          </Kaart>
+        </div>
       </div>
     </>
   );

@@ -1,6 +1,6 @@
 import type { Dossier } from '@zpe/fhir-model';
 import { laatsteMeting, leeftijd, metingReeks, numeriekeWaarde } from '@zpe/fhir-model';
-import { CODE } from './protocol.js';
+import { CODE, type Richtlijn } from './protocol.js';
 import { beoordeelInstroom } from './instroom.js';
 import type { Zorgplan } from './zorgplan.js';
 
@@ -43,7 +43,11 @@ export interface Suggestie {
   bevinding: string;
   /** Waarom dit ertoe doet. */
   onderbouwing: string;
-  richtlijn?: { naam: string; paragraaf?: string };
+  /**
+   * Waarop dit advies berust. Verplicht bij klinische regels: een advies zonder
+   * herleidbare bron is niet verantwoordbaar en bij een MDR-audit niet houdbaar.
+   */
+  richtlijn?: Richtlijn;
   ernst: 'informatief' | 'aandacht' | 'urgent';
   klasse: 'logistiek' | 'klinisch';
   /** Alleen logistieke regels mogen automatisch. */
@@ -105,7 +109,9 @@ const glucoseOntregeld: Regel = (ctx) => {
       'Boven 64 mmol/mol is intensivering doorgaans aangewezen. Begin bij therapietrouw, ' +
       'leefstijl en inhalatie-/injectietechniek voordat er middelen bij komen — dat levert ' +
       'vaker resultaat op dan ophogen.',
-    richtlijn: { naam: 'NHG-Standaard Diabetes mellitus type 2', paragraaf: 'Stappenplan bloedglucoseverlagende middelen' },
+    richtlijn: { naam: 'NHG-Standaard Diabetes mellitus type 2', versie: 'M01', uitgever: 'NHG',
+      paragraaf: 'Stappenplan bloedglucoseverlagende middelen',
+      url: 'https://richtlijnen.nhg.org/standaarden/diabetes-mellitus-type-2' },
     ernst: waarde > 75 ? 'urgent' : 'aandacht',
     klasse: 'klinisch',
     automatisch: false,
@@ -135,7 +141,9 @@ const bloeddrukTeHoog: Regel = (ctx) => {
         'onderscheidt praktijkhypertensie van werkelijke hypertensie en voorkomt onnodig ophogen.'
       : 'Eén verhoogde meting is onvoldoende basis voor beleid. Een thuismeetreeks is betrouwbaarder ' +
         'dan een tweede praktijkmeting.',
-    richtlijn: { naam: 'NHG-Standaard Cardiovasculair risicomanagement', paragraaf: 'Bloeddrukmeting en behandeling' },
+    richtlijn: { naam: 'NHG-Standaard Cardiovasculair risicomanagement', versie: 'M84', uitgever: 'NHG',
+      paragraaf: 'Bloeddrukmeting en behandeling',
+      url: 'https://richtlijnen.nhg.org/standaarden/cardiovasculair-risicomanagement' },
     ernst: waarde >= 180 ? 'urgent' : 'aandacht',
     klasse: 'klinisch',
     automatisch: false,
@@ -167,7 +175,9 @@ const nierfunctieGedaald: Regel = (ctx) => {
     onderbouwing:
       'Bij een eGFR onder 45 ml/min of een snelle daling moeten dosering en keuze van middelen ' +
       'opnieuw tegen het licht worden gehouden — met name metformine, NSAID’s, RAS-remmers en diuretica.',
-    richtlijn: { naam: 'NHG-Standaard Chronische nierschade', paragraaf: 'Medicatiebewaking bij verminderde nierfunctie' },
+    richtlijn: { naam: 'NHG-Standaard Chronische nierschade', versie: 'M109', uitgever: 'NHG',
+      paragraaf: 'Medicatiebewaking bij verminderde nierfunctie',
+      url: 'https://richtlijnen.nhg.org/standaarden/chronische-nierschade' },
     ernst: waarde < 30 ? 'urgent' : 'aandacht',
     klasse: 'klinisch',
     automatisch: false,
@@ -198,7 +208,8 @@ const rookadvies: Regel = (ctx) => {
       'Stoppen met roken is bij deze aandoeningen de interventie met verreweg de grootste ' +
       'gezondheidswinst — groter dan welke medicatieaanpassing ook. Begeleiding met ' +
       'farmacotherapie verdubbelt de slaagkans ten opzichte van alleen advies.',
-    richtlijn: { naam: 'NHG-Behandelrichtlijn Stoppen met roken' },
+    richtlijn: { naam: 'NHG-Behandelrichtlijn Stoppen met roken', versie: '2024', uitgever: 'NHG',
+      url: 'https://richtlijnen.nhg.org/behandelrichtlijnen/stoppen-met-roken' },
     ernst: 'aandacht',
     klasse: 'klinisch',
     automatisch: false,
@@ -225,6 +236,9 @@ const mentaalLaag: Regel = (ctx) => {
       'Een lage score bij een somatische controle is het signaal dat in de huidige werkwijze ' +
       'structureel gemist wordt: er wordt niet naar gevraagd en de lijst wordt niet gelezen. ' +
       'Hier hoort het bovenaan de consultvoorbereiding te staan.',
+    richtlijn: { naam: 'Mijn Positieve Gezondheid', versie: '2024',
+      uitgever: 'Institute for Positive Health',
+      url: 'https://www.iph.nl/positieve-gezondheid/wat-is-het/' },
     ernst: 'aandacht',
     klasse: 'klinisch',
     automatisch: false,
@@ -260,6 +274,9 @@ const allesStabiel: Regel = (ctx) => {
       'Aanhoudend stabiele waarden rechtvaardigen een ruimer controle-interval. Dit is de suggestie ' +
       'die geen enkel bestaand systeem doet: er wordt alleen gesignaleerd wat misgaat, nooit wat ' +
       'goed genoeg gaat om minder te doen.',
+    richtlijn: { naam: 'NHG-Standaard Diabetes mellitus type 2', versie: 'M01', uitgever: 'NHG',
+      paragraaf: 'Controlefrequentie bij stabiele instelling',
+      url: 'https://richtlijnen.nhg.org/standaarden/diabetes-mellitus-type-2' },
     ernst: 'informatief',
     klasse: 'klinisch',
     automatisch: false,
@@ -372,7 +389,39 @@ const thuismetingAanbieden: Regel = (ctx) => {
   })];
 };
 
+const zelfredzaamheidGedaald: Regel = (ctx) => {
+  const beeld = ctx.plan.zelfredzaamheid;
+  if (!beeld?.trend || beeld.trend.richting !== 'achteruit') return [];
+
+  return [maak(ctx, 'zelfredzaamheid-gedaald', {
+    soort: 'planning',
+    titel: 'Zelfredzaamheid is achteruitgegaan',
+    bevinding:
+      `Score ${beeld.gemiddelde} van 5 (${beeld.niveau}), ${Math.abs(beeld.trend.verschil)} punt lager ` +
+      `dan bij de vorige afname` +
+      (beeld.knelpunten.length
+        ? `. Knelpunten: ${beeld.knelpunten.map((k) => k.domein.naam.toLowerCase()).join(', ')}.`
+        : '.'),
+    onderbouwing:
+      'Afnemende zelfredzaamheid voorspelt uitval uit de zorg beter dan een enkele afwijkende ' +
+      'meetwaarde. Wie het zelf niet meer redt, verdwijnt uit beeld zodra de waarden meevallen — ' +
+      'en komt terug op een moment dat er meer nodig is.',
+    ernst: beeld.gemiddelde < 2.5 ? 'urgent' : 'aandacht',
+    klasse: 'klinisch',
+    automatisch: false,
+    rol: 'poh-s',
+    acties: [
+      { id: 'verhoog-frequentie', label: 'Vaker contact inplannen', aard: 'primair',
+        gevolg: 'Controle-intervallen worden korter; het plan wordt direct herberekend.' },
+      { id: 'sociaal-domein', label: 'Overleg met wijkteam of ouderenadviseur', aard: 'alternatief',
+        gevolg: 'Consultatievraag naar het sociaal domein, met toestemming van de patiënt.' },
+      AFWIJZEN,
+    ],
+  })];
+};
+
 const REGELS: Regel[] = [
+  zelfredzaamheidGedaald,
   glucoseOntregeld, bloeddrukTeHoog, nierfunctieGedaald, rookadvies, mentaalLaag,
   allesStabiel, nieuwAandachtsgebied,
   labKlaarzetten, vragenlijstUitzetten, thuismetingAanbieden,

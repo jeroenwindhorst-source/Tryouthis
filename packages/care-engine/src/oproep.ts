@@ -33,7 +33,10 @@ const isoDatum = (ms: number): string => new Date(ms).toISOString().slice(0, 10)
  * goedkoper is, maar omdat de responssnelheid hoger ligt en de assistent er geen
  * werk aan heeft. Telefoon blijft bestaan voor wie niet digitaal kan.
  */
-export function kiesKanaal(patient: Patient): Kanaal {
+export function kiesKanaal(patient: Patient, digitaalBereikbaar = true): Kanaal {
+  // Digitaal eerst, maar niet als de zelfredzaamheid dat niet toelaat: een portaalbericht
+  // aan iemand die het niet opent, is geen oproep maar een gemiste patiënt.
+  if (!digitaalBereikbaar) return patient.contact?.telefoon ? 'telefoon' : 'brief';
   const voorkeur = patient.communicatievoorkeur;
   if (voorkeur === 'portaal' && patient.portaalActief) return 'portaal';
   if (voorkeur && voorkeur !== 'portaal') return voorkeur;
@@ -63,7 +66,7 @@ export function planOproepen(
     return [];   // geen oproepen; bewaking op uitblijvende metingen loopt apart
   }
 
-  const kanaal = kiesKanaal(patient);
+  const kanaal = kiesKanaal(patient, plan.zelfredzaamheid?.digitaalBereikbaar ?? true);
 
   return plan.contacten.map((contact) => {
     const streef = new Date(contact.datum).getTime();

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import {
   api, MODULE_NAAM,
   type GeplandContact, type GeplandItem, type PatientOverzicht, type RegistratieUitkomst,
@@ -6,7 +6,8 @@ import {
 import { useData } from '../gebruik';
 import { Icoon, icoonVanModule } from '../iconen';
 import {
-  ErnstMerk, Fout, Kaart, Laden, ModuleIdChips, Signalen, SuggestieKaart,
+  ErnstMerk, Fout, IntakeKaart, Kaart, Laden, ModuleIdChips, Signalen, SuggestieKaart,
+  Zelfredzaamheidsmeter,
 } from '../onderdelen';
 
 const INTENSITEITEN = [
@@ -64,6 +65,41 @@ export function Consult({ patientId, terug }: { patientId: string; terug: () => 
       <div className="dossier">
         {/* ── Links: wie is dit ────────────────────────────────────────── */}
         <div>
+          {plan.zelfredzaamheid && plan.zelfredzaamheid.gemiddelde > 0 && (
+            <Kaart titel="Zelfredzaamheid" icoon="schild"
+              telling={plan.zelfredzaamheid.trend
+                ? `${plan.zelfredzaamheid.trend.verschil > 0 ? '+' : ''}${plan.zelfredzaamheid.trend.verschil}`
+                : undefined}>
+              <Zelfredzaamheidsmeter
+                gemiddelde={plan.zelfredzaamheid.gemiddelde}
+                niveau={plan.zelfredzaamheid.niveau}
+                richting={plan.zelfredzaamheid.trend?.richting} />
+              <p className="reden" style={{ marginTop: 9 }}>{plan.zelfredzaamheid.betekenis}</p>
+
+              {plan.zelfredzaamheid.knelpunten.length > 0 && (
+                <>
+                  <div className="mini" style={{ marginTop: 10, marginBottom: 4 }}>Knelpunten</div>
+                  {plan.zelfredzaamheid.knelpunten.map((k) => (
+                    <div key={k.domein.id} className="domein"
+                      style={{ '--zrm-kleur': 'var(--aandacht)' } as CSSProperties}>
+                      <span className="naam">{k.domein.naam}
+                        <div className="mini">{k.domein.zorgbetekenis}</div>
+                      </span>
+                      <span className="punten">
+                        {[1, 2, 3, 4, 5].map((n) => <i key={n} data-aan={n <= k.score} />)}
+                      </span>
+                    </div>
+                  ))}
+                </>
+              )}
+
+              <div className="mini" style={{ marginTop: 10 }}>
+                Contact-intervallen staan hierdoor op factor {plan.zelfredzaamheid.factor}.
+                {!plan.zelfredzaamheid.digitaalBereikbaar && ' Digitale oproep is niet passend.'}
+              </div>
+            </Kaart>
+          )}
+
           {plan.doelen.length > 0 && (
             <Kaart titel="Wat deze patiënt zelf wil" icoon="doel">
               {plan.doelen.map((d) => (
@@ -112,6 +148,14 @@ export function Consult({ patientId, terug }: { patientId: string; terug: () => 
 
         {/* ── Midden: beslissen, dan plannen ───────────────────────────── */}
         <div>
+          {data.intake && (
+            <IntakeKaart intake={data.intake} bezig={bezigMet === 'intake'}
+              opBevestig={() => werk('intake', async () => {
+                await api.bevestigIntake(data.intake!.id);
+                return api.patient(patientId);
+              })} />
+          )}
+
           <Kaart titel="Beslissingsondersteuning" icoon="gesprek"
             telling={`${klinisch.length} voor jou`}>
             {klinisch.length === 0 && logistiek.length === 0 && (
@@ -130,7 +174,7 @@ export function Consult({ patientId, terug }: { patientId: string; terug: () => 
                   <ul>
                     {logistiek.map((s) => <li key={s.id}>{s.titel} — {s.bevinding}</li>)}
                   </ul>
-                  <div style={{ marginTop: 8, fontSize: 12, color: '#0b5c43' }}>
+                  <div style={{ marginTop: 8, fontSize: 12, color: 'var(--ok)' }}>
                     Logistiek werk zonder klinische beslissing. Je kunt het terugdraaien, maar je
                     hoeft er niets voor te doen.
                   </div>
@@ -149,7 +193,7 @@ export function Consult({ patientId, terug }: { patientId: string; terug: () => 
                 {uitkomst.vastgelegd.map((v) => <li key={v.code}>{v.naam}: {v.waarde}</li>)}
               </ul>
               {uitkomst.verantwoordingGevuld.length > 0 && (
-                <div style={{ marginTop: 8, fontSize: 12.5, color: '#12684d' }}>
+                <div style={{ marginTop: 8, fontSize: 12.5, color: 'var(--ok)' }}>
                   Hiermee zijn vanzelf op orde:{' '}
                   {uitkomst.verantwoordingGevuld.map((v) => `${v.indicator} (${v.keten})`).join(', ')}.
                   Je hebt daar niets extra's voor ingevuld.

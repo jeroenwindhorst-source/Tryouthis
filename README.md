@@ -1,12 +1,16 @@
-# Zorgplatform Eerstelijn
+# Cadans
 
 Een FHIR-native, procesgedreven informatiesysteem voor de Nederlandse eerste lijn —
 gebouwd rond het zorgteam en het zorgproces, met **één geïntegreerd protocol** in plaats
 van een zorgprogramma per aandoening.
 
+De naam benoemt wat het systeem anders doet: het ritme van de zorg volgt de mens — zijn
+klinische toestand én zijn zelfredzaamheid — niet het ziektelabel.
+
 > **Status: fase 0 — fundament.** Architectuur, datamodel, terminologielaag, het
-> geïntegreerde protocol, beslissingsondersteuning en een werkende werkplek voor de
-> POH-Somatiek op synthetische data. Nog geen productiesysteem.
+> geïntegreerde protocol, zelfredzaamheid als sturende factor, beslissingsondersteuning,
+> configuratie op vier niveaus, en werkplekken voor POH-S, doktersassistent en huisarts
+> op synthetische data. Nog geen productiesysteem.
 
 ---
 
@@ -21,15 +25,19 @@ Daarom is de bouwsteen hier geen aandoening maar een **aandachtsgebied**:
 > glucoseregulatie · hart- en vaatrisico · nierfunctie · ademhaling · leefstijl ·
 > mentaal welbevinden · medicatieveiligheid · kwetsbaarheid
 
-Drie lagen bepalen het plan, in deze volgorde ([`docs/04`](docs/04-zorgproces.md)):
+Vier lagen bepalen het plan ([`docs/04`](docs/04-zorgproces.md), [`docs/15`](docs/15-zelfredzaamheid.md)):
 
 1. **het protocol** — welke gebieden zijn relevant, wat is het basisinterval;
-2. **de situatie** — HbA1c twee metingen onder 53 → halfjaarlijks; boven 64 → zes weken.
-   Niet het ziektelabel maar de toestand bepaalt de frequentie;
-3. **de persoon** — gebieden aan of uit met reden, eigen intervallen, een eigen maximum
-   aantal contacten per jaar, thuis meten in plaats van langskomen.
+2. **de klinische situatie** — HbA1c twee metingen onder 53 → halfjaarlijks; boven 64 →
+   zes weken. Niet het ziektelabel maar de toestand bepaalt de frequentie;
+3. **de zelfredzaamheid** — elf leefdomeinen, score 1–5. Wie het zelf redt heeft minder
+   contact nodig bij exact dezelfde waarden; wie het niet redt juist meer. De score stuurt
+   ook het oproepkanaal, activeert aandachtsgebieden zonder diagnose, en weegt mee in de
+   volgorde van het monitoringcohort;
+4. **de persoonlijke afspraak** — gebieden aan of uit met reden, eigen intervallen, een
+   eigen maximum aantal contacten per jaar, thuis meten in plaats van langskomen.
 
-Laag 3 wint altijd van 1 en 2, mits de reden wordt vastgelegd.
+Laag 4 wint altijd van de rest, mits de reden wordt vastgelegd.
 
 Landelijke ketenzorg (DM, CVRM, COPD, ouderenzorg) verdwijnt niet — die is nodig voor
 declaratie. Maar het is een **projectie achteraf**: niemand registreert "voor de keten".
@@ -48,6 +56,12 @@ daaronder registreren, dan het plan — en rechts de verantwoording die zichzelf
 | --- | --- | --- |
 | Eén plan, geen programma's | `packages/care-engine/src/protocol.ts` | Nergens in de werkplek kies je een zorgprogramma |
 | Het interval volgt uit de situatie | `zorgplan.ts` — intervalregels | Dezelfde diagnose, andere frequentie, afhankelijk van de waarden |
+| Zelfredzaamheid stuurt de frequentie | `zelfredzaamheid.ts` | Identieke waarden, andere score → aantoonbaar ander aantal contacten |
+| Drie rollen op één dossier | `apps/web/src/schermen/` | POH-S, doktersassistent en huisarts, elk met eigen werkproces |
+| Een teller wordt een werkvoorraad | `werkvoorraad.ts` | 163 autorisaties → 35 die een arts nodig hebben, de rest veilig in bulk |
+| Configuratie is geen code | `packages/configuratie` | Vier niveaus, per instelling zichtbaar waar hij is gezet |
+| Partnerapps voelen eigen, blijven herkenbaar | `IntakeKaart` | Wachtkamer-intake landt in het scherm, telt pas mee na bevestiging |
+| Elk advies wijst naar zijn bron | `beslisondersteuning.ts` | Klikbare verwijzing naar NHG-standaard met paragraaf en versie |
 | Echt op maat | `PersoonlijkPlan` | "Maximaal 2× per jaar" past het hele plan aan, mét benoemde consequenties |
 | Minder contacten bij multimorbiditeit | `vergelijking` | 8 losse trajectcontacten → 4 geïntegreerde bij dezelfde dekking |
 | Verantwoording vult zichzelf | `ketenkoppeling.ts` | Eén registratie → ketenindicatoren van 29% naar 100%, zonder apart invulwerk |
@@ -69,11 +83,15 @@ begeleiding — ze bestaan simpelweg niet in de ketenadministratie.
 
 ---
 
-## De werkplek volgt het werkproces
+## Drie rollen, één dossier
 
-Niet het dossier maar de dag van de POH is de navigatie:
+Elke rol begint met de eigen dag als agenda en volgt daarna het eigen werkproces:
 
-**Dagstart** → **Voorbereiden** → **Spreekuur** → **Monitoren** → **Afronden**
+| Rol | Werkproces |
+| --- | --- |
+| **POH-Somatiek** | Dagstart → Voorbereiden → Spreekuur → Monitoren → Afronden |
+| **Doktersassistent** | Dagstart → Triage (digitaal en telefonisch door één model) → Dossiers |
+| **Huisarts** | Dagstart → Autoriseren → Spreekuur → Het team |
 
 Per stap staat in het scherm letterlijk wát je daar ziet en wát je kunt doen.
 
@@ -86,7 +104,7 @@ Per stap staat in het scherm letterlijk wát je daar ziet en wát je kunt doen.
 ```bash
 npm install
 npm run build
-npm test            # 44 tests: terminologie, protocol, planning, beslisregels, vragenlijsten
+npm test            # 51 tests: terminologie, protocol, zelfredzaamheid, planning, beslisregels
 
 npm run web         # werkplek op http://localhost:5173 — draait zónder server
 ```
@@ -127,9 +145,10 @@ docs/           architectuur, ontwerpbesluiten en de analyse van bestaande syste
 packages/
   fhir-model/   FHIR R4-typen, herkomst, dossier-views
   terminology/  ICPC-1 NL ↔ SNOMED CT, referentieset, zoeken, ontvangst
-  care-engine/  protocol · ketenkoppeling · instroom · zorgplan · beslisondersteuning
-                · vragenlijsten · oproep
-  praktijk/     samenstelling tot schermen + synthetische praktijk — géén HTTP
+  configuratie/ niveaus, instellingen, app-registratie — geen afhankelijkheden
+  care-engine/  protocol · zelfredzaamheid · ketenkoppeling · instroom · zorgplan
+                · beslisondersteuning · vragenlijsten · oproep
+  praktijk/     samenstelling tot schermen, werkvoorraad + synthetische praktijk — géén HTTP
 apps/
   api/          FHIR-facade en werkproces-endpoints over `praktijk`
   web/          werkplek POH-Somatiek (browser of HTTP, zelfde interface)
@@ -155,8 +174,10 @@ HTTP en geen opslag; `apps/*` bevatten geen klinische regels.
 | [10 — Analyse bestaande HIS'en](docs/10-analyse-bestaande-hissen.md) | mediKIT, HealthConnected, Bricks |
 | [11 — Applicatiefunctiemodel](docs/11-applicatiefunctiemodel.md) | AHA-model als functiedecompositie |
 | [12 — Procesmodel](docs/12-procesmodel.md) | De swimlanes, uitgewerkt naar uitvoerbare definities |
-| [13 — Beslissingsondersteuning](docs/13-beslissingsondersteuning.md) | Klinisch vs. logistiek, automatisering, MDR |
-| [ADR's](docs/adr/) | Zeven vastgelegde ontwerpbesluiten met alternatieven |
+| [13 — Beslissingsondersteuning](docs/13-beslissingsondersteuning.md) | Klinisch vs. logistiek, automatisering, bronverwijzing, MDR |
+| [14 — Configuratie en apps](docs/14-configuratie.md) | Vier niveaus, terminologie als instelling, ingebedde partnerapps |
+| [15 — Zelfredzaamheid](docs/15-zelfredzaamheid.md) | Leefdomeinen, score, doorwerking op frequentie en kanaal |
+| [ADR's](docs/adr/) | Acht vastgelegde ontwerpbesluiten met alternatieven |
 
 ---
 
@@ -171,6 +192,12 @@ het inleesformaat staat in [`docs/02` §6](docs/02-terminologie.md).
 **Meetinstrumenten.** De vragenlijsten in `vragenlijsten-demo.ts` bootsen de structuur en
 scoringslogica van bestaande instrumenten na met eigen formuleringen. CCQ, PHQ-9, GAD-7
 en EQ-5D zijn auteursrechtelijk beschermd en vragen een licentie voor digitaal gebruik.
+Hetzelfde geldt voor de Zelfredzaamheid-Matrix: de domeinnamen zijn feitelijk, maar de
+officiële scoringsankers moeten vóór gebruik worden geverifieerd ([`docs/15`](docs/15-zelfredzaamheid.md)).
+
+**Richtlijnverwijzingen.** De links naar `richtlijnen.nhg.org` volgen het bekende
+patroon maar zijn niet stuk voor stuk tegen de live index gecontroleerd. Doe dat vóór
+release: standaarden worden hernoemd en samengevoegd.
 
 **Klinische inhoud.** Drempelwaarden, intervallen en beslisregels in `protocol.ts` en
 `beslisondersteuning.ts` zijn plausibel maar niet geverifieerd tegen de actuele
@@ -185,6 +212,9 @@ NHG-standaarden. Ze dienen om de motor te bouwen, niet om zorg mee te leveren.
    onvoldoende ondersteund" ([`docs/11`](docs/11-applicatiefunctiemodel.md)).
 3. **Toetsing van de acht aandachtsgebieden** met een POH en een kaderhuisarts: zijn dit
    de juiste gebieden, en kloppen de relevantieregels?
+   Idem voor de vertaling van de zelfredzaamheidsscore naar contactfrequentie — de
+   afkapwaarden in [`docs/15`](docs/15-zelfredzaamheid.md) §3 zijn beredeneerd, niet
+   gevalideerd.
 4. **Een echt protocol** van een zorggroep of de AHA, om de intervalregels tegen de
    praktijk te toetsen — te beginnen bij hart- en vaatrisico.
 5. **Eén of twee praktijken** als klankbord, nu al.

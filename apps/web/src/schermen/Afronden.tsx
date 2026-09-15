@@ -33,7 +33,7 @@ export function Afronden() {
       {open.length === 0 ? (
         <div className="automatisch">
           <h3><Icoon naam="afvinken" /> Klaar</h3>
-          <div style={{ fontSize: 12.5, color: '#12684d' }}>
+          <div style={{ fontSize: 12.5, color: 'var(--ok)' }}>
             Alle registraties zijn compleet, de verantwoording is op orde en er staat niets open.
           </div>
         </div>

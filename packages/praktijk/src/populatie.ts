@@ -1,7 +1,7 @@
 import type {
   Appointment, Dossier, EpisodeOfCare, Herkomst, MedicationStatement, Observation, Patient,
 } from '@zpe/fhir-model';
-import { CODE } from '@zpe/care-engine';
+import { CODE, type DomeinScore, type Zelfredzaamheid } from '@zpe/care-engine';
 
 /**
  * Synthetische praktijkpopulatie.
@@ -12,7 +12,7 @@ import { CODE } from '@zpe/care-engine';
  */
 
 /** Kleine deterministische generator (mulberry32) — geen externe afhankelijkheid nodig. */
-function rng(zaad: number): () => number {
+export function rng(zaad: number): () => number {
   let a = zaad >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;
@@ -258,4 +258,68 @@ export function genereerSpreekuur(praktijk: Praktijk, zaad = 42): Appointment[] 
     });
   }
   return afspraken.sort((a, b) => a.start.localeCompare(b.start));
+}
+
+/**
+ * Zelfredzaamheid per patiënt, deterministisch afgeleid.
+ *
+ * Bewust gecorreleerd met leeftijd, aantal aandoeningen en polyfarmacie: wie meer
+ * ziektelast draagt scoort gemiddeld lager, maar de spreiding is groot. Juist die
+ * spreiding is het punt — twee patiënten met identieke waarden kunnen heel
+ * verschillende zorg nodig hebben.
+ */
+export function genereerZelfredzaamheid(
+  dossier: Dossier, peildatum: Date, zaad: number,
+): Zelfredzaamheid {
+  const willekeurig = rng(zaad);
+  const geboren = new Date(dossier.patient.geboortedatum);
+  const leeftijd = peildatum.getFullYear() - geboren.getFullYear();
+  const aandoeningen = dossier.episodes.filter((e) => e.status === 'active').length;
+  const middelen = dossier.medicatie.filter((m) => m.status === 'active').length;
+
+  // Basis rond 4; ouderdom, multimorbiditeit en polyfarmacie drukken die omlaag.
+  const basis = 4.3
+    - Math.max(0, (leeftijd - 65) / 25)
+    - aandoeningen * 0.18
+    - Math.max(0, (middelen - 3) * 0.12);
+
+  const scoreVoor = (afwijking: number): DomeinScore => {
+    const ruw = basis + afwijking + (willekeurig() - 0.5) * 1.4;
+    return Math.min(5, Math.max(1, Math.round(ruw))) as DomeinScore;
+  };
+
+  // Niet elk domein wordt altijd uitgevraagd; justitie zelden.
+  const scores: Zelfredzaamheid['scores'] = {
+    financien: scoreVoor(0.2),
+    dagbesteding: scoreVoor(0.1),
+    huisvesting: scoreVoor(0.6),
+    'huiselijke-relaties': scoreVoor(0.4),
+    'geestelijke-gezondheid': scoreVoor(-0.1),
+    'lichamelijke-gezondheid': scoreVoor(-0.4),
+    verslaving: scoreVoor(0.5),
+    adl: scoreVoor(-0.2),
+    'sociaal-netwerk': scoreVoor(0.1),
+    participatie: scoreVoor(-0.1),
+  };
+  if (willekeurig() < 0.12) scores.justitie = 5;
+
+  const gescoord = Object.values(scores).filter((s): s is DomeinScore => typeof s === 'number');
+  const gemiddelde = gescoord.reduce((s, x) => s + x, 0) / gescoord.length;
+
+  // Een deel heeft een eerdere afname, zodat de trend zichtbaar is.
+  const heeftVorige = willekeurig() < 0.55;
+  const verloop = (willekeurig() - 0.6) * 0.9;
+
+  return {
+    scores,
+    afgenomenOp: new Date(peildatum.getTime() - Math.floor(willekeurig() * 200 + 20) * 86_400_000)
+      .toISOString().slice(0, 10),
+    afgenomenDoor: 'Sanne Bakker, POH-S',
+    vorige: heeftVorige
+      ? {
+          gemiddelde: Math.round((gemiddelde - verloop) * 10) / 10,
+          afgenomenOp: new Date(peildatum.getTime() - 400 * 86_400_000).toISOString().slice(0, 10),
+        }
+      : undefined,
+  };
 }
