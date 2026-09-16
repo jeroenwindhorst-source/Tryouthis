@@ -1,11 +1,14 @@
 import {
   agenda, assistentOverzicht, beheer, berichten, consultvoorbereiding, controleerTweefactor,
   dagafsluiting, dagstart, dossierHistorie, gebruikersoverzicht, huisartsOverzicht, instroom,
-  InMemoryRepository, intakes, meetreeksen, meldAan, monitoringCohort, orderVoorstellen,
-  patientOverzicht, praktijkSamenvatting, registreerConsult, terminologie, zoekPatient,
-  type ConsultRegistratie,
+  InMemoryRepository, intakes, meetreeksen, meldAan, monitoringCohort, orderOverzicht,
+  orderVoorstellen, overleg, patientOverzicht, plaatsLosseOrders, praktijkSamenvatting,
+  registreerConsult, terminologie, zetOpBespreeklijst, zoekOrders, zoekPatient,
+  type Afspraakstatus, type ConsultRegistratie, type NieuweOrder, type NieuwBespreekpunt,
 } from '@zpe/praktijk';
-import { ketens, modules, REGELSET_VERSIE, type PersoonlijkPlan } from '@zpe/care-engine';
+import {
+  ketens, modules, REGELSET_VERSIE, type CatalogusSoort, type PersoonlijkPlan,
+} from '@zpe/care-engine';
 import { DEMO_SEED_WAARSCHUWING } from '@zpe/terminology';
 
 /**
@@ -54,10 +57,48 @@ export const lokaleApi = {
     if (!episodeId) return Promise.reject(new Error('patiënt niet gevonden'));
     return traag({ episodeId, overzicht: patientOverzicht(repo, patientId)! });
   },
-  historie: (patientId: string, episodeId?: string) =>
-    traag(dossierHistorie(repo, patientId, episodeId)!),
+  historie: (patientId: string, bronId?: string) =>
+    traag(dossierHistorie(repo, patientId, bronId)!),
   meetreeksen: (patientId: string) => traag(meetreeksen(repo, patientId)),
   orders: (patientId: string) => traag(orderVoorstellen(repo, patientId)),
+  orderOverzicht: (patientId: string) => traag(orderOverzicht(repo, patientId)!),
+  zoekOrders: (patientId: string, vraag: string, soorten?: CatalogusSoort[]) =>
+    traag(zoekOrders(repo, patientId, vraag, soorten)),
+  plaatsOrders: (gebruikerId: string, orders: NieuweOrder[]) => {
+    plaatsLosseOrders(repo, gebruikerId, orders);
+    return traag(orderOverzicht(repo, orders[0]?.patientId ?? '')!);
+  },
+  markeerExternGelezen: (patientId: string, documentId: string) => {
+    repo.markeerExternGelezen(patientId, documentId);
+    return traag(dossierHistorie(repo, patientId)!);
+  },
+
+  overleg: (rol: string) => traag(overleg(repo, rol as 'poh-s' | 'assistent' | 'huisarts')),
+  zetOpBespreeklijst: (gebruikerId: string, punt: NieuwBespreekpunt) => {
+    zetOpBespreeklijst(repo, gebruikerId, punt);
+    const gebruiker = punt.voorRollen[0] ?? 'huisarts';
+    return traag(overleg(repo, gebruiker));
+  },
+  handelBespreekpuntAf: (id: string, uitkomst: string, door: string, rol: string) => {
+    repo.handelBespreekpuntAf(id, uitkomst, door);
+    return traag(overleg(repo, rol as 'poh-s' | 'assistent' | 'huisarts'));
+  },
+  zetAfspraakstatus: (afspraakId: string, status: string, rol: string) => {
+    repo.zetAfspraakstatus(afspraakId, status as Afspraakstatus);
+    return traag(agenda(repo, rol as 'poh-s' | 'assistent' | 'huisarts'));
+  },
+
+  /**
+   * Alles terug naar de beginstand.
+   *
+   * Een demo waarin je één keer een consult kunt afronden, is na het eerste gesprek op.
+   * De generatoren gebruiken vaste zaden, dus dit levert exact dezelfde praktijk op als
+   * bij het opstarten — niet iets wat er ongeveer op lijkt.
+   */
+  herstelDemo: () => {
+    repo.herstelBeginstand();
+    return traag({ hersteld: true });
+  },
 
   berichten: (gebruikerId: string) => traag(berichten(repo, gebruikerId)),
   stuurBericht: (gesprekId: string, vanId: string, tekst: string) => {

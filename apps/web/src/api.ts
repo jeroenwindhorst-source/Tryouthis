@@ -47,10 +47,14 @@ export interface Processtap {
   naam: string; omschrijving: string; watZieIk: string; aantal: number; aandacht: number;
 }
 
+export type Afspraakstatus =
+  'gepland' | 'aangemeld' | 'wachtkamer' | 'in-consult' | 'afgerond' | 'noshow';
+
 export interface AgendaRegel {
   id: string; tijd: string; duurMinuten: number; soort: string; titel: string;
   patientId?: string; naam?: string; leeftijd?: number; reden?: string;
   modules: ModuleChip[]; aandacht?: string; voorbereid?: boolean; intakeKlaar?: boolean;
+  status: Afspraakstatus; statusLabel: string; aangemeldVia?: string; aangemeldOm?: string;
 }
 
 export interface WachtkamerIntake {
@@ -117,14 +121,40 @@ export interface JournaalRegel {
   regels: { letter: string; tekst: string }[];
 }
 
+export interface ExterneSectie { naam: string; regels: { label: string; waarde: string }[] }
+
+export interface ExternDocument {
+  id: string; patientId: string;
+  bron: { id: string; soort: string; naam: string; portaal?: { naam: string; url: string } };
+  uitwisseling: string;
+  datum: string; ontvangenOp: string;
+  titel: string; samenvatting: string;
+  secties: ExterneSectie[];
+  episodeIcpc?: string; gelezen: boolean; opOnzeVerwijzing?: boolean;
+}
+
+export type Tijdlijnitem =
+  | { soort: 'contact'; datum: string; contact: JournaalRegel }
+  | { soort: 'extern'; datum: string; document: ExternDocument };
+
+export interface Bron {
+  id: string; aard: string; titel: string; toelichting: string; aantal: number;
+  portaal?: { naam: string; url: string }; ongelezen?: number;
+}
+
 export interface DossierHistorie {
   journaal: JournaalRegel[];
+  tijdlijn: Tijdlijnitem[];
+  bronnen: Bron[];
   episodes: { id: string; titel: string; status: string; icpc?: string; start?: string; aantalContacten: number }[];
   aantalContacten: number;
+  aantalExtern: number;
+  ongelezenExtern: number;
 }
 
 export interface Meetreeks {
-  code: string; naam: string; eenheid?: string; relevantNu: boolean;
+  code: string; naam: string; soort: 'lab' | 'lichamelijk' | 'vragenlijst' | 'verrichting';
+  eenheid?: string; relevantNu: boolean;
   laatste?: number; laatsteOp?: string; verschil?: number;
   punten: { op: string; waarde: number }[];
   streef?: { onder?: number; boven?: number; label: string };
@@ -145,6 +175,55 @@ export interface VoorgesteldeOrderSet {
   };
   onderbouwing: string;
   waarschuwingen: Waarschuwing[];
+}
+
+export interface Catalogustreffer {
+  id: string; soort: 'medicatie' | 'lab' | 'verwijzing' | 'onderzoek';
+  naam: string; detail: string; varianten: string[];
+  atc?: string; levert?: string[]; route?: string;
+  instellingen?: string[]; portaal?: { naam: string; url: string };
+  vereistRecht: string;
+  waarschuwingen: Waarschuwing[];
+}
+
+export interface NieuweOrder {
+  patientId: string; soort: string; omschrijving: string; detail?: string;
+  atc?: string; route?: string; bestemming?: string;
+  uitSet?: { id: string; naam: string };
+  richtlijn?: { naam: string; versie?: string; paragraaf?: string; url?: string; uitgever?: string };
+  waarschuwingen?: Waarschuwing[]; levert?: string[]; vereistRecht: string;
+}
+
+export interface Order {
+  id: string; patientId: string; soort: string; omschrijving: string;
+  detail?: string; atc?: string; route?: string; bestemming?: string;
+  uitSet?: { id: string; naam: string };
+  richtlijn?: { naam: string; versie?: string; paragraaf?: string; url?: string; uitgever?: string };
+  waarschuwingen: Waarschuwing[]; levert?: string[];
+  geplaatstOp: string; geplaatstDoor: { id: string; naam: string; rol: string };
+  status: 'ter-autorisatie' | 'geplaatst' | 'uitgevoerd' | 'afgewezen' | 'ingetrokken';
+  afgehandeldOp?: string; afgehandeldDoor?: string; reden?: string; deelcontactId?: string;
+}
+
+export interface Orderoverzicht {
+  openstaand: Order[];
+  afgehandeld: Order[];
+  voorstellen: VoorgesteldeOrderSet[];
+  medicatie: { naam: string; atc?: string; dosering: string; chronisch: boolean }[];
+}
+
+export interface Bespreekpunt {
+  id: string; patientId: string; naam: string;
+  ingebrachtDoor: { id: string; naam: string; rol: string };
+  ingebrachtOp: string; vraag: string; context?: string;
+  voorRollen: string[]; status: string;
+  uitkomst?: string; besprokenOp?: string; besprokenDoor?: string;
+}
+
+export interface Overleg {
+  blok?: { tijd: string; duurMinuten: number; titel: string };
+  open: Bespreekpunt[];
+  besproken: Bespreekpunt[];
 }
 
 export interface Gesprek {
@@ -380,10 +459,29 @@ const httpApi = {
   zoek: (q: string) => haal<Zoektreffer[]>(`/api/zoek?q=${encodeURIComponent(q)}`),
   maakEpisode: (patientId: string, code: { icpc: string; snomed?: string; display: string }) =>
     stuur<{ episodeId: string; overzicht: PatientOverzicht }>(`/api/patient/${patientId}/episode`, code),
-  historie: (patientId: string, episodeId?: string) =>
-    haal<DossierHistorie>(`/api/patient/${patientId}/historie${episodeId ? `?episode=${episodeId}` : ''}`),
+  historie: (patientId: string, bronId?: string) =>
+    haal<DossierHistorie>(`/api/patient/${patientId}/historie${bronId ? `?bron=${encodeURIComponent(bronId)}` : ''}`),
   meetreeksen: (patientId: string) => haal<Meetreeks[]>(`/api/patient/${patientId}/meetreeksen`),
   orders: (patientId: string) => haal<VoorgesteldeOrderSet[]>(`/api/patient/${patientId}/orders`),
+  orderOverzicht: (patientId: string) => haal<Orderoverzicht>(`/api/patient/${patientId}/orderoverzicht`),
+  zoekOrders: (patientId: string, vraag: string, soorten?: string[]) =>
+    haal<Catalogustreffer[]>(
+      `/api/patient/${patientId}/catalogus?q=${encodeURIComponent(vraag)}`
+      + (soorten?.length ? `&soort=${soorten.join(',')}` : '')),
+  plaatsOrders: (gebruikerId: string, orders: NieuweOrder[]) =>
+    stuur<Orderoverzicht>('/api/orders', { gebruikerId, orders }),
+  markeerExternGelezen: (patientId: string, documentId: string) =>
+    stuur<DossierHistorie>(`/api/patient/${patientId}/extern/${documentId}/gelezen`, {}),
+
+  overleg: (rol: string) => haal<Overleg>(`/api/overleg/${rol}`),
+  zetOpBespreeklijst: (gebruikerId: string, punt: {
+    patientId: string; naam: string; vraag: string; context?: string; voorRollen: string[];
+  }) => stuur<Overleg>('/api/bespreeklijst', { gebruikerId, punt }),
+  handelBespreekpuntAf: (id: string, uitkomst: string, door: string, rol: string) =>
+    stuur<Overleg>(`/api/bespreeklijst/${id}/afhandelen`, { uitkomst, door, rol }),
+  zetAfspraakstatus: (afspraakId: string, status: string, rol: string) =>
+    stuur<AgendaRegel[]>(`/api/agenda/${afspraakId}/status`, { status, rol }),
+  herstelDemo: () => stuur<{ hersteld: boolean }>('/api/demo/herstel', {}),
 
   berichten: (gebruikerId: string) => haal<Berichtenbox>(`/api/berichten/${gebruikerId}`),
   stuurBericht: (gesprekId: string, vanId: string, tekst: string) =>

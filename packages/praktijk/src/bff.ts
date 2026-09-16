@@ -1,17 +1,22 @@
 import type { Dossier, Rol, Task } from '@zpe/fhir-model';
 import { laatsteMeting, leeftijd, metingReeks, numeriekeWaarde } from '@zpe/fhir-model';
 import {
-  automatisering, bouwZorgplan, beoordeelInstroom, CODE, instroomOverzicht,
-  planOproepen, suggesties, verwerk, vindVragenlijst, voorgesteldeOrdersets,
-  type Suggestie, type Zorgplan,
+  automatisering, bewaakMiddel, bouwZorgplan, beoordeelInstroom, CODE, instroomOverzicht,
+  planOproepen, suggesties, verwerk, vindVragenlijst, voorgesteldeOrdersets, zoekCatalogus,
+  type CatalogusSoort, type Suggestie, type Zorgplan,
 } from '@zpe/care-engine';
 import { NIVEAU_UITLEG } from '@zpe/configuratie';
 import { metingNaam } from './terminologie.js';
 import { configuratie, configuratieLagen } from './configuratie-demo.js';
-import { journaal } from './historie.js';
+import { journaal, type JournaalRegel } from './historie.js';
+import type { ExternDocument } from './externe-bronnen.js';
+import type { NieuweOrder, Order } from './orderopslag.js';
+import { bespreeklijstVoor, type NieuwBespreekpunt } from './bespreeklijst.js';
+import { vindGebruiker } from './gebruikers.js';
 import { gesprekkenVoor, naamVanGebruiker, ongelezenVoor } from './berichten.js';
 import {
-  groepeerAutorisaties, type Autorisatiegroep, type Triageverzoek, type WachtkamerIntake,
+  groepeerAutorisaties, STATUSLABEL,
+  type Afspraakstatus, type Autorisatiegroep, type Triageverzoek, type WachtkamerIntake,
 } from './werkvoorraad.js';
 import type { DossierRepository } from './store.js';
 
@@ -670,6 +675,11 @@ export interface AgendaRegel {
   aandacht?: string;
   voorbereid?: boolean;
   intakeKlaar?: boolean;
+  /** Waar de patiënt is: gepland, aangemeld, wachtkamer, in consult, afgerond, no-show. */
+  status: Afspraakstatus;
+  statusLabel: string;
+  aangemeldVia?: string;
+  aangemeldOm?: string;
 }
 
 /** De dag van één rol, als tijdlijn. Blokken en patiëntafspraken door elkaar. */
@@ -682,7 +692,8 @@ export function agenda(repo: DossierRepository, rol: Rol): AgendaRegel[] {
     if (!dossier) {
       return {
         id: item.id, tijd: item.start.slice(11, 16), duurMinuten: item.duurMinuten,
-        soort: item.soort, titel: item.titel, modules: [],
+        soort: item.soort, titel: item.titel, reden: item.reden, modules: [],
+        status: item.status, statusLabel: STATUSLABEL[item.status],
       };
     }
     const plan = planVoor(repo, dossier);
@@ -705,6 +716,10 @@ export function agenda(repo: DossierRepository, rol: Rol): AgendaRegel[] {
       aandacht: zwaarste?.tekst,
       voorbereid: rol === 'poh-s' ? ontbreekt === 0 : undefined,
       intakeKlaar: intakes.some((i) => i.patientId === dossier.patient.id),
+      status: item.status,
+      statusLabel: STATUSLABEL[item.status],
+      aangemeldVia: item.aangemeldVia,
+      aangemeldOm: item.aangemeldOm?.slice(11, 16),
     };
   });
 }
@@ -893,9 +908,28 @@ export function zoekPatient(repo: DossierRepository, vraag: string, limiet = 8):
 
 // ── 15. Dossierhistorie en meetreeksen ──────────────────────────────────────
 
+/**
+ * Waar een meting vandaan komt. Bepaalt hoe je hem wilt lezen: labwaarden wil je in een
+ * tabel naast elkaar, een bloeddrukbeloop wil je als lijn. Eén lange lijst met alles
+ * door elkaar dwingt je om per regel te bedenken wat je voor je hebt.
+ */
+export type Meetsoort = 'lab' | 'lichamelijk' | 'vragenlijst' | 'verrichting';
+
+const LABCODES = new Set<string>([CODE.hba1c, CODE.ldl, CODE.egfr, CODE.acr]);
+const VRAGENLIJSTCODES = new Set<string>([CODE.ccq, CODE.mpg, CODE.kwetsbaarheid]);
+const VERRICHTINGCODES = new Set<string>([CODE.voet, CODE.fundus, CODE.medicatiebeoordeling]);
+
+function meetsoort(code: string): Meetsoort {
+  if (LABCODES.has(code)) return 'lab';
+  if (VRAGENLIJSTCODES.has(code)) return 'vragenlijst';
+  if (VERRICHTINGCODES.has(code)) return 'verrichting';
+  return 'lichamelijk';
+}
+
 export interface Meetreeks {
   code: string;
   naam: string;
+  soort: Meetsoort;
   eenheid?: string;
   /** Hoort deze meting bij het eerstvolgende contact? Bepaalt of hij standaard zichtbaar is. */
   relevantNu: boolean;
@@ -937,6 +971,7 @@ export function meetreeksen(repo: DossierRepository, patientId: string): Meetree
       return {
         code,
         naam: metingNaam(code),
+        soort: meetsoort(code),
         eenheid: (reeks.at(-1)?.waarde as { unit?: string })?.unit || undefined,
         relevantNu: nuRelevant.has(code),
         laatste: laatste?.waarde,
@@ -946,21 +981,100 @@ export function meetreeksen(repo: DossierRepository, patientId: string): Meetree
         streef: STREEFWAARDEN[code],
       };
     })
+    // Gecodeerde observaties (rookstatus, verrichtingen zonder getal) horen niet in een
+    // reeksenoverzicht: er valt geen beloop van te tekenen en een regel met "0 metingen"
+    // suggereert dat er iets ontbreekt terwijl het gewoon een ander soort gegeven is.
+    .filter((m) => m.punten.length > 0)
     .sort((a, b) => Number(b.relevantNu) - Number(a.relevantNu) || b.punten.length - a.punten.length);
 }
 
-export function dossierHistorie(repo: DossierRepository, patientId: string, episodeId?: string) {
+/**
+ * Eén tijdlijn, twee soorten inhoud.
+ *
+ * Wat wij zelf vastlegden staat in SOEP; wat van buiten kwam heeft de structuur van de
+ * standaard waarlangs het binnenkwam. Dat samenvoegen tot één SOEP-achtige lijst zou de
+ * herkomst wegpoetsen, en dat is precies het verschil dat een zorgverlener moet zien.
+ * Daarom: dezelfde chronologie, verschillende vorm.
+ */
+export type Tijdlijnitem =
+  | { soort: 'contact'; datum: string; contact: JournaalRegel }
+  | { soort: 'extern'; datum: string; document: ExternDocument };
+
+export interface Bron {
+  id: string;
+  /** 'episode' voor eigen huisartsenzorg, anders de externe bronsoort. */
+  aard: 'episode' | 'ziekenhuis' | 'thuiszorg' | 'paramedisch' | 'ggz' | 'apotheek' | 'spoed';
+  titel: string;
+  toelichting: string;
+  aantal: number;
+  /** Ingang naar het systeem van de bron. Geen koppeling, wel de plek waar je hem legt. */
+  portaal?: { naam: string; url: string };
+  ongelezen?: number;
+}
+
+const BRONLABEL: Record<string, string> = {
+  ziekenhuis: 'Ziekenhuiszorg', thuiszorg: 'Thuiszorg', paramedisch: 'Paramedische zorg',
+  ggz: 'GGZ', apotheek: 'Apotheek', spoed: 'Spoedzorg buiten kantooruren',
+};
+
+export function dossierHistorie(
+  repo: DossierRepository, patientId: string, bronId?: string,
+) {
   const dossier = repo.dossier(patientId);
   if (!dossier) return undefined;
-  return {
-    journaal: journaal(dossier, episodeId),
-    episodes: dossier.episodes.map((e) => ({
-      id: e.id, titel: e.titel, status: e.status,
-      icpc: e.code.coding?.find((c) => c.system.includes('icpc'))?.code,
-      start: e.periode.start,
-      aantalContacten: dossier.deelcontacten.filter((dc) => dc.episodeId === e.id).length,
+  const extern = repo.externeDocumenten(patientId);
+
+  const episodes = dossier.episodes.map((e) => ({
+    id: e.id, titel: e.titel, status: e.status,
+    icpc: e.code.coding?.find((c) => c.system.includes('icpc'))?.code,
+    start: e.periode.start,
+    aantalContacten: dossier.deelcontacten.filter((dc) => dc.episodeId === e.id).length,
+  }));
+
+  // De bronnenkolom: eigen episodes bovenaan, daarna wat er van buiten binnenkwam.
+  const externeBronnen = [...new Map(extern.map((d) => [d.bron.id, d.bron])).values()];
+  const bronnen: Bron[] = [
+    ...episodes.map((e): Bron => ({
+      id: e.id, aard: 'episode', titel: `${e.icpc ?? ''} ${e.titel}`.trim(),
+      toelichting: `Huisartsenzorg · sinds ${e.start ?? '—'}`, aantal: e.aantalContacten,
     })),
+    ...externeBronnen.map((b): Bron => {
+      const eigen = extern.filter((d) => d.bron.id === b.id);
+      return {
+        id: b.id, aard: b.soort, titel: b.naam,
+        toelichting: `${BRONLABEL[b.soort] ?? b.soort} · ${[...new Set(eigen.map((d) => d.uitwisseling))].join(', ')}`,
+        aantal: eigen.length,
+        portaal: b.portaal,
+        ongelezen: eigen.filter((d) => !d.gelezen).length,
+      };
+    }),
+  ];
+
+  const isEpisode = episodes.some((e) => e.id === bronId);
+  const contacten = journaal(dossier, isEpisode ? bronId : undefined);
+  const zichtbaarExtern = bronId
+    ? (isEpisode
+        // Bij een episodefilter blijft externe zorg zichtbaar als hij aan die episode hangt;
+        // een ziekenhuisbrief over dezelfde diabetes hóórt in dat verhaal.
+        ? extern.filter((d) => d.episodeIcpc
+            && d.episodeIcpc === episodes.find((e) => e.id === bronId)?.icpc)
+        : extern.filter((d) => d.bron.id === bronId))
+    : extern;
+  const zichtbaarContacten = bronId && !isEpisode ? [] : contacten;
+
+  const tijdlijn: Tijdlijnitem[] = [
+    ...zichtbaarContacten.map((c): Tijdlijnitem => ({ soort: 'contact', datum: c.datum, contact: c })),
+    ...zichtbaarExtern.map((d): Tijdlijnitem => ({ soort: 'extern', datum: d.datum, document: d })),
+  ].sort((a, b) => b.datum.localeCompare(a.datum));
+
+  return {
+    journaal: contacten,
+    tijdlijn,
+    bronnen,
+    episodes,
     aantalContacten: dossier.deelcontacten.length,
+    aantalExtern: extern.length,
+    ongelezenExtern: extern.filter((d) => !d.gelezen).length,
   };
 }
 
@@ -970,6 +1084,89 @@ export function orderVoorstellen(repo: DossierRepository, patientId: string) {
   const dossier = repo.dossier(patientId);
   if (!dossier) return [];
   return voorgesteldeOrdersets(dossier, planVoor(repo, dossier), repo.peildatum());
+}
+
+/**
+ * Het orderoverzicht: wat er loopt, wat er wacht en wat er voorgesteld wordt.
+ *
+ * De volgorde is die van de vraag die een zorgverlener stelt. Eerst "wat staat er open"
+ * — daar moet iemand iets mee. Dan "wat is er besteld" als geheugen. Pas daarna de
+ * voorstellen, want die zijn optioneel.
+ */
+export function orderOverzicht(repo: DossierRepository, patientId: string) {
+  const dossier = repo.dossier(patientId);
+  if (!dossier) return undefined;
+  const alle = repo.orders(patientId);
+  return {
+    openstaand: alle.filter((o) => o.status === 'ter-autorisatie' || o.status === 'geplaatst'),
+    afgehandeld: alle.filter((o) => o.status === 'uitgevoerd' || o.status === 'afgewezen'
+      || o.status === 'ingetrokken').slice(0, 25),
+    voorstellen: voorgesteldeOrdersets(dossier, planVoor(repo, dossier), repo.peildatum()),
+    medicatie: dossier.medicatie.filter((m) => m.status === 'active').map((m) => ({
+      naam: m.middel.text ?? m.middel.coding?.[0]?.display ?? 'Middel',
+      atc: m.middel.coding?.[0]?.code,
+      dosering: m.dosering,
+      chronisch: m.chronisch,
+    })),
+  };
+}
+
+/**
+ * Losse orders zoeken.
+ *
+ * De bewaking draait hier al, niet pas bij het plaatsen: een zoekresultaat dat je niet
+ * mag voorschrijven moet dat meteen zeggen, niet nadat je het aan de patiënt hebt
+ * uitgelegd.
+ */
+export function zoekOrders(
+  repo: DossierRepository, patientId: string, vraag: string, soorten?: CatalogusSoort[],
+) {
+  const dossier = repo.dossier(patientId);
+  if (!dossier) return [];
+  return zoekCatalogus(vraag, soorten).map((treffer) => ({
+    ...treffer,
+    waarschuwingen: treffer.atc ? bewaakMiddel(treffer.atc, dossier, repo.peildatum()) : [],
+  }));
+}
+
+export function plaatsLosseOrders(
+  repo: DossierRepository, gebruikerId: string, orders: NieuweOrder[],
+): Order[] {
+  const gebruiker = vindGebruiker(gebruikerId);
+  if (!gebruiker) return [];
+  if (gebruiker.rol === 'administrator') return [];
+  return repo.plaatsOrders(orders, {
+    id: gebruiker.id, naam: gebruiker.naam, rol: gebruiker.rol, rechten: gebruiker.rechten,
+  });
+}
+
+// ── 17. Bespreeklijst ───────────────────────────────────────────────────────
+
+/**
+ * Het overleg als scherm.
+ *
+ * Eén lijst voor huisarts en POH, met per punt de vraag, de context uit het dossier en
+ * ruimte voor de uitkomst. Het overlegblok in de agenda verwijst hiernaartoe, zodat het
+ * blok geen halfuur zonder inhoud is.
+ */
+export function overleg(repo: DossierRepository, rol: Rol) {
+  const punten = bespreeklijstVoor(repo.bespreekpunten(), rol);
+  const blok = repo.agenda(rol).find((a) => a.soort === 'overleg');
+  return {
+    blok: blok ? { tijd: blok.start.slice(11, 16), duurMinuten: blok.duurMinuten, titel: blok.titel } : undefined,
+    open: punten.filter((p) => p.status === 'open'),
+    besproken: punten.filter((p) => p.status !== 'open'),
+  };
+}
+
+export function zetOpBespreeklijst(
+  repo: DossierRepository, gebruikerId: string, punt: NieuwBespreekpunt,
+) {
+  const gebruiker = vindGebruiker(gebruikerId);
+  if (!gebruiker || gebruiker.rol === 'administrator') return undefined;
+  return repo.zetOpBespreeklijst(punt, {
+    id: gebruiker.id, naam: gebruiker.naam, rol: gebruiker.rol,
+  });
 }
 
 // ── 17. Berichten ───────────────────────────────────────────────────────────

@@ -1,8 +1,9 @@
 import { useState, type CSSProperties } from 'react';
 import {
   api, MODULE_NAAM,
-  type GeplandContact, type GeplandItem, type Gebruiker, type Meetreeks,
-  type PatientOverzicht, type RegistratieUitkomst, type Treffer,
+  type ExternDocument, type GeplandContact, type GeplandItem, type Gebruiker,
+  type JournaalRegel, type Meetreeks, type NieuweOrder, type PatientOverzicht,
+  type RegistratieUitkomst, type Treffer,
 } from '../api';
 import { useData } from '../gebruik';
 import { Trendgrafiek } from '../grafiek';
@@ -12,6 +13,23 @@ import {
   Zelfredzaamheidsmeter,
 } from '../onderdelen';
 import { Orders } from './Orders';
+import { Orderpaneel } from './Orderpaneel';
+import { Bespreekknop } from './Overleg';
+
+/**
+ * Veelgebruikte planafspraken.
+ *
+ * Geen keuzelijst die de tekst vervangt, maar bouwstenen die de vier zinnen invullen die
+ * iedereen elke dag typt. Wat overblijft is het deel dat werkelijk over deze mens gaat.
+ */
+const PLANZINNEN = [
+  'Controle over 3 maanden',
+  'Controle over 6 weken',
+  'Uitleg gegeven en meegegeven via het portaal',
+  'Thuis zelf meten en doorgeven',
+  'Contact opnemen bij verergering',
+  'Besproken met de huisarts',
+];
 
 const INTENSITEITEN = [
   { id: 'extensief', label: 'rustig', uitleg: 'stabiel, weinig risico, patiënt wil rust' },
@@ -22,6 +40,7 @@ const INTENSITEITEN = [
 ];
 
 type Tab = 'consult' | 'journaal' | 'metingen' | 'orders';
+type OrderSoort = 'medicatie' | 'lab' | 'onderzoek' | 'verwijzing';
 
 /** Wat er tijdens het consult wordt ingevuld. Staat hier, zodat de wachtkamer-intake het kan vullen. */
 export interface Registratie {
@@ -42,6 +61,8 @@ export function Consult({ patientId, gebruiker, terug }: {
   const [toonNietActief, setToonNietActief] = useState(false);
   const [uitkomst, setUitkomst] = useState<RegistratieUitkomst | undefined>();
   const [gekozenMeting, setGekozenMeting] = useState<string | undefined>();
+  const [orderpaneel, setOrderpaneel] = useState<OrderSoort | 'alles' | undefined>();
+  const [ordersVandaag, setOrdersVandaag] = useState<NieuweOrder[]>([]);
   const [registratie, setRegistratie] = useState<Registratie>({
     waarden: {}, soep: {}, episodeId: '', suggestieCodes: [],
   });
@@ -90,7 +111,9 @@ export function Consult({ patientId, gebruiker, terug }: {
   return (
     <>
       <div className="patientbalk">
-        <button className="knop" onClick={terug}><Icoon naam="pijl" grootte={13} /> Terug</button>
+        <button className="knop" onClick={terug}>
+          <Icoon naam="pijl-links" grootte={13} /> Terug
+        </button>
         <span className="naam">{data.patient.naam}</span>
         <span className="mini">
           {data.patient.geboortedatum} · {data.patient.leeftijd} jaar · BSN {data.patient.bsn}
@@ -128,7 +151,15 @@ export function Consult({ patientId, gebruiker, terug }: {
         <Metingen patientId={patientId} gekozen={gekozenMeting} opKies={setGekozenMeting} />
       )}
       {tab === 'orders' && (
-        <Orders patientId={patientId} gebruiker={gebruiker} />
+        <Orders patientId={patientId} gebruiker={gebruiker}
+          opNieuweOrder={() => setOrderpaneel('alles')} />
+      )}
+
+      {orderpaneel && (
+        <Orderpaneel patientId={patientId} patientNaam={data.patient.naam} gebruiker={gebruiker}
+          startSoort={orderpaneel === 'alles' ? undefined : orderpaneel}
+          opSluit={() => setOrderpaneel(undefined)}
+          opGeplaatst={(orders) => setOrdersVandaag((l) => [...l, ...orders])} />
       )}
 
       {tab === 'consult' && (
@@ -195,10 +226,36 @@ export function Consult({ patientId, gebruiker, terug }: {
                   <span className="waarde" style={{ fontWeight: 500 }}>{m.dosering}</span>
                 </div>
               ))}
-              <button className="knop" style={{ marginTop: 10 }} onClick={() => setTab('orders')}>
-                <Icoon naam="plus" grootte={13} /> Medicatie of verwijzing
+            </Kaart>
+
+            {/*
+              Bestellen hoort bij het besluit, dus staat het hier — naast de medicatie en
+              binnen handbereik tijdens het consult. Het ordertabblad is het overzicht
+              achteraf; daar begin je geen recept.
+            */}
+            <Kaart titel="Bestellen" icoon="uitgaand"
+              telling={ordersVandaag.length > 0 ? `${ordersVandaag.length} vandaag` : undefined}>
+              <div className="orderknoppen">
+                <button className="knop" onClick={() => setOrderpaneel('medicatie')}>
+                  <Icoon naam="pil" grootte={13} /> Medicatie
+                </button>
+                <button className="knop" onClick={() => setOrderpaneel('verwijzing')}>
+                  <Icoon naam="uitgaand" grootte={13} /> Verwijzing
+                </button>
+                <button className="knop" onClick={() => setOrderpaneel('lab')}>
+                  <Icoon naam="buisje" grootte={13} /> Lab
+                </button>
+                <button className="knop" onClick={() => setOrderpaneel('onderzoek')}>
+                  <Icoon naam="radar" grootte={13} /> Onderzoek
+                </button>
+              </div>
+              <button className="knop" data-toon="stil" style={{ marginTop: 8 }}
+                onClick={() => setTab('orders')}>
+                Alles wat loopt <Icoon naam="pijl" grootte={12} />
               </button>
             </Kaart>
+
+            <Bespreekknop patientId={patientId} naam={data.patient.naam} gebruiker={gebruiker} />
 
             <Kaart titel="Oproepen" icoon="gesprek" telling={data.oproepen.length}>
               {data.oproepen.length === 0 && (
@@ -239,24 +296,73 @@ export function Consult({ patientId, gebruiker, terug }: {
               )}
             </Kaart>
 
-            <Registreren patientId={patientId} overzicht={data} registratie={registratie}
-              opWijzig={setRegistratie}
-              opKlaar={(nieuw, uit) => { setData(nieuw); setUitkomst(uit); }} />
-
             {uitkomst && (
-              <div className="automatisch">
-                <h3><Icoon naam="afvinken" /> Consult vastgelegd</h3>
-                <ul>{uitkomst.vastgelegd.map((v) => <li key={v.code}>{v.naam}: {v.waarde}</li>)}</ul>
+              <Kaart titel="Consult afgerond" icoon="afvinken"
+                telling={`${uitkomst.vastgelegd.length} vastgelegd`}>
+                <div className="afgerondkop">
+                  <span className="merkje" data-toon="ok">
+                    <Icoon naam="vink" grootte={11} /> vastgelegd in het dossier
+                  </span>
+                  <span className="mini">
+                    De afspraak van vandaag staat nu op <strong>afgerond</strong> in de agenda.
+                  </span>
+                </div>
+
+                <table>
+                  <tbody>
+                    {uitkomst.vastgelegd.map((v) => (
+                      <tr key={v.code}>
+                        <td>{v.naam}</td>
+                        <td className="rechts getal">{v.waarde}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {ordersVandaag.length > 0 && (
+                  <>
+                    <div className="mini" style={{ marginTop: 10, marginBottom: 4 }}>
+                      Orders die aan dit consult hangen
+                    </div>
+                    <ul className="uitleg">
+                      {ordersVandaag.map((o, i) => (
+                        <li key={i}>{o.omschrijving}{o.detail ? ` — ${o.detail}` : ''}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+
                 {uitkomst.verantwoordingGevuld.length > 0 && (
-                  <div style={{ marginTop: 8, fontSize: 12.5, color: 'var(--ok)' }}>
+                  <div className="notitie" data-toon="ok" style={{ marginTop: 10 }}>
                     Hiermee zijn vanzelf op orde:{' '}
                     {uitkomst.verantwoordingGevuld.map((v) => `${v.indicator} (${v.keten})`).join(', ')}.
                   </div>
                 )}
                 {uitkomst.vervolg.length > 0 && (
-                  <ul style={{ marginTop: 8 }}>{uitkomst.vervolg.map((v, i) => <li key={i}>{v}</li>)}</ul>
+                  <ul className="uitleg" style={{ marginTop: 8 }}>
+                    {uitkomst.vervolg.map((v, i) => <li key={i}>{v}</li>)}
+                  </ul>
                 )}
-              </div>
+
+                <div className="knop-rij" style={{ marginTop: 12 }}>
+                  <button className="knop" onClick={() => setTab('journaal')}>
+                    <Icoon naam="boek" grootte={13} /> Bekijk in het journaal
+                  </button>
+                  <button className="knop" onClick={terug}>
+                    <Icoon naam="pijl-links" grootte={13} /> Terug naar het spreekuur
+                  </button>
+                  <button className="knop" data-toon="stil" onClick={() => setUitkomst(undefined)}>
+                    Nog iets vastleggen
+                  </button>
+                </div>
+              </Kaart>
+            )}
+
+            {!uitkomst && (
+              <Registreren patientId={patientId} overzicht={data} registratie={registratie}
+                ordersVandaag={ordersVandaag} opOrder={() => setOrderpaneel('alles')}
+                opWijzig={setRegistratie}
+                opKlaar={(nieuw, uit) => { setData(nieuw); setUitkomst(uit); }} />
             )}
 
             <Kaart titel="Het plan van deze patiënt" icoon="agenda" telling={`${plan.contacten.length} contacten`}>
@@ -537,59 +643,100 @@ function ContactKaart({ contact, opMetingKlik }: {
   );
 }
 
-/** Het journaal: alle eerdere contacten, filterbaar op episode. */
+/**
+ * HET JOURNAAL — eigen zorg én wat van buiten kwam
+ *
+ * Links de bronnen: onze eigen episodes (huisartsenzorg) en daaronder de partijen waar
+ * deze patiënt ook komt. Rechts één chronologische stroom waarin beide door elkaar staan,
+ * want zo is de zorg ook verlopen.
+ *
+ * Wat wij vastlegden staat in SOEP. Wat van buiten kwam níet: een BgZ heeft vaste secties,
+ * een e-Overdracht een verpleegkundige structuur. Dat in SOEP persen zou de herkomst
+ * wegpoetsen, en juist die moet zichtbaar blijven — het is niet van ons en het telt niet
+ * automatisch mee in de beslisregels.
+ */
 function Journaal({ patientId }: { patientId: string }) {
-  const [episode, setEpisode] = useState<string | undefined>();
-  const { data, fout, bezig } = useData(() => api.historie(patientId, episode), [patientId, episode]);
+  const [bron, setBron] = useState<string | undefined>();
+  const [open, setOpen] = useState<string | undefined>();
+  const { data, fout, bezig, setData } = useData(
+    () => api.historie(patientId, bron), [patientId, bron]);
 
   if (fout) return <Fout boodschap={fout} />;
   if (bezig || !data) return <Laden wat="Journaal" />;
 
+  const eigen = data.bronnen.filter((b) => b.aard === 'episode');
+  const extern = data.bronnen.filter((b) => b.aard !== 'episode');
+
+  const lees = async (documentId: string) => {
+    setOpen(open === documentId ? undefined : documentId);
+    if (open !== documentId) setData(await api.markeerExternGelezen(patientId, documentId));
+  };
+
   return (
-    <div className="raster2" style={{ gridTemplateColumns: '260px minmax(0, 1fr)' }}>
-      <Kaart titel="Episodes" icoon="lijst" telling={data.episodes.length} strak>
-        <button className="gesprekknop" data-actief={!episode} onClick={() => setEpisode(undefined)}>
-          <strong style={{ fontSize: 13 }}>Alle episodes</strong>
-          <div className="mini">{data.aantalContacten} contacten</div>
-        </button>
-        {data.episodes.map((e) => (
-          <button key={e.id} className="gesprekknop" data-actief={episode === e.id}
-            onClick={() => setEpisode(e.id)}>
-            <strong style={{ fontSize: 13 }}>{e.icpc} {e.titel}</strong>
+    <div className="raster2" style={{ gridTemplateColumns: '282px minmax(0, 1fr)' }}>
+      <div>
+        <Kaart titel="Huisartsenzorg" icoon="lijst" telling={eigen.length} strak>
+          <button className="gesprekknop" data-actief={!bron} onClick={() => setBron(undefined)}>
+            <strong style={{ fontSize: 13 }}>Alles bij elkaar</strong>
             <div className="mini">
-              {e.aantalContacten} contact{e.aantalContacten === 1 ? '' : 'en'} · sinds {e.start}
+              {data.aantalContacten} eigen contacten · {data.aantalExtern} van buiten
             </div>
           </button>
-        ))}
-      </Kaart>
+          {eigen.map((b) => (
+            <button key={b.id} className="gesprekknop" data-actief={bron === b.id}
+              onClick={() => setBron(b.id)}>
+              <strong style={{ fontSize: 13 }}>{b.titel}</strong>
+              <div className="mini">{b.aantal} contact{b.aantal === 1 ? '' : 'en'} · {b.toelichting}</div>
+            </button>
+          ))}
+        </Kaart>
 
-      <Kaart titel="Journaal" icoon="boek" telling={`${data.journaal.length} contacten`}>
-        {data.journaal.length === 0 && <Leeg tekst="Nog geen contacten vastgelegd." />}
-        <div className="journaal">
-          {data.journaal.map((regel) => (
-            <div key={regel.encounterId} className="journaalregel">
-              <div>
-                <div className="wanneer">{regel.datum}</div>
-                <div className="mini">{regel.soort}</div>
-              </div>
-              <div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <span className="merkje" data-toon="neutraal">{regel.episodeIcpc} {regel.episodeTitel}</span>
-                  <span className="mini">{regel.auteur} · {regel.auteurRol}</span>
-                  {regel.bron !== 'zorgverlener' && (
-                    <span className="merkje" data-toon="aandacht">{regel.bron}</span>
-                  )}
-                </div>
-                <div className="soep">
-                  {regel.regels.map((r, i) => (
-                    <div key={i} className="soepregel">
-                      <span className="soepletter" data-letter={r.letter}>{r.letter}</span>
-                      <span>{r.tekst}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+        <Kaart titel="Zorg buiten de praktijk" icoon="gebouw" telling={extern.length} strak>
+          {extern.length === 0 && (
+            <div className="body">
+              <span className="mini">
+                Niets binnengekomen van andere zorgverleners.
+              </span>
             </div>
+          )}
+          {extern.map((b) => (
+            <div key={b.id} className="bronblok">
+              <button className="gesprekknop" data-actief={bron === b.id}
+                onClick={() => setBron(bron === b.id ? undefined : b.id)}>
+                <strong style={{ fontSize: 13 }}>
+                  {b.titel}
+                  {b.ongelezen ? <span className="stip" /> : null}
+                </strong>
+                <div className="mini">{b.aantal} bericht{b.aantal === 1 ? '' : 'en'} · {b.toelichting}</div>
+              </button>
+              {b.portaal && (
+                <a className="portaallink" href={b.portaal.url} target="_blank" rel="noreferrer">
+                  <Icoon naam="uitgaand" grootte={12} /> Openen in {b.portaal.naam}
+                </a>
+              )}
+            </div>
+          ))}
+          <div className="body" style={{ paddingTop: 0 }}>
+            <p className="mini" style={{ marginBottom: 0 }}>
+              Binnengekomen via BgZ, e-Overdracht of als retourbericht. De portaallink is een
+              ingang naar het systeem van de instelling — geen koppeling, wel de plek waar je
+              hem verwacht.
+            </p>
+          </div>
+        </Kaart>
+      </div>
+
+      <Kaart titel="Tijdlijn" icoon="boek" telling={`${data.tijdlijn.length} items`}>
+        {data.tijdlijn.length === 0 && <Leeg tekst="Nog niets vastgelegd voor deze bron." />}
+        <div className="journaal">
+          {data.tijdlijn.map((item) => item.soort === 'contact' ? (
+            <Contactregel key={item.contact.encounterId + item.datum} regel={item.contact}
+              open={open === item.contact.encounterId}
+              opKlik={() => setOpen(open === item.contact.encounterId ? undefined : item.contact.encounterId)}
+              opEpisode={() => setBron(item.contact.episodeId)} />
+          ) : (
+            <Externregel key={item.document.id} document={item.document}
+              open={open === item.document.id} opKlik={() => lees(item.document.id)} />
           ))}
         </div>
       </Kaart>
@@ -597,24 +744,187 @@ function Journaal({ patientId }: { patientId: string }) {
   );
 }
 
-/** Meetwaarden met het beloop erbij — een kolom getallen leest niemand. */
+/** Eén eigen contact: SOEP, met de rest van de registratie één klik verderop. */
+function Contactregel({ regel, open, opKlik, opEpisode }: {
+  regel: JournaalRegel; open: boolean; opKlik: () => void; opEpisode: () => void;
+}) {
+  return (
+    <div className="journaalregel" data-open={open}>
+      <div>
+        <div className="wanneer">{regel.datum}</div>
+        <div className="mini">{regel.soort}</div>
+      </div>
+      <div>
+        <button className="regelknop" onClick={opKlik}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span className="merkje" data-toon="neutraal">{regel.episodeIcpc} {regel.episodeTitel}</span>
+            <span className="mini">{regel.auteur} · {regel.auteurRol}</span>
+            {regel.bron !== 'zorgverlener' && (
+              <span className="merkje" data-toon="aandacht">{regel.bron}</span>
+            )}
+            <span className="mini" style={{ marginLeft: 'auto' }}>
+              {open ? 'minder' : 'het hele consult'}
+            </span>
+          </div>
+        </button>
+        <div className="soep">
+          {regel.regels.map((r, i) => (
+            <div key={i} className="soepregel">
+              <span className="soepletter" data-letter={r.letter}>{r.letter}</span>
+              <span>{r.tekst}</span>
+            </div>
+          ))}
+        </div>
+        {open && (
+          <div className="contactdetail">
+            <div className="regel">
+              <span className="sleutel">Contact-id<div className="mini">verwijzing naar de registratie</div></span>
+              <span className="waarde" style={{ fontWeight: 400, fontSize: 12 }}>{regel.encounterId}</span>
+            </div>
+            <div className="regel">
+              <span className="sleutel">Herkomst</span>
+              <span className="waarde" style={{ fontWeight: 400, fontSize: 12 }}>
+                {regel.bron} · vastgelegd door {regel.auteur}
+              </span>
+            </div>
+            <button className="knop" style={{ marginTop: 8 }} onClick={opEpisode}>
+              <Icoon naam="lijst" grootte={13} /> Alleen deze episode tonen
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Eén bericht van buiten.
+ *
+ * Bewust een andere vorm dan een eigen contact: een kop met de bron en de standaard, een
+ * samenvatting, en de secties zoals ze binnenkwamen. Het verschil moet je kunnen zien
+ * zonder te lezen wie het schreef.
+ */
+function Externregel({ document, open, opKlik }: {
+  document: ExternDocument; open: boolean; opKlik: () => void;
+}) {
+  const vertraging = Math.round(
+    (new Date(document.ontvangenOp).getTime() - new Date(document.datum).getTime()) / 86_400_000);
+
+  return (
+    <div className="journaalregel extern" data-open={open}>
+      <div>
+        <div className="wanneer">{document.datum}</div>
+        <div className="mini">{document.bron.soort}</div>
+      </div>
+      <div>
+        <button className="regelknop" onClick={opKlik}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span className="merkje" data-toon="informatief">
+              <Icoon naam="gebouw" grootte={11} /> {document.bron.naam}
+            </span>
+            <span className="merkje" data-toon="neutraal">{document.uitwisseling}</span>
+            {document.opOnzeVerwijzing && (
+              <span className="merkje" data-toon="ok">op onze verwijzing</span>
+            )}
+            {!document.gelezen && <span className="merkje" data-toon="aandacht">nieuw</span>}
+            <span className="mini" style={{ marginLeft: 'auto' }}>{open ? 'minder' : 'meer'}</span>
+          </div>
+          <strong style={{ fontSize: 13, display: 'block', marginTop: 5, textAlign: 'left' }}>
+            {document.titel}
+          </strong>
+        </button>
+        <p className="reden" style={{ marginTop: 4 }}>{document.samenvatting}</p>
+
+        {open && (
+          <div className="externdetail">
+            {document.secties.map((sectie) => (
+              <div key={sectie.naam} className="sectie">
+                <h4>{sectie.naam}</h4>
+                {sectie.regels.map((r) => (
+                  <div key={r.label} className="regel">
+                    <span className="sleutel">{r.label}</span>
+                    <span className="waarde" style={{ fontWeight: 400, textAlign: 'left', maxWidth: 420 }}>
+                      {r.waarde}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))}
+
+            <div className="knop-rij" style={{ marginTop: 10 }}>
+              {document.bron.portaal && (
+                <a className="knop" href={document.bron.portaal.url} target="_blank" rel="noreferrer">
+                  <Icoon naam="uitgaand" grootte={13} /> Openen in {document.bron.portaal.naam}
+                </a>
+              )}
+              <span className="mini" style={{ alignSelf: 'center' }}>
+                Zorg op {document.datum}, bij ons binnen op {document.ontvangenOp}
+                {vertraging > 0 ? ` — ${vertraging} dagen later` : ''}.
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const MEETSOORTEN = [
+  { id: 'lab', label: 'Lab' },
+  { id: 'lichamelijk', label: 'Lichamelijk' },
+  { id: 'vragenlijst', label: 'Vragenlijsten' },
+  { id: 'verrichting', label: 'Verrichtingen' },
+] as const;
+
+/**
+ * MEETWAARDEN
+ *
+ * Twee manieren van kijken, want er zijn twee vragen. "Hoe loopt dit?" beantwoord je met
+ * een grafiek; "wat stond er in die uitslag van maart?" met een tabel. Eén weergave
+ * dwingt je steeds de verkeerde te gebruiken.
+ *
+ * Het filter op soort is er omdat een dossier van tien jaar al snel dertig reeksen heeft.
+ * Lab wil je los kunnen zien van bloeddrukken en vragenlijstscores — die lees je anders
+ * en je zoekt ze op een ander moment.
+ */
 function Metingen({ patientId, gekozen, opKies }: {
   patientId: string; gekozen?: string; opKies: (code: string) => void;
 }) {
   const { data, fout, bezig } = useData(() => api.meetreeksen(patientId), [patientId]);
+  const [soorten, setSoorten] = useState<string[]>([]);
+  const [weergave, setWeergave] = useState<'beloop' | 'tabel' | 'labblad'>('beloop');
 
   if (fout) return <Fout boodschap={fout} />;
   if (bezig || !data) return <Laden wat="Meetwaarden" />;
 
+  const zichtbaar = soorten.length === 0 ? data : data.filter((m) => soorten.includes(m.soort));
   const actief: Meetreeks | undefined =
-    data.find((m) => m.code === gekozen) ?? data.find((m) => m.punten.length > 1) ?? data[0];
+    zichtbaar.find((m) => m.code === gekozen)
+    ?? zichtbaar.find((m) => m.punten.length > 1) ?? zichtbaar[0];
 
   return (
     <div className="raster2" style={{ gridTemplateColumns: '300px minmax(0, 1fr)' }}>
-      <Kaart titel="Alle meetwaarden" icoon="buisje" telling={data.length} strak>
+      <Kaart titel="Alle meetwaarden" icoon="buisje" telling={`${zichtbaar.length}/${data.length}`} strak>
+        <div className="body" style={{ paddingBottom: 8 }}>
+          <div className="chips">
+            <button className="filterchip" data-actief={soorten.length === 0}
+              onClick={() => setSoorten([])}>Alles</button>
+            {MEETSOORTEN.map((s) => {
+              const aantal = data.filter((m) => m.soort === s.id).length;
+              if (aantal === 0) return null;
+              return (
+                <button key={s.id} className="filterchip" data-actief={soorten.includes(s.id)}
+                  onClick={() => setSoorten((h) =>
+                    h.includes(s.id) ? h.filter((x) => x !== s.id) : [...h, s.id])}>
+                  {s.label} <span className="mini">{aantal}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <table>
           <tbody>
-            {data.map((m) => (
+            {zichtbaar.map((m) => (
               <tr key={m.code}>
                 <td style={{ padding: 0 }}>
                   <button className="gesprekknop" data-actief={actief?.code === m.code}
@@ -639,25 +949,132 @@ function Metingen({ patientId, gekozen, opKies }: {
         </table>
       </Kaart>
 
-      {actief && (
-        <Kaart titel={actief.naam} icoon="doel"
-          telling={actief.eenheid ? actief.eenheid : undefined}>
-          <Trendgrafiek punten={actief.punten} eenheid={actief.eenheid} streef={actief.streef} />
-          {actief.streef && (
-            <div className="mini" style={{ marginTop: 8 }}>
-              Referentie: {actief.streef.label}. De stippellijn in de grafiek.
-            </div>
-          )}
-          {actief.verschil !== undefined && (
-            <div style={{ marginTop: 10 }}>
-              <span className="merkje" data-toon={Math.abs(actief.verschil) > 0 ? 'informatief' : 'neutraal'}>
-                {actief.verschil > 0 ? '+' : ''}{actief.verschil} ten opzichte van de vorige meting
-              </span>
-            </div>
-          )}
-        </Kaart>
-      )}
+      <div>
+        <div className="segment" style={{ marginBottom: 12, maxWidth: 380 }}>
+          <button data-actief={weergave === 'beloop'} onClick={() => setWeergave('beloop')}>
+            <Icoon naam="grafiek" grootte={13} /> beloop
+          </button>
+          <button data-actief={weergave === 'tabel'} onClick={() => setWeergave('tabel')}>
+            <Icoon naam="tabel" grootte={13} /> deze reeks
+          </button>
+          <button data-actief={weergave === 'labblad'} onClick={() => setWeergave('labblad')}>
+            <Icoon naam="buisje" grootte={13} /> labblad
+          </button>
+        </div>
+
+        {weergave === 'labblad' && <Labtabel reeksen={data} />}
+
+        {weergave !== 'labblad' && actief && (
+          <Kaart titel={actief.naam} icoon={weergave === 'tabel' ? 'tabel' : 'grafiek'}
+            telling={actief.eenheid ? actief.eenheid : undefined}>
+            {weergave === 'beloop' ? (
+              <>
+                <Trendgrafiek punten={actief.punten} eenheid={actief.eenheid} streef={actief.streef} />
+                {actief.streef && (
+                  <div className="mini" style={{ marginTop: 8 }}>
+                    Referentie: {actief.streef.label}. De stippellijn in de grafiek.
+                  </div>
+                )}
+                {actief.verschil !== undefined && (
+                  <div style={{ marginTop: 10 }}>
+                    <span className="merkje"
+                      data-toon={Math.abs(actief.verschil) > 0 ? 'informatief' : 'neutraal'}>
+                      {actief.verschil > 0 ? '+' : ''}{actief.verschil} ten opzichte van de vorige meting
+                    </span>
+                  </div>
+                )}
+              </>
+            ) : (
+              <table className="waardetabel">
+                <thead>
+                  <tr><th>Datum</th><th className="rechts">Waarde</th><th className="rechts">Verschil</th></tr>
+                </thead>
+                <tbody>
+                  {[...actief.punten].reverse().map((punt, i, lijst) => {
+                    const vorige = lijst[i + 1];
+                    const verschil = vorige
+                      ? Math.round((punt.waarde - vorige.waarde) * 10) / 10 : undefined;
+                    return (
+                      <tr key={punt.op}>
+                        <td>{punt.op}</td>
+                        <td className="rechts getal">{punt.waarde} {actief.eenheid}</td>
+                        <td className="rechts getal mini">
+                          {verschil === undefined ? '—' : `${verschil > 0 ? '+' : ''}${verschil}`}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </Kaart>
+        )}
+
+        {weergave !== 'labblad' && !actief && (
+          <Leeg tekst="Geen meetwaarden in deze selectie." />
+        )}
+      </div>
     </div>
+  );
+}
+
+/**
+ * Het labblad: alle bepalingen naast elkaar, per afnamedatum.
+ *
+ * Dit is hoe een uitslag binnenkomt en hoe een arts hem leest — per kolom één prik, niet
+ * per bepaling een losse grafiek. De laatste twaalf afnamemomenten, want verder terug
+ * kijk je zelden en dan is de grafiek beter.
+ */
+function Labtabel({ reeksen }: { reeksen: Meetreeks[] }) {
+  const lab = reeksen.filter((m) => m.soort === 'lab');
+  const datums = [...new Set(lab.flatMap((m) => m.punten.map((p) => p.op)))]
+    .sort((a, b) => b.localeCompare(a))
+    .slice(0, 12);
+
+  if (lab.length === 0) return <Leeg tekst="Geen labwaarden in dit dossier." />;
+
+  return (
+    <Kaart titel="Labblad" icoon="tabel" telling={`${lab.length} bepalingen`}>
+      <p className="reden" style={{ marginTop: 0 }}>
+        Alle bepalingen per afnamemoment, nieuwste links. Een waarde buiten de referentie
+        staat gemarkeerd; de referentie zelf staat achter de naam.
+      </p>
+      <div style={{ overflowX: 'auto' }}>
+        <table className="waardetabel">
+          <thead>
+            <tr>
+              <th style={{ minWidth: 180 }}>Bepaling</th>
+              {datums.map((d) => (
+                <th key={d} className="rechts" title={d}>
+                  {`${d.slice(8, 10)}-${d.slice(5, 7)}-${d.slice(2, 4)}`}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {lab.map((m) => (
+              <tr key={m.code}>
+                <td>
+                  {m.naam}
+                  <div className="mini">{m.eenheid}{m.streef ? ` · ${m.streef.label}` : ''}</div>
+                </td>
+                {datums.map((d) => {
+                  const punt = m.punten.find((p) => p.op === d);
+                  const buiten = punt && m.streef && (
+                    (m.streef.boven !== undefined && punt.waarde > m.streef.boven)
+                    || (m.streef.onder !== undefined && punt.waarde < m.streef.onder));
+                  return (
+                    <td key={d} className="rechts getal" data-buiten={buiten ? 'true' : undefined}>
+                      {punt ? punt.waarde : '·'}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Kaart>
   );
 }
 
@@ -669,10 +1086,15 @@ function Metingen({ patientId, gekozen, opKies }: {
  * hier ook — je hoeft geen tweede consult te starten omdat de klacht ergens anders bij
  * hoort.
  */
-function Registreren({ patientId, overzicht, registratie, opWijzig, opKlaar }: {
+function Registreren({
+  patientId, overzicht, registratie, ordersVandaag, opOrder, opWijzig, opKlaar,
+}: {
   patientId: string;
   overzicht: PatientOverzicht;
   registratie: Registratie;
+  /** Wat er tijdens dit consult al besteld is; komt onder P te staan. */
+  ordersVandaag: NieuweOrder[];
+  opOrder: () => void;
   opWijzig: (nieuw: Registratie) => void;
   opKlaar: (nieuw: PatientOverzicht, uitkomst: RegistratieUitkomst) => void;
 }) {
@@ -847,6 +1269,48 @@ function Registreren({ patientId, overzicht, registratie, opWijzig, opKlaar }: {
               onChange={(e) => zet({ soep: { ...registratie.soep, [letter]: e.target.value } })} />
           </div>
         ))}
+      </div>
+
+      {/*
+        Het plan is de plek waar het consult de praktijk verlaat. Vrije tekst blijft,
+        want een afspraak met een mens laat zich niet in een keuzelijst persen — maar
+        wat een order ís, hoort een order te worden en niet een zin die niemand uitvoert.
+      */}
+      <div className="planbouw">
+        <div className="mini" style={{ marginBottom: 6 }}>Plan aanvullen</div>
+        <div className="chips">
+          {PLANZINNEN.map((zin) => (
+            <button key={zin} className="filterchip"
+              onClick={() => zet({
+                soep: {
+                  ...registratie.soep,
+                  P: [registratie.soep.P, zin].filter(Boolean).join('. '),
+                },
+              })}>
+              <Icoon naam="plus" grootte={12} /> {zin}
+            </button>
+          ))}
+          <button className="filterchip" data-nadruk="true" onClick={opOrder}>
+            <Icoon naam="uitgaand" grootte={12} /> Order plaatsen
+          </button>
+        </div>
+
+        {ordersVandaag.length > 0 && (
+          <div className="planorders">
+            <div className="mini" style={{ marginBottom: 4 }}>
+              Deze orders hangen straks aan dit deelcontact
+            </div>
+            {ordersVandaag.map((o, i) => (
+              <div key={i} className="regel">
+                <span className="sleutel">
+                  {o.omschrijving}
+                  <div className="mini">{o.soort}{o.route ? ` · ${o.route}` : ''}</div>
+                </span>
+                <span className="waarde" style={{ fontWeight: 400, fontSize: 12.5 }}>{o.detail}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {registratie.suggestieCodes.length > 0 && (

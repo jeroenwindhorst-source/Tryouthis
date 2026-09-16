@@ -56,6 +56,31 @@ export interface Autorisatieverzoek {
   status: 'open' | 'geaccordeerd' | 'afgewezen';
 }
 
+/**
+ * De toestand van een afspraak op de dag zelf.
+ *
+ * Dit is geen administratief veld maar het antwoord op de vraag die een zorgverlener de
+ * hele ochtend stelt: zit hij er al? Een agenda die alleen tijden toont, dwingt je om
+ * dat aan de assistent te vragen — en dat is precies het loopwerk dat een
+ * aanmeldzuil zou moeten wegnemen.
+ */
+export type Afspraakstatus =
+  | 'gepland'      // staat in de agenda, patiënt is er nog niet
+  | 'aangemeld'    // heeft zich gemeld bij de zuil of aan de balie
+  | 'wachtkamer'   // zit klaar om opgehaald te worden
+  | 'in-consult'   // je bent met deze patiënt bezig
+  | 'afgerond'     // consult vastgelegd
+  | 'noshow';      // niet verschenen
+
+export const STATUSLABEL: Record<Afspraakstatus, string> = {
+  gepland: 'gepland',
+  aangemeld: 'aangemeld',
+  wachtkamer: 'in de wachtkamer',
+  'in-consult': 'in consult',
+  afgerond: 'afgerond',
+  noshow: 'niet verschenen',
+};
+
 export interface AgendaItem {
   id: string;
   start: string;
@@ -66,7 +91,10 @@ export interface AgendaItem {
   soort: string;
   titel: string;
   reden?: string;
-  status: 'gepland' | 'afgerond' | 'noshow';
+  status: Afspraakstatus;
+  /** Hoe de patiënt zich meldde. Alleen gevuld zodra dat gebeurd is. */
+  aangemeldVia?: 'aanmeldzuil' | 'balie' | 'telefonisch';
+  aangemeldOm?: string;
 }
 
 const HULPVRAGEN_TELEFOON = [
@@ -130,10 +158,24 @@ function naamVan(dossier: Dossier): string {
   return [n.voornaam, n.tussenvoegsel, n.achternaam].filter(Boolean).join(' ');
 }
 
+/**
+ * Een tijdstip op de praktijkdag.
+ *
+ * Bewust met een vaste offset en niet als UTC-instant. De agenda van een praktijk is een
+ * *wandklok*: een afspraak van kwart voor negen is kwart voor negen, waar de server ook
+ * staat. Toen dit als `toISOString()` werd opgeslagen en de afspraken uit de populatie
+ * met `+02:00`, stonden er twee conventies door elkaar in dezelfde lijst — en daardoor
+ * stond het halve spreekuur ten onrechte op 'afgerond'.
+ */
 function tijd(peildatum: Date, uur: number, minuut: number): string {
-  const d = new Date(peildatum);
-  d.setHours(uur, minuut, 0, 0);
-  return d.toISOString();
+  const dag = peildatum.toISOString().slice(0, 10);
+  const tweecijferig = (n: number) => String(n).padStart(2, '0');
+  return `${dag}T${tweecijferig(uur)}:${tweecijferig(minuut)}:00+02:00`;
+}
+
+/** Minuten sinds middernacht, gelezen van de wandklok in de tijdstempel zelf. */
+function minutenOpDeDag(tijdstempel: string): number {
+  return Number(tijdstempel.slice(11, 13)) * 60 + Number(tijdstempel.slice(14, 16));
 }
 
 /** Triage-instroom van vandaag: telefonisch én digitaal, in één stroom. */
@@ -328,13 +370,79 @@ export function genereerAgenda(praktijk: Praktijk, zaad = 21): AgendaItem[] {
     start: tijd(praktijk.peildatum, 12, 0), duurMinuten: 60, rol: 'huisarts',
     soort: 'blok', titel: 'Visites', status: 'gepland',
   });
+  // Het teamoverleg staat bij alle drie de rollen op hetzelfde moment in de agenda.
+  // Eén blok in één agenda is geen afspraak maar een voornemen.
+  for (const rol of ['huisarts', 'poh-s', 'assistent'] as Rol[]) {
+    items.push({
+      id: `ag-overleg-${rol}`,
+      start: tijd(praktijk.peildatum, 11, 0), duurMinuten: 30, rol,
+      soort: 'overleg', titel: 'Overleg met het team', status: 'gepland',
+      reden: 'Patiënten van de bespreeklijst doorlopen',
+    });
+  }
+
+  // De POH begint met voorbereiden. Dat is werk en hoort dus tijd in de agenda te
+  // krijgen; anders gebeurt het tussendoor en dus niet.
   items.push({
-    id: 'ag-ha-overleg',
-    start: tijd(praktijk.peildatum, 11, 0), duurMinuten: 30, rol: 'huisarts',
-    soort: 'blok', titel: 'Overleg met POH en assistent', status: 'gepland',
+    id: 'ag-poh-voorbereiden',
+    start: tijd(praktijk.peildatum, 8, 0), duurMinuten: 30, rol: 'poh-s',
+    soort: 'blok', titel: 'Voorbereiding spreekuur', status: 'gepland',
+    reden: 'Uitslagen, vragenlijsten en intakes van vandaag nalopen',
+  });
+  items.push({
+    id: 'ag-poh-administratie',
+    start: tijd(praktijk.peildatum, 16, 0), duurMinuten: 30, rol: 'poh-s',
+    soort: 'blok', titel: 'Afronden en uitwerken', status: 'gepland',
   });
 
-  return items.sort((a, b) => a.start.localeCompare(b.start));
+  return zetDagstatus(items.sort((a, b) => a.start.localeCompare(b.start)), praktijk.peildatum);
+}
+
+/**
+ * De dag zoals hij er halverwege de ochtend uitziet.
+ *
+ * Een demo waarin alles 'gepland' staat, laat juist niet zien waar dit veld voor is.
+ * De statussen hieronder zijn afgeleid van één vast moment op de dag — het spreekuur
+ * loopt, een paar mensen zitten in de wachtkamer, één is niet komen opdagen.
+ */
+export const DEMO_KLOK = { uur: 10, minuut: 20 };
+
+export function zetDagstatus(items: AgendaItem[], peildatum: Date): AgendaItem[] {
+  const nu = DEMO_KLOK.uur * 60 + DEMO_KLOK.minuut;
+  const dag = peildatum.toISOString().slice(0, 10);
+  const tweecijferig = (n: number) => String(n).padStart(2, '0');
+  const klok = (minuten: number) =>
+    `${dag}T${tweecijferig(Math.floor(minuten / 60))}:${tweecijferig(minuten % 60)}:00+02:00`;
+
+  const perRol = new Map<string, number>();
+  return items.map((item) => {
+    if (!item.patientId) return item;
+    const start = minutenOpDeDag(item.start);
+    const eind = start + item.duurMinuten;
+    const teller = (perRol.get(item.rol) ?? 0) + 1;
+    perRol.set(item.rol, teller);
+
+    if (eind <= nu) {
+      // Eén no-show per rol, zodat het geval bestaat zonder de dag te vullen.
+      if (teller === 3) return { ...item, status: 'noshow' as const };
+      return { ...item, status: 'afgerond' as const,
+        aangemeldVia: 'aanmeldzuil' as const, aangemeldOm: klok(Math.max(0, start - 9)) };
+    }
+    if (start <= nu) {
+      return { ...item, status: 'in-consult' as const,
+        aangemeldVia: 'aanmeldzuil' as const, aangemeldOm: klok(Math.max(0, start - 11)) };
+    }
+    if (start - nu <= 12) {
+      return { ...item, status: 'wachtkamer' as const,
+        aangemeldVia: 'aanmeldzuil' as const, aangemeldOm: klok(nu - 2) };
+    }
+    if (start - nu <= 25) {
+      return { ...item, status: 'aangemeld' as const,
+        aangemeldVia: teller % 2 === 0 ? 'balie' as const : 'aanmeldzuil' as const,
+        aangemeldOm: klok(nu - 6) };
+    }
+    return item;
+  });
 }
 
 /**
@@ -353,6 +461,8 @@ export interface WachtkamerIntake {
   naam: string;
   app: { id: string; naam: string; leverancier: string };
   opgenomenOp: string;
+  /** Waar de voorbereiding is gedaan. Thuis betekent: meer tijd, en de partner zat erbij. */
+  waar: 'wachtkamer' | 'thuis';
   duurSeconden: number;
   hulpvraag: string;
   anamnese: string;
@@ -363,6 +473,7 @@ export interface WachtkamerIntake {
 
 const INTAKES: Omit<WachtkamerIntake, 'id' | 'patientId' | 'naam' | 'app' | 'opgenomenOp' | 'bevestigd'>[] = [
   {
+    waar: 'wachtkamer',
     duurSeconden: 138,
     hulpvraag: 'Ik ben de laatste weken sneller moe en mijn voeten tintelen ’s avonds.',
     anamnese:
@@ -377,6 +488,7 @@ const INTAKES: Omit<WachtkamerIntake, 'id' | 'patientId' | 'naam' | 'app' | 'opg
     metingen: [{ code: '29463-7', naam: 'Gewicht', waarde: 84.2, eenheid: 'kg' }],
   },
   {
+    waar: 'thuis',
     duurSeconden: 96,
     hulpvraag: 'Mijn bloeddruk thuis is de laatste tijd hoger, ik maak me er zorgen over.',
     anamnese:
@@ -393,6 +505,7 @@ const INTAKES: Omit<WachtkamerIntake, 'id' | 'patientId' | 'naam' | 'app' | 'opg
     ],
   },
   {
+    waar: 'wachtkamer',
     duurSeconden: 174,
     hulpvraag: 'Ik word ’s nachts wakker van het hoesten en ben benauwder bij het traplopen.',
     anamnese:
@@ -406,6 +519,55 @@ const INTAKES: Omit<WachtkamerIntake, 'id' | 'patientId' | 'naam' | 'app' | 'opg
     ],
     metingen: [],
   },
+
+  {
+    waar: 'thuis',
+    duurSeconden: 211,
+    hulpvraag: 'Mijn man vergeet steeds meer en ik weet niet goed wat ik ermee moet.',
+    anamnese:
+      'Voorbereiding thuis gedaan, echtgenote voerde het woord. Sinds ongeveer een jaar toenemende ' +
+      'vergeetachtigheid: herhaalt vragen, vergeet afspraken, laat het gas aan staan. Kan zich nog wel ' +
+      'zelfstandig wassen en aankleden. Boodschappen lukt niet meer alleen. Geen wegrakingen, geen ' +
+      'krachtsverlies. Slaapt slecht, ’s nachts onrustig. Echtgenote geeft aan het zwaar te hebben.',
+    codesuggesties: [
+      { icpc: 'P70', display: 'Dementie', vertrouwen: 0.68 },
+      { icpc: 'P20', display: 'Geheugen-/concentratie-/oriëntatiestoornis', vertrouwen: 0.86 },
+      { icpc: 'Z14', display: 'Ziekte partner', vertrouwen: 0.59 },
+    ],
+    metingen: [],
+  },
+
+  {
+    waar: 'wachtkamer',
+    duurSeconden: 84,
+    hulpvraag: 'Ik heb al drie dagen pijn bij het plassen en moet steeds naar het toilet.',
+    anamnese:
+      'Sinds drie dagen pijnlijke, frequente mictie met loze aandrang. Geen koorts, geen flankpijn, ' +
+      'geen bloed bij de urine gezien. Niet eerder blaasontsteking gehad dit jaar. Drinkt weinig. ' +
+      'Geen zwangerschap, geen relevante medicatie.',
+    codesuggesties: [
+      { icpc: 'U71', display: 'Cystitis/urineweginfectie', vertrouwen: 0.92 },
+      { icpc: 'U02', display: 'Frequente/pijnlijke mictie', vertrouwen: 0.88 },
+    ],
+    metingen: [{ code: '8310-5', naam: 'Temperatuur', waarde: 36.9, eenheid: '°C' }],
+  },
+
+  {
+    waar: 'thuis',
+    duurSeconden: 165,
+    hulpvraag: 'Ik voel me al maanden somber en kom nergens meer toe.',
+    anamnese:
+      'Sinds ongeveer vier maanden somberheid, vrijwel dagelijks. Weinig plezier in dingen die eerder ' +
+      'wel plezier gaven. Slaapt slecht in en wordt vroeg wakker. Eetlust verminderd, enkele kilo’s ' +
+      'afgevallen. Werkt nog, maar functioneert moeizaam. Geen gedachten aan zelfdoding, desgevraagd ' +
+      'expliciet ontkend. Drinkt drie tot vier glazen alcohol per avond, is toegenomen.',
+    codesuggesties: [
+      { icpc: 'P76', display: 'Depressieve stoornis', vertrouwen: 0.83 },
+      { icpc: 'P06', display: 'Slapeloosheid', vertrouwen: 0.74 },
+      { icpc: 'P15', display: 'Chronisch alcoholmisbruik', vertrouwen: 0.61 },
+    ],
+    metingen: [],
+  },
 ];
 
 /** Wachtkamer-intakes van vandaag, gekoppeld aan patiënten die op het spreekuur staan. */
@@ -414,12 +576,14 @@ export function genereerIntakes(
 ): WachtkamerIntake[] {
   const metPatient = agendaItems.filter((a) => a.patientId);
   return INTAKES.flatMap((sjabloon, i) => {
-    const item = metPatient[i * 3];
+    const item = metPatient[i];
     if (!item?.patientId) return [];
     const dossier = praktijk.dossiers.find((d) => d.patient.id === item.patientId);
     if (!dossier) return [];
     const start = new Date(item.start);
-    start.setMinutes(start.getMinutes() - 12);
+    // In de wachtkamer vlak voor de afspraak; thuis de avond ervoor.
+    if (sjabloon.waar === 'thuis') start.setDate(start.getDate() - 1);
+    start.setMinutes(start.getMinutes() - (sjabloon.waar === 'thuis' ? -180 : 12));
     return [{
       ...sjabloon,
       id: `intake-${i + 1}`,

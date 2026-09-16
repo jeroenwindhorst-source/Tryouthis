@@ -47,6 +47,41 @@ De negen sets die er nu zijn:
 De laatste is bewust geen landelijke richtlijn: het laat zien dat een zorggroep een
 eigen set mag toevoegen, zolang de herkomst maar ingevuld is.
 
+## 2b. Losse orders — de catalogus
+
+Ordersets dekken het voorspelbare deel van het werk. Het grootste deel van een
+huisartsendag is niet voorspelbaar: iemand heeft rugpijn en heeft paracetamol nodig,
+iemand anders moet naar de chirurg voor een liesbreuk. Daar bestaat geen pakket voor,
+en er hoort er ook geen te komen.
+
+Daarom staat naast de sets een **catalogus** met één zoekveld over vier soorten:
+
+| Soort | Wat erin zit | Hoe het de praktijk verlaat |
+|---|---|---|
+| medicatie | ~30 veelgebruikte middelen met ATC, vorm en gangbare doseringen | recept naar de apotheek |
+| lab | 20 bepalingen met materiaal | aanvraag naar het laboratorium |
+| onderzoek | ECG, spirometrie, 24-uursmeting, enkel-armindex, beeldvorming | praktijk of diagnostisch centrum |
+| verwijzing | 22 bestemmingen in eerste en tweede lijn, met vraagstellingen | ZorgDomein of directe verwijsbrief |
+
+Eén zoekveld voor alle vier, want de zorgverlener denkt in "wat moet er gebeuren" en
+niet in "welke van de vier ordersoorten is dit". Die indeling is een systeemindeling en
+hoort niet in het zoekpad te staan.
+
+De dosering of de vraagstelling staat al ingevuld en is aan te passen vóórdat je de
+order toevoegt, niet erna in een bewerkscherm. Wat het vaakst gekozen wordt staat als
+knop klaar; typen is de uitzondering. Bij een verwijzing staat de route erbij — wat via
+ZorgDomein gaat krijgt een gestructureerd formulier met een verplichte vraagstelling en
+een terugkoppeling, de rest is een brief. Dat verschil hoort zichtbaar te zijn op het
+moment van verwijzen, niet pas als de brief terugkomt.
+
+Gekozen orders gaan in een **mandje** en worden in één handeling geplaatst. Een consult
+levert zelden één order op: je bestelt de pijnstiller én de controle én de verwijzing,
+en je wilt in één overzicht zien wat er uitgaat en wat er langs de huisarts moet.
+
+> ⚠️ De catalogus is demomateriaal. Doseringen zijn gangbaar maar niet tegen de
+> G-Standaard gecontroleerd, en de lijst is bewust klein. Een echt formularium komt uit
+> de G-Standaard en de NHG-Tabellen, onder licentie.
+
 ## 3. De contra-indicatiecheck
 
 `controleer(regel, dossier)` geeft `Waarschuwing[]` terug, elk met een niveau:
@@ -86,8 +121,9 @@ nemen — zie `docs/05-werkplekken.md` §3.
 
 - Geen echte koppeling met apotheek (NHG-Tabel 25 / G-Standaard) of lab (LOINC-order).
   De codes staan er, de transportlaag niet.
-- Geen medicatiebewaking op interacties. De check kijkt nu naar nierfunctie, leeftijd
-  en polyfarmacie — niet naar middel-middelinteracties. Dat vraagt een G-Standaard-
-  licentie en hoort in dezelfde MDR-beoordeling als de rest.
+- Geen medicatiebewaking op interacties. De check kijkt nu naar nierfunctie, leeftijd,
+  polyfarmacie en dubbelmedicatie — niet naar middel-middelinteracties en niet naar
+  overgevoeligheden, want die staan nog niet in het dossiermodel. Dat vraagt een
+  G-Standaard-licentie en hoort in dezelfde MDR-beoordeling als de rest.
 - Geen herhaalservice-logica. De 84 herhaalrecepten in de werkvoorraad zijn gegenereerd,
   niet geordend via dit pad.

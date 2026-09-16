@@ -9,3 +9,4 @@ export * from './vragenlijsten-demo.js';
 export * from './oproep.js';
 export * from './beslisondersteuning.js';
 export * from './orders.js';
+export * from './catalogus.js';

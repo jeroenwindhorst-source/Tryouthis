@@ -1,4 +1,4 @@
-import { api, type Processtap } from '../api';
+import { api, type AgendaRegel, type Processtap } from '../api';
 import { useData } from '../gebruik';
 import { Icoon } from '../iconen';
 import { Agenda, Fout, Kaart, Laden } from '../onderdelen';
@@ -14,11 +14,46 @@ const STAP_ICOON: Record<Processtap['id'], string> = {
  * letterlijk bij wát je daar ziet, want dat is precies wat in bestaande systemen
  * ontbreekt: je moet er maar achter komen waar je je werk vindt.
  */
+/**
+ * De stand van de wachtkamer, in één regel boven de agenda.
+ *
+ * Wie wacht er nu, wie is er al binnen, wie is niet gekomen. Dat is wat een zorgverlener
+ * halverwege de ochtend wil weten zonder de hele lijst af te lopen — en wat hij nu aan de
+ * assistent moet vragen.
+ */
+function Wachtkamerstand({ regels }: { regels: AgendaRegel[] }) {
+  const tel = (status: string) => regels.filter((r) => r.status === status).length;
+  const stand = [
+    { status: 'wachtkamer', label: 'in de wachtkamer', toon: 'ok' },
+    { status: 'aangemeld', label: 'aangemeld', toon: 'informatief' },
+    { status: 'afgerond', label: 'afgerond', toon: 'neutraal' },
+    { status: 'noshow', label: 'niet verschenen', toon: 'urgent' },
+  ].filter((s) => tel(s.status) > 0);
+
+  if (stand.length === 0) return null;
+  return (
+    <span className="chips" style={{ marginLeft: 8 }}>
+      {stand.map((s) => (
+        <span key={s.status} className="merkje" data-toon={s.toon}>
+          {tel(s.status)} {s.label}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 export function Dagstart({ gaNaar, openPatient }: {
   gaNaar: (scherm: string) => void;
   openPatient: (id: string) => void;
 }) {
-  const { data, fout, bezig } = useData(() => api.dagstart());
+  const { data, fout, bezig, setData } = useData(() => api.dagstart());
+
+  // De agenda is het enige dat tijdens de dag verandert; de rest van het scherm niet.
+  // Daarom alleen die regels bijwerken in plaats van het hele scherm opnieuw te laden.
+  const zetStatus = async (afspraakId: string, status: string) => {
+    const agenda = await api.zetAfspraakstatus(afspraakId, status, 'poh-s');
+    setData((huidig) => huidig && { ...huidig, agenda });
+  };
 
   if (fout) return <Fout boodschap={fout} />;
   if (bezig || !data) return <Laden wat="Dagstart" />;
@@ -38,7 +73,7 @@ export function Dagstart({ gaNaar, openPatient }: {
 
       <div className="stappen">
         {data.stappen.map((stap) => (
-          <button key={stap.id} className="stap" data-aandacht={stap.aandacht > 0}
+          <button key={stap.id} className="stap" data-stap={stap.id} data-aandacht={stap.aandacht > 0}
             onClick={() => gaNaar(stap.id)}>
             <span className="pijl"><Icoon naam="pijl" grootte={14} /></span>
             <div className="kop">
@@ -57,8 +92,9 @@ export function Dagstart({ gaNaar, openPatient }: {
       </div>
 
       <div className="raster2">
-        <Kaart titel="Mijn dag" icoon="agenda" telling={`${data.agenda.length} in de agenda`}>
-          <Agenda regels={data.agenda} openPatient={openPatient} />
+        <Kaart titel="Mijn dag" icoon="agenda" telling={`${data.agenda.length} in de agenda`}
+          extra={<Wachtkamerstand regels={data.agenda} />}>
+          <Agenda regels={data.agenda} openPatient={openPatient} opStatus={zetStatus} />
         </Kaart>
 
         <div>

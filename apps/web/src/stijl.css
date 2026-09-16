@@ -564,3 +564,263 @@ label.veld { display: block; font-size: 12px; color: var(--ink-2); font-weight: 
 .werkblad[data-dichtheid="ruim"] td { padding: 15px; }
 .werkblad[data-dichtheid="ruim"] .kaart .body { padding: 20px; }
 .werkblad[data-dichtheid="ruim"] { font-size: 14px; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   GLANS OP DE WERKSCHERMEN
+   ───────────────────────────────────────────────────────────────────────────
+   Het aanmeldscherm heeft diepte: een verloop, een gloed, een merkteken dat
+   groot mag zijn. Op een werkscherm mag dat niet ten koste gaan van wat er
+   telt — je kijkt hier acht uur per dag naar en je moet in één blik veel
+   kunnen zien.
+
+   De oplossing is dat de diepte in de *dragende vlakken* zit en niet in de
+   inhoud. De zijbalk krijgt hetzelfde verloop als het merkpaneel, de
+   ondergrond een nauwelijks zichtbare gloed, de kopbalk wordt doorschijnend.
+   De kaarten zelf blijven wit, strak en dicht opeen. Zo is het scherm rustig
+   én van deze tijd, in plaats van rustig en grijs.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+.zijbalk {
+  background:
+    radial-gradient(115% 80% at 12% 4%, #3b2f56 0%, #2a2340 42%, #221c31 74%, #1c1728 100%);
+  position: relative;
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, .05);
+}
+/* Het ritme uit het merkteken, groot en stil, net als op het aanmeldscherm. */
+.zijbalk::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: -40px; height: 220px;
+  background: radial-gradient(70% 60% at 30% 100%, rgba(139, 118, 232, .22), transparent 70%);
+  pointer-events: none;
+}
+.zijbalk > * { position: relative; z-index: 1; }
+.zijbalk button[data-actief="true"] {
+  background: linear-gradient(180deg, #6a58e0, #5341c4);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .3), inset 0 1px 0 rgba(255, 255, 255, .17);
+}
+
+body {
+  background:
+    radial-gradient(90% 55% at 0% 0%, #f2eefb 0%, transparent 58%),
+    radial-gradient(70% 50% at 100% 0%, #f6f1ec 0%, transparent 62%),
+    var(--bg);
+  background-attachment: fixed;
+}
+
+.kopbalk {
+  background: rgba(255, 255, 255, .84);
+  backdrop-filter: saturate(150%) blur(10px);
+}
+
+.paginakop h1 {
+  font-size: 21px; letter-spacing: -.025em;
+}
+
+/* De kaartkop krijgt een heel licht verloop, zodat de kaart van het blad afkomt
+   zonder dat er een lijn of een schaduw bij hoeft. */
+.kaart > header {
+  background: linear-gradient(180deg, rgba(91, 75, 204, .045), rgba(91, 75, 204, 0));
+  border-radius: var(--rond) var(--rond) 0 0;
+}
+.kaart { transition: box-shadow .14s, border-color .14s; }
+.kaart:hover { box-shadow: 0 1px 2px rgba(36, 31, 46, .05), 0 4px 14px rgba(36, 31, 46, .07); }
+
+.knop[data-toon="primair"] {
+  background: linear-gradient(180deg, #6a58e0, var(--merk));
+  box-shadow: 0 1px 2px rgba(69, 58, 158, .28), inset 0 1px 0 rgba(255, 255, 255, .18);
+}
+.knop[data-toon="primair"]:hover { background: linear-gradient(180deg, #5b4bcc, var(--merk-diep)); }
+
+/* De vier processtappen krijgen elk een eigen tint. Ze zijn het startscherm en
+   het enige moment waarop kleur gewoon mag opvrolijken — het zijn vier vaste
+   stappen, dus de kleur is te leren en dus betekenisvol. */
+.stap { overflow: hidden; }
+.stap::before {
+  content: ''; position: absolute; inset: 0 0 auto 0; height: 3px;
+  background: var(--stapkleur, var(--merk));
+}
+.stap .kop .ikoon { background: var(--stapzacht, var(--merk-zacht)); color: var(--stapkleur, var(--merk-diep)); }
+.stap[data-stap="voorbereiden"] { --stapkleur: #0e7aa8; --stapzacht: #e8f5fc; }
+.stap[data-stap="spreekuur"]    { --stapkleur: #5b4bcc; --stapzacht: #eeecfc; }
+.stap[data-stap="monitoren"]    { --stapkleur: #0d7d6e; --stapzacht: #e7f6f3; }
+.stap[data-stap="afronden"]     { --stapkleur: #b96708; --stapzacht: #fdf4e6; }
+
+/* ── Demo herstellen ──────────────────────────────────────────────────────── */
+
+.demoknop {
+  display: inline-flex; align-items: center; gap: 6px; margin-left: auto;
+  border: 1px dashed #cfc9dd; background: rgba(255, 255, 255, .6); color: var(--ink-2);
+  padding: 5px 11px; border-radius: 999px; font-size: 12px; font-weight: 550;
+}
+.demoknop:hover { border-color: var(--merk); color: var(--merk-diep); background: var(--merk-zacht); }
+.demobevestiging {
+  display: flex; align-items: center; gap: 9px; margin-left: auto;
+  background: var(--merk-zacht); border: 1px solid #d5cef7; border-radius: 999px;
+  padding: 5px 7px 5px 14px; max-width: 560px;
+}
+.demobevestiging .mini { max-width: 280px; }
+
+/* ── Agenda: waar zit de patiënt ──────────────────────────────────────────── */
+
+.statusmerk {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 1.5px 9px 1.5px 7px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; white-space: nowrap;
+  background: var(--bg); color: var(--ink-2);
+}
+.statusmerk i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.statusmerk[data-toon="ok"]          { background: var(--ok-zacht); color: var(--ok); }
+.statusmerk[data-toon="informatief"] { background: var(--info-zacht); color: var(--info); }
+.statusmerk[data-toon="urgent"]      { background: var(--urgent-zacht); color: var(--urgent); }
+.statusmerk[data-status="in-consult"] i { animation: pols 1.8s ease-in-out infinite; }
+@keyframes pols { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .statusmerk i { animation: none !important; } }
+
+.statuskeuze {
+  width: auto; min-width: 0; padding: 3px 6px; font-size: 11px;
+  border-radius: var(--rond-klein); color: var(--ink-2);
+}
+.agenda .regel[data-status="afgerond"] { opacity: .62; }
+.agenda .regel[data-status="afgerond"] .wie { text-decoration-color: var(--ink-3); }
+.agenda .regel[data-status="noshow"] .wie { text-decoration: line-through; color: var(--ink-2); }
+.agenda .regel[data-status="wachtkamer"] { background: linear-gradient(90deg, var(--ok-zacht), transparent 45%); }
+.agenda .regel[data-status="in-consult"] { background: linear-gradient(90deg, var(--merk-zacht), transparent 45%); }
+
+/* ── Orderpaneel ──────────────────────────────────────────────────────────── */
+
+.paneel-scherm {
+  position: fixed; inset: 0; background: rgba(28, 23, 40, .34);
+  backdrop-filter: blur(1.5px); z-index: 60;
+}
+.orderpaneel {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100vw);
+  background: var(--vlak); border-left: 1px solid var(--line);
+  box-shadow: -18px 0 50px rgba(28, 23, 40, .18);
+  z-index: 61; display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
+}
+.orderpaneel > header {
+  display: flex; align-items: center; gap: 12px; padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(91, 75, 204, .07), rgba(91, 75, 204, 0));
+}
+.orderpaneel > header h2 { font-size: 15px; }
+.orderpaneel > header .knop { margin-left: auto; }
+.paneel-body { overflow-y: auto; padding: 14px 18px; }
+.paneel-voet { border-top: 1px solid var(--line); padding: 12px 18px; background: var(--bg); }
+
+.filterchip {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid var(--line); background: var(--vlak); color: var(--ink-2);
+  padding: 3px 11px; border-radius: 999px; font-size: 12px; font-weight: 550;
+}
+.filterchip:hover { border-color: #cbd5e1; color: var(--ink); }
+.filterchip[data-actief="true"] {
+  background: var(--merk-zacht); border-color: #cfc9f2; color: var(--merk-diep); font-weight: 650;
+}
+.filterchip[data-nadruk="true"] { border-color: var(--merk); color: var(--merk-diep); }
+
+.ordertreffer { border: 1px solid var(--line); border-radius: var(--rond-klein); margin-bottom: 7px; }
+.ordertreffer[data-open="true"] { border-color: #cfc9f2; box-shadow: var(--schaduw); }
+.ordertreffer .hoofdregel {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  border: 0; background: none; padding: 9px 12px; text-align: left;
+}
+.ordertreffer .hoofdregel:hover { background: var(--bg); border-radius: var(--rond-klein); }
+.ordertreffer .uitklap { padding: 0 12px 12px; }
+
+.ordervoorstel {
+  border: 1px solid var(--line); border-left: 3px solid var(--merk);
+  border-radius: var(--rond-klein); padding: 11px 13px; margin-bottom: 9px; background: var(--vlak);
+}
+.ordervoorstel .kop { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; color: var(--merk-diep); }
+.ordervoorstel ul { margin: 6px 0 0; padding-left: 18px; }
+.ordervoorstel li { margin-bottom: 2px; }
+.ordervoorstel .knop-rij { margin-top: 9px; align-items: center; }
+
+.mandje { max-height: 34vh; overflow-y: auto; }
+.mandjeregel {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 9px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line-zacht);
+}
+.mandjeregel:last-child { border-bottom: 0; }
+
+.orderknoppen { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.orderknoppen .knop { justify-content: center; }
+
+.orderregel-vast {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px;
+  padding: 10px 0; border-bottom: 1px solid var(--line-zacht);
+}
+.orderregel-vast:last-child { border-bottom: 0; }
+
+/* ── Journaal met externe bronnen ─────────────────────────────────────────── */
+
+.bronblok { border-bottom: 1px solid var(--line-zacht); }
+.bronblok:last-of-type { border-bottom: 0; }
+.portaallink {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 14px 9px; font-size: 11.5px; color: var(--merk-diep);
+  text-decoration: none; font-weight: 600;
+}
+.portaallink:hover { text-decoration: underline; }
+.stip {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--aandacht); margin-left: 6px; vertical-align: middle;
+}
+
+.journaalregel .regelknop {
+  width: 100%; border: 0; background: none; padding: 0 0 4px; text-align: left;
+}
+.journaalregel .regelknop:hover { opacity: .8; }
+.journaalregel.extern { background: linear-gradient(90deg, rgba(23, 92, 211, .045), transparent 40%); }
+.journaalregel.extern .wanneer { color: var(--info); }
+
+.contactdetail, .externdetail {
+  margin-top: 9px; padding: 11px 13px; background: var(--bg);
+  border-radius: var(--rond-klein); border: 1px solid var(--line-zacht);
+}
+.externdetail .sectie { margin-bottom: 11px; }
+.externdetail .sectie:last-of-type { margin-bottom: 0; }
+.externdetail h4 {
+  margin: 0 0 3px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--ink-3); font-weight: 650;
+}
+.externdetail .regel, .contactdetail .regel { padding: 5px 0; }
+
+/* ── Meetwaarden: tabelweergave ───────────────────────────────────────────── */
+
+.waardetabel th, .waardetabel td { padding: 7px 10px; }
+.waardetabel td.getal { font-variant-numeric: tabular-nums; }
+.waardetabel td[data-buiten="true"] {
+  color: var(--aandacht); font-weight: 650; background: var(--aandacht-zacht);
+}
+
+/* ── Bespreeklijst ────────────────────────────────────────────────────────── */
+
+.bespreekpunt {
+  border: 1px solid var(--line); border-left: 3px solid var(--merk);
+  border-radius: var(--rond-klein); padding: 12px 14px; margin-bottom: 10px;
+}
+.bespreekpunt .kop { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 6px; }
+.bespreekpunt .vraag { margin: 0 0 4px; font-size: 13.5px; font-weight: 550; }
+
+/* ── Plan met orders ──────────────────────────────────────────────────────── */
+
+.planbouw {
+  margin-top: 11px; padding: 11px 13px; background: var(--bg);
+  border-radius: var(--rond-klein); border: 1px solid var(--line-zacht);
+}
+.planorders { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); }
+
+.afgerondkop {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding-bottom: 10px; margin-bottom: 4px; border-bottom: 1px solid var(--line-zacht);
+}
+
+.notitie[data-toon="ok"] { background: var(--ok-zacht); border-color: #c8ebd9; color: #10583a; }
+.notitie[data-toon="ok"] strong { color: #0c4630; }
+
+@media (max-width: 720px) {
+  .orderpaneel { width: 100vw; }
+  .orderknoppen { grid-template-columns: 1fr; }
+  .demobevestiging { flex-wrap: wrap; border-radius: var(--rond); }
+}

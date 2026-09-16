@@ -70,6 +70,23 @@ const SOEP_SJABLONEN: { s: string; o: string; e: string; p: string; modules: str
 
 const CONTACTSOORTEN = ['consult', 'telefonisch', 'e-consult'] as const;
 
+/**
+ * Kleine variatie op het subjectieve deel.
+ *
+ * Een journaal waarin drie contacten woord voor woord hetzelfde zeggen, leest als een
+ * kopieerfout en niet als een dossier. Een echte S-regel heeft altijd iets van die dag
+ * erin, ook als de rest van het consult routine is.
+ */
+const AANVULLINGEN = [
+  'Verder geen bijzonderheden.',
+  'Vraagt of de controle wat verder uit elkaar kan.',
+  'Kwam samen met de dochter.',
+  'Had de uitslag al via het portaal gezien.',
+  'Is net terug van vakantie, ritme was even anders.',
+  'Geeft aan het de laatste weken drukker te hebben.',
+  'Zegt de afspraken goed vol te houden.',
+];
+
 function herkomstVan(op: string, rol: Rol, auteurId: string): Herkomst {
   return { bron: 'zorgverlener', vastgelegdOp: op, auteurId, auteurRol: rol };
 }
@@ -105,12 +122,20 @@ export function bouwHistorie(dossier: Dossier, peildatum: Date, zaad: number): U
   const sjablonen = relevante.length > 0 ? relevante : SOEP_SJABLONEN;
 
   const aantal = 5 + Math.floor(willekeurig() * 6);
+  let vorigeSjabloon = -1;
   for (let i = 0; i < aantal; i++) {
     // Verdeeld over ongeveer drie jaar, met wat spreiding.
     const dagenGeleden = Math.floor(120 + i * (900 / aantal) + willekeurig() * 45);
     const op = new Date(peildatum.getTime() - dagenGeleden * 86_400_000).toISOString();
     const episode = actieveEpisodes[Math.floor(willekeurig() * actieveEpisodes.length)];
-    const sjabloon = sjablonen[Math.floor(willekeurig() * sjablonen.length)];
+    // Nooit twee keer achter elkaar hetzelfde sjabloon: dat leest als een kopieerfout.
+    let keuze = Math.floor(willekeurig() * sjablonen.length);
+    if (keuze === vorigeSjabloon && sjablonen.length > 1) {
+      keuze = (keuze + 1 + Math.floor(willekeurig() * (sjablonen.length - 1))) % sjablonen.length;
+    }
+    vorigeSjabloon = keuze;
+    const sjabloon = sjablonen[keuze];
+    const aanvulling = AANVULLINGEN[Math.floor(willekeurig() * AANVULLINGEN.length)];
     const rol: Rol = willekeurig() < 0.7 ? 'poh-s' : 'huisarts';
     const auteur = rol === 'poh-s' ? 'zv-poh-1' : 'zv-huisarts-1';
     const soort = CONTACTSOORTEN[Math.floor(willekeurig() * CONTACTSOORTEN.length)];
@@ -135,7 +160,7 @@ export function bouwHistorie(dossier: Dossier, peildatum: Date, zaad: number): U
       encounterId,
       episodeId: episode.id,
       regels: [
-        { letter: 'S', tekst: sjabloon.s },
+        { letter: 'S', tekst: `${sjabloon.s} ${aanvulling}` },
         { letter: 'O', tekst: sjabloon.o },
         { letter: 'E', tekst: sjabloon.e, code: episode.code },
         { letter: 'P', tekst: sjabloon.p },

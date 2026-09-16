@@ -25,6 +25,13 @@ export function AssistentWerkplek({ scherm, openPatient }: {
   openPatient: (id: string) => void;
 }) {
   const { data, fout, bezig, setData } = useData(() => api.assistent());
+
+  // De assistent is degene die dit in de praktijk bijhoudt: wie er binnenkomt, wie
+  // zich meldt aan de balie en wie niet komt opdagen.
+  const zetStatus = async (afspraakId: string, status: string) => {
+    const agenda = await api.zetAfspraakstatus(afspraakId, status, 'assistent');
+    setData((huidig) => huidig && { ...huidig, agenda });
+  };
   const [bezigMet, setBezigMet] = useState<string | undefined>();
 
   if (fout) return <Fout boodschap={fout} />;
@@ -101,7 +108,7 @@ export function AssistentWerkplek({ scherm, openPatient }: {
 
         <div className="raster2">
           <Kaart titel="Mijn dag" icoon="agenda" telling={data.agenda.length}>
-            <Agenda regels={data.agenda} openPatient={openPatient} />
+            <Agenda regels={data.agenda} openPatient={openPatient} opStatus={zetStatus} />
           </Kaart>
 
           <Kaart titel="Nieuw binnengekomen" icoon="gesprek" telling={data.triage.length}>

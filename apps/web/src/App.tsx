@@ -16,6 +16,7 @@ import { AssistentWerkplek } from './schermen/Assistent';
 import { HuisartsWerkplek } from './schermen/Huisarts';
 import { Beheer } from './schermen/Beheer';
 import { Berichten } from './schermen/Berichten';
+import { Overleg } from './schermen/Overleg';
 import { Gebruikers } from './schermen/Gebruikers';
 import { STANDAARD_VOORKEUREN, Voorkeuren, type Persoonlijk } from './schermen/Voorkeuren';
 
@@ -33,17 +34,20 @@ const WERKPROCES: Record<string, Ingang[]> = {
     { id: 'voorbereiden', label: 'Voorbereiden', icoon: 'klembord' },
     { id: 'spreekuur', label: 'Spreekuur', icoon: 'agenda' },
     { id: 'monitoren', label: 'Monitoren', icoon: 'radar' },
+    { id: 'overleg', label: 'Overleg', icoon: 'persoon' },
     { id: 'afronden', label: 'Afronden', icoon: 'afvinken' },
   ],
   assistent: [
     { id: 'as-overzicht', label: 'Dagstart', icoon: 'zon' },
     { id: 'as-triage', label: 'Triage', icoon: 'gesprek' },
     { id: 'spreekuur', label: 'Dossiers', icoon: 'klembord' },
+    { id: 'overleg', label: 'Overleg', icoon: 'persoon' },
   ],
   huisarts: [
     { id: 'ha-overzicht', label: 'Dagstart', icoon: 'zon' },
     { id: 'ha-autoriseren', label: 'Autoriseren', icoon: 'klembord' },
     { id: 'spreekuur', label: 'Spreekuur', icoon: 'agenda' },
+    { id: 'overleg', label: 'Overleg', icoon: 'persoon' },
     { id: 'ha-team', label: 'Het team', icoon: 'persoon' },
   ],
   administrator: [
@@ -76,6 +80,9 @@ export function App() {
   const [scherm, setScherm] = useState('dagstart');
   const [patientId, setPatientId] = useState<string | undefined>();
   const [voorkeuren, setVoorkeuren] = useState<Persoonlijk>(STANDAARD_VOORKEUREN);
+  // Elke herstelronde krijgt een eigen sleutel, zodat alle schermen opnieuw laden.
+  // Zonder dat blijft er ergens een oud overzicht in het geheugen staan.
+  const [ronde, setRonde] = useState(0);
 
   if (!gebruiker) {
     return (
@@ -86,22 +93,31 @@ export function App() {
   const open = (id: string) => { setPatientId(id); setScherm('spreekuur'); };
   const ga = (id: string) => { setPatientId(undefined); setScherm(id); };
 
+  const herstel = async () => {
+    await api.herstelDemo();
+    setPatientId(undefined);
+    setScherm(START[gebruiker.rol] ?? 'dagstart');
+    setRonde((n) => n + 1);
+  };
+
   return (
     <Werkplek
+      key={ronde}
       gebruiker={gebruiker} scherm={scherm} patientId={patientId}
       voorkeuren={voorkeuren} opVoorkeuren={setVoorkeuren}
-      opOpen={open} opGa={ga}
+      opOpen={open} opGa={ga} opHerstel={herstel}
       opAfmelden={() => { setGebruiker(undefined); setPatientId(undefined); }}
       opSluitPatient={() => setPatientId(undefined)} />
   );
 }
 
 function Werkplek({
-  gebruiker, scherm, patientId, voorkeuren, opVoorkeuren, opOpen, opGa, opAfmelden, opSluitPatient,
+  gebruiker, scherm, patientId, voorkeuren, opVoorkeuren, opOpen, opGa, opHerstel,
+  opAfmelden, opSluitPatient,
 }: {
   gebruiker: Gebruiker; scherm: string; patientId?: string;
   voorkeuren: Persoonlijk; opVoorkeuren: (p: Persoonlijk) => void;
-  opOpen: (id: string) => void; opGa: (id: string) => void;
+  opOpen: (id: string) => void; opGa: (id: string) => void; opHerstel: () => Promise<void>;
   opAfmelden: () => void; opSluitPatient: () => void;
 }) {
   const zorgrol = gebruiker.rol !== 'administrator';
@@ -174,6 +190,8 @@ function Werkplek({
             ? <Zoeken opOpen={opOpen} />
             : <span className="mini">Beheeromgeving — geen toegang tot dossiers</span>}
 
+          <Demoknop opHerstel={opHerstel} />
+
           <div className="gebruikerchip">
             <span className="bol">{gebruiker.initialen}</span>
             <span style={{ fontSize: 12.5 }}>
@@ -217,12 +235,53 @@ function Werkplek({
           {scherm === 'beheer' && <Beheer />}
           {scherm === 'gebruikers' && <Gebruikers />}
           {scherm === 'berichten' && <Berichten gebruiker={gebruiker} openPatient={opOpen} />}
+          {scherm === 'overleg' && <Overleg gebruiker={gebruiker} openPatient={opOpen} />}
           {scherm === 'voorkeuren' && (
             <Voorkeuren gebruiker={gebruiker} voorkeuren={voorkeuren} opWijzig={opVoorkeuren} />
           )}
           {scherm === 'terminologie' && <Terminologie />}
         </main>
       </div>
+    </div>
+  );
+}
+
+/**
+ * De demo terugzetten.
+ *
+ * Alles wat je tijdens een demonstratie aanpast — consulten, orders, geaccordeerde
+ * recepten, afgehandelde triages — leeft in het geheugen. Zonder deze knop is de tweede
+ * demonstratie een andere dan de eerste, en dat is precies wat je niet wilt als je hem
+ * aan verschillende mensen laat zien. De generatoren draaien op vaste zaden, dus dit
+ * levert exact dezelfde beginstand op.
+ */
+function Demoknop({ opHerstel }: { opHerstel: () => Promise<void> }) {
+  const [vraagt, setVraagt] = useState(false);
+  const [bezig, setBezig] = useState(false);
+
+  if (!vraagt) {
+    return (
+      <button className="demoknop" onClick={() => setVraagt(true)}
+        title="Alle wijzigingen terugdraaien naar de beginstand">
+        <Icoon naam="herstel" grootte={14} /> Demo herstellen
+      </button>
+    );
+  }
+
+  return (
+    <div className="demobevestiging">
+      <span className="mini">
+        Alles terug naar de beginstand? Consulten, orders en autorisaties van deze ronde
+        verdwijnen.
+      </span>
+      <button className="knop" data-toon="primair" disabled={bezig}
+        onClick={async () => {
+          setBezig(true);
+          try { await opHerstel(); } finally { setBezig(false); setVraagt(false); }
+        }}>
+        <Icoon naam="herstel" grootte={13} /> Herstellen
+      </button>
+      <button className="knop" onClick={() => setVraagt(false)}>Annuleren</button>
     </div>
   );
 }
@@ -251,7 +310,7 @@ function Zoeken({ opOpen }: { opOpen: (id: string) => void }) {
 
   return (
     <div className="zoekdoos" ref={doos}>
-      <span className="icoon"><Icoon naam="radar" grootte={15} /></span>
+      <span className="icoon"><Icoon naam="vergrootglas" grootte={15} /></span>
       <input type="search" value={vraag} placeholder="Zoek patiënt op naam, geboortedatum of BSN"
         onChange={(e) => zoek(e.target.value)} onFocus={() => treffers.length && setOpen(true)} />
       {open && (

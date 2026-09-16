@@ -17,6 +17,11 @@ export function HuisartsWerkplek({ scherm, openPatient }: {
   openPatient: (id: string) => void;
 }) {
   const { data, fout, bezig, setData } = useData(() => api.huisarts());
+
+  const zetStatus = async (afspraakId: string, status: string) => {
+    const agenda = await api.zetAfspraakstatus(afspraakId, status, 'huisarts');
+    setData((huidig) => huidig && { ...huidig, agenda });
+  };
   const [bezigMet, setBezigMet] = useState<string | undefined>();
 
   if (fout) return <Fout boodschap={fout} />;
@@ -86,7 +91,7 @@ export function HuisartsWerkplek({ scherm, openPatient }: {
 
         <div className="raster2">
           <Kaart titel="Mijn dag" icoon="agenda" telling={data.agenda.length}>
-            <Agenda regels={data.agenda} openPatient={openPatient} />
+            <Agenda regels={data.agenda} openPatient={openPatient} opStatus={zetStatus} />
           </Kaart>
 
           <div>

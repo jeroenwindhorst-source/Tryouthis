@@ -160,9 +160,36 @@ export function Leeg({ tekst }: { tekst: string }) {
 }
 
 /** De dag als tijdlijn. Blokken en patiëntafspraken door elkaar, zoals de dag echt loopt. */
-export function Agenda({ regels, openPatient }: {
+/**
+ * De status van een afspraak, als merkje.
+ *
+ * Dit is het antwoord op de vraag die de hele ochtend gesteld wordt: zit hij er al?
+ * Kleur alleen is niet genoeg, dus er staat altijd tekst in. En 'gepland' krijgt geen
+ * merkje: dat is de rusttoestand en een merkje bij alles is een merkje bij niets.
+ */
+const STATUS_TOON: Record<string, string> = {
+  aangemeld: 'informatief', wachtkamer: 'ok', 'in-consult': 'informatief',
+  afgerond: 'neutraal', noshow: 'urgent',
+};
+
+export function Statusmerk({ regel }: { regel: AgendaRegel }) {
+  if (regel.status === 'gepland' || !regel.patientId) return null;
+  return (
+    <span className="statusmerk" data-status={regel.status} data-toon={STATUS_TOON[regel.status]}>
+      <i />
+      {regel.statusLabel}
+      {regel.status === 'aangemeld' || regel.status === 'wachtkamer'
+        ? regel.aangemeldOm ? ` ${regel.aangemeldOm}` : ''
+        : ''}
+    </span>
+  );
+}
+
+export function Agenda({ regels, openPatient, opStatus }: {
   regels: AgendaRegel[];
   openPatient?: (id: string) => void;
+  /** Handmatig corrigeren wat de zuil niet weet: iemand meldt zich aan de balie of komt niet. */
+  opStatus?: (afspraakId: string, status: string) => void;
 }) {
   if (regels.length === 0) return <Leeg tekst="Geen afspraken vandaag." />;
   return (
@@ -172,7 +199,7 @@ export function Agenda({ regels, openPatient }: {
         const klikbaar = Boolean(r.patientId && openPatient);
         return (
         <div key={r.id} className="regel" data-soort={r.soort} data-aandacht={Boolean(r.aandacht)}
-          data-klikbaar={klikbaar}
+          data-status={r.status} data-klikbaar={klikbaar}
           role={klikbaar ? 'button' : undefined} tabIndex={klikbaar ? 0 : undefined}
           onClick={klikbaar ? () => openPatient!(r.patientId!) : undefined}
           onKeyDown={klikbaar
@@ -183,7 +210,7 @@ export function Agenda({ regels, openPatient }: {
           <div>
             <div className="wie">{r.naam ?? r.titel}</div>
             <div className="bij">
-              {r.naam ? `${r.leeftijd} jaar · ${r.reden ?? r.titel}` : `${r.duurMinuten} minuten`}
+              {r.naam ? `${r.leeftijd} jaar · ${r.reden ?? r.titel}` : (r.reden ?? `${r.duurMinuten} minuten`)}
             </div>
             {r.modules.length > 0 && (
               <div style={{ marginTop: 5 }}><ModuleChips modules={r.modules} /></div>
@@ -197,9 +224,22 @@ export function Agenda({ regels, openPatient }: {
           </div>
           <div className="rechts">
             <span className="duur">{r.duurMinuten} min</span>
+            <Statusmerk regel={r} />
             {r.intakeKlaar && <span className="merkje" data-toon="informatief">intake klaar</span>}
             {r.voorbereid === false && <span className="merkje" data-toon="aandacht">niet compleet</span>}
             {r.voorbereid === true && <span className="merkje" data-toon="ok">voorbereid</span>}
+            {opStatus && r.patientId && r.status !== 'afgerond' && (
+              <select className="statuskeuze" value={r.status}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => { e.stopPropagation(); opStatus(r.id, e.target.value); }}>
+                <option value="gepland">gepland</option>
+                <option value="aangemeld">aangemeld</option>
+                <option value="wachtkamer">in de wachtkamer</option>
+                <option value="in-consult">in consult</option>
+                <option value="afgerond">afgerond</option>
+                <option value="noshow">niet verschenen</option>
+              </select>
+            )}
           </div>
         </div>
         );

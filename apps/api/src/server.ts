@@ -1,14 +1,17 @@
 import Fastify from 'fastify';
 import { SYSTEEM, DEMO_SEED_WAARSCHUWING } from '@zpe/terminology';
 import {
-  modules, ketens, vindVragenlijst, vragenlijsten, REGELSET_VERSIE, type PersoonlijkPlan,
+  modules, ketens, vindVragenlijst, vragenlijsten, REGELSET_VERSIE,
+  type CatalogusSoort, type PersoonlijkPlan,
 } from '@zpe/care-engine';
 import {
   agenda, assistentOverzicht, beheer, berichten, consultvoorbereiding, controleerTweefactor,
   dagafsluiting, dagstart, dossierHistorie, gebruikersoverzicht, huisartsOverzicht, instroom,
-  InMemoryRepository, intakes, meetreeksen, meldAan, monitoringCohort, orderVoorstellen,
-  patientOverzicht, praktijkSamenvatting, registreerConsult, terminologie,
-  verwerkVragenlijst, zoekPatient, type ConsultRegistratie,
+  InMemoryRepository, intakes, meetreeksen, meldAan, monitoringCohort, orderOverzicht,
+  orderVoorstellen, overleg, patientOverzicht, plaatsLosseOrders, praktijkSamenvatting,
+  registreerConsult, terminologie, verwerkVragenlijst, zetOpBespreeklijst, zoekOrders,
+  zoekPatient,
+  type Afspraakstatus, type ConsultRegistratie, type NieuweOrder, type NieuwBespreekpunt,
 } from '@zpe/praktijk';
 
 const repo = new InMemoryRepository();
@@ -125,10 +128,19 @@ app.get<{ Querystring: { q?: string } }>('/api/zoek', async (req) =>
 
 // ── Dossierdiepte ───────────────────────────────────────────────────────────
 
-app.get<{ Params: { id: string }; Querystring: { episode?: string } }>(
+app.get<{ Params: { id: string }; Querystring: { bron?: string } }>(
   '/api/patient/:id/historie',
   async (req, reply) => {
-    const historie = dossierHistorie(repo, req.params.id, req.query.episode);
+    const historie = dossierHistorie(repo, req.params.id, req.query.bron);
+    return historie ?? reply.code(404).send({ fout: 'patiënt niet gevonden' });
+  },
+);
+
+app.post<{ Params: { id: string; documentId: string } }>(
+  '/api/patient/:id/extern/:documentId/gelezen',
+  async (req, reply) => {
+    repo.markeerExternGelezen(req.params.id, req.params.documentId);
+    const historie = dossierHistorie(repo, req.params.id);
     return historie ?? reply.code(404).send({ fout: 'patiënt niet gevonden' });
   },
 );
@@ -136,8 +148,71 @@ app.get<{ Params: { id: string }; Querystring: { episode?: string } }>(
 app.get<{ Params: { id: string } }>('/api/patient/:id/meetreeksen', async (req) =>
   meetreeksen(repo, req.params.id));
 
+// ── Orders ──────────────────────────────────────────────────────────────────
+
 app.get<{ Params: { id: string } }>('/api/patient/:id/orders', async (req) =>
   orderVoorstellen(repo, req.params.id));
+
+app.get<{ Params: { id: string } }>('/api/patient/:id/orderoverzicht', async (req, reply) => {
+  const overzicht = orderOverzicht(repo, req.params.id);
+  return overzicht ?? reply.code(404).send({ fout: 'patiënt niet gevonden' });
+});
+
+app.get<{ Params: { id: string }; Querystring: { q?: string; soort?: string } }>(
+  '/api/patient/:id/catalogus',
+  async (req) => zoekOrders(repo, req.params.id, req.query.q ?? '',
+    req.query.soort ? (req.query.soort.split(',') as CatalogusSoort[]) : undefined),
+);
+
+app.post<{ Body: { gebruikerId: string; orders: NieuweOrder[] } }>(
+  '/api/orders',
+  async (req, reply) => {
+    plaatsLosseOrders(repo, req.body.gebruikerId, req.body.orders ?? []);
+    const overzicht = orderOverzicht(repo, req.body.orders?.[0]?.patientId ?? '');
+    return overzicht ?? reply.code(404).send({ fout: 'patiënt niet gevonden' });
+  },
+);
+
+// ── Overleg en bespreeklijst ────────────────────────────────────────────────
+
+app.get<{ Params: { rol: string } }>('/api/overleg/:rol', async (req) =>
+  overleg(repo, req.params.rol as 'poh-s' | 'assistent' | 'huisarts'));
+
+app.post<{ Body: { gebruikerId: string; punt: NieuwBespreekpunt } }>(
+  '/api/bespreeklijst',
+  async (req) => {
+    zetOpBespreeklijst(repo, req.body.gebruikerId, req.body.punt);
+    return overleg(repo, req.body.punt.voorRollen[0] ?? 'huisarts');
+  },
+);
+
+app.post<{ Params: { id: string }; Body: { uitkomst: string; door: string; rol: string } }>(
+  '/api/bespreeklijst/:id/afhandelen',
+  async (req) => {
+    repo.handelBespreekpuntAf(req.params.id, req.body.uitkomst, req.body.door);
+    return overleg(repo, req.body.rol as 'poh-s' | 'assistent' | 'huisarts');
+  },
+);
+
+app.post<{ Params: { id: string }; Body: { status: string; rol: string } }>(
+  '/api/agenda/:id/status',
+  async (req) => {
+    repo.zetAfspraakstatus(req.params.id, req.body.status as Afspraakstatus);
+    return agenda(repo, req.body.rol as 'poh-s' | 'assistent' | 'huisarts');
+  },
+);
+
+/**
+ * De demo terugzetten naar de beginstand.
+ *
+ * Staat bewust achter een eigen endpoint en niet achter een queryparameter op iets
+ * anders: dit gooit alle mutaties weg en dat hoort een expliciete handeling te zijn.
+ * In een echte omgeving bestaat dit endpoint niet.
+ */
+app.post('/api/demo/herstel', async () => {
+  repo.herstelBeginstand();
+  return { hersteld: true };
+});
 
 // ── Interne communicatie ────────────────────────────────────────────────────
 

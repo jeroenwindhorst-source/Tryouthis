@@ -81,6 +81,42 @@ Portaal/app conform MedMij. Ingang is niet het dossier maar **de volgende stap**
 wat moet ik doen, wanneer zie ik wie, wat waren mijn waarden, wat zijn mijn doelen.
 Vragenlijsten, thuismetingen, herhaalmedicatie, berichten, zelfzorgadvies.
 
+## 4b. De dag zelf: waar zit de patiënt
+
+Een agenda die alleen tijden toont, dwingt je de hele ochtend te vragen "is hij er al?".
+Elke afspraak heeft daarom een toestand, zichtbaar bij alle drie de rollen:
+
+```
+gepland → aangemeld (zuil of balie) → in de wachtkamer → in consult → afgerond
+                                                              ↘ niet verschenen
+```
+
+De statussen komen in de praktijk van de aanmeldzuil en van de assistent aan de balie;
+in de demo zijn ze afgeleid van één vast moment op de dag, zodat er iets te zien is.
+Elke rol kan een status corrigeren — de zuil weet niet dat iemand aan de balie stond.
+
+Twee dingen volgen er vanzelf uit. Boven de agenda staat de stand van de wachtkamer in
+één regel ("1 aangemeld · 3 afgerond · 1 niet verschenen"), en het vastleggen van een
+consult zet de afspraak zelf op afgerond. Dat laatste is het antwoord op "ik heb het
+opgeslagen, maar waar is het gebleven": na het afronden verschijnt een bevestiging met
+wat er is vastgelegd, welke orders eraan hangen en een knop naar het journaal.
+
+## 4c. Het overleg
+
+In de agenda van huisarts, POH en assistent staat op hetzelfde moment een overlegblok.
+Dat blok had tot nu toe geen inhoud — je liep er met een papiertje naartoe.
+
+De **bespreeklijst** is die inhoud: één gedeelde lijst, niet één per persoon. Vanuit
+elk dossier zet je iemand erop met een vraag en de context uit het dossier erbij. Een
+bespreekpunt is bewust geen bericht: een bericht heeft één ontvanger en is klaar als hij
+gelezen is, een bespreekpunt hoort bij een moment en is pas klaar als er een antwoord
+staat. De uitkomst blijft bij het punt, zodat na het overleg terug te vinden is wat er
+besloten is en door wie.
+
+De POH heeft daarnaast een blok **voorbereidingstijd** aan het begin van de dag. Dat is
+werk, en werk hoort tijd in de agenda te krijgen — anders gebeurt het tussendoor en dus
+niet.
+
 ## 5. Dossierdiepte
 
 Een startscherm dat met werk opent, mag niet betekenen dat je er niet doorheen kunt.
@@ -89,12 +125,24 @@ Het dossier heeft daarom drie ingangen naast het consult zelf:
 - **Journaal** — alle deelcontacten omgekeerd chronologisch, filterbaar op episode.
   De demo bouwt per patiënt vijf tot tien contacten over ongeveer drie jaar op, met
   SOEP-tekst, zodat er iets ís om op terug te kijken.
-- **Metingen** — elke reeks met een trendgrafiek en de streefwaarde als stippellijn.
-  Dit lost "was 84 — wanneer dan?" op: de waarde in het consultscherm is een ingang,
-  niet een eindpunt. Doorklikken toont de reeks, de datum en wie hem vastlegde.
+- **Metingen** — drie weergaven, want er zijn drie vragen. "Hoe loopt dit?" is een
+  grafiek met de streefwaarde als stippellijn. "Wat stond er in die uitslag van maart?"
+  is een tabel. "Hoe zag het labblad eruit?" is alle bepalingen naast elkaar per
+  afnamemoment, met waarden buiten de referentie gemarkeerd. Plus een filter op soort
+  (lab, lichamelijk, vragenlijst, verrichting), want een dossier van tien jaar heeft
+  al snel dertig reeksen. Dit lost "was 84 — wanneer dan?" op: de waarde in het
+  consultscherm is een ingang, niet een eindpunt.
 - **Episodes** — de vier losse trajecten in de kop zijn aanklikbaar en filteren het
   journaal. Tijdens het consult kan een nieuwe episode worden aangemaakt (met
   terminologiezoeker) en kan het deelcontact daaraan worden gehangen.
+- **Zorg buiten de praktijk** — wat via BgZ, e-Overdracht of als retourbericht
+  binnenkwam, staat in dezelfde tijdlijn als de eigen contacten, maar in zijn eigen
+  vorm. Zie ADR-0010. Per bron staat er een ingang naar het portaal van die instelling.
+
+Het orderpad zit níet in de tabbalk maar in de linkerkolom van het consult, onder de
+medicatie: **Medicatie · Verwijzing · Lab · Onderzoek**. Bestellen hoort bij het moment
+waarop het besluit valt, niet bij een overzichtsscherm. Het ordertabblad is wat daaruit
+gekomen is (docs/16).
 
 En, ondanks principe 1: **een patiëntzoekveld staat in de kopbalk, altijd.** Het
 systeem opent met werk, maar iemand die belt terwijl je iets anders doet, moet in twee

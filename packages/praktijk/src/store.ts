@@ -8,9 +8,13 @@ import {
 import { appsVoor } from './configuratie-demo.js';
 import { bouwHistorie } from './historie.js';
 import { genereerGesprekken, type Gesprek } from './berichten.js';
+import { genereerExterneDocumenten, type ExternDocument } from './externe-bronnen.js';
+import { genereerOrderhistorie, maakOrder, type NieuweOrder, type Order, type Orderstatus } from './orderopslag.js';
+import { genereerBespreekpunten, type Bespreekpunt, type NieuwBespreekpunt } from './bespreeklijst.js';
 import {
-  genereerAgenda, genereerAutorisaties, genereerIntakes, genereerTriage,
-  type AgendaItem, type Autorisatieverzoek, type Triageverzoek, type WachtkamerIntake,
+  genereerAgenda, genereerAutorisaties, genereerIntakes, genereerTriage, zetDagstatus,
+  type AgendaItem, type Afspraakstatus, type Autorisatieverzoek, type Triageverzoek,
+  type WachtkamerIntake,
 } from './werkvoorraad.js';
 
 /**
@@ -55,23 +59,64 @@ export interface DossierRepository {
   alleGesprekken(): Gesprek[];
   stuurBericht(gesprekId: string, vanId: string, tekst: string): void;
   markeerGelezen(gesprekId: string, gebruikerId: string): void;
+
+  /** Wat er van buiten de praktijk binnenkwam: BgZ, e-Overdracht, retourberichten. */
+  externeDocumenten(patientId: string): ExternDocument[];
+  markeerExternGelezen(patientId: string, documentId: string): void;
+
+  /** Geplaatste orders: medicatie, lab, verwijzingen, onderzoek. */
+  orders(patientId: string): Order[];
+  plaatsOrders(nieuw: NieuweOrder[], door: { id: string; naam: string; rol: Rol; rechten: string[] }): Order[];
+  zetOrderstatus(orderId: string, status: Orderstatus, door: string, reden?: string): void;
+
+  /** De gedeelde lijst voor het teamoverleg. */
+  bespreekpunten(): Bespreekpunt[];
+  zetOpBespreeklijst(punt: NieuwBespreekpunt, door: { id: string; naam: string; rol: Rol }): Bespreekpunt;
+  handelBespreekpuntAf(id: string, uitkomst: string, door: string): void;
+
+  /** Afspraakstatus op de dag zelf: aangemeld, wachtkamer, in consult, afgerond. */
+  zetAfspraakstatus(afspraakId: string, status: Afspraakstatus): void;
+
+  /** Alles terug naar de beginstand — voor een volgende demo. */
+  herstelBeginstand(): void;
 }
 
 export class InMemoryRepository implements DossierRepository {
-  private praktijk: Praktijk;
-  private afspraken: Appointment[];
+  private praktijk!: Praktijk;
+  private afspraken!: Appointment[];
   private taakLijst: Task[] = [];
   private plannen = new Map<string, PersoonlijkPlan>();
-  private agendaItems: AgendaItem[];
-  private triageLijst: Triageverzoek[];
-  private autorisatieLijst: Autorisatieverzoek[];
-  private intakeLijst: WachtkamerIntake[];
-  private gesprekken: Gesprek[];
+  private agendaItems!: AgendaItem[];
+  private triageLijst!: Triageverzoek[];
+  private autorisatieLijst!: Autorisatieverzoek[];
+  private intakeLijst!: WachtkamerIntake[];
+  private gesprekken!: Gesprek[];
+  private externLijst = new Map<string, ExternDocument[]>();
+  private orderLijst = new Map<string, Order[]>();
+  private bespreeklijst: Bespreekpunt[] = [];
   private bekend = new Map<string, Set<string>>();
   private afgehandeld = new Map<string, Map<string, { besluit: string; reden?: string }>>();
 
-  constructor(praktijk?: Praktijk) {
-    this.praktijk = praktijk ?? genereerPraktijk();
+  constructor(private readonly maakPraktijk: () => Praktijk = genereerPraktijk) {
+    this.bouwOp();
+  }
+
+  /**
+   * De hele beginstand in één functie.
+   *
+   * Dat is niet alleen netjes: het is wat `herstelBeginstand()` mogelijk maakt. Een
+   * demo die je maar één keer kunt draaien omdat je de gegevens hebt aangepast, is na
+   * het eerste gesprek onbruikbaar. De generatoren werken met vaste zaden, dus opnieuw
+   * opbouwen levert exact dezelfde praktijk op.
+   */
+  private bouwOp(): void {
+    this.praktijk = this.maakPraktijk();
+    this.taakLijst = [];
+    this.plannen = new Map();
+    this.bekend = new Map();
+    this.afgehandeld = new Map();
+    this.externLijst = new Map();
+    this.orderLijst = new Map();
 
     // Drie jaar dossierhistorie: contacten met SOEP en de bijbehorende meetreeksen.
     // Zonder historie is er niets om in terug te kijken, en dan lijkt elk dossier nieuw.
@@ -80,18 +125,24 @@ export class InMemoryRepository implements DossierRepository {
       dossier.contacten.push(...extra.contacten);
       dossier.deelcontacten.push(...extra.deelcontacten);
       dossier.observaties.push(...extra.observaties);
+
+      // Wat er van buiten binnenkwam, en wat er in het verleden besteld is.
+      this.externLijst.set(dossier.patient.id,
+        genereerExterneDocumenten(dossier, this.praktijk.peildatum, 5000 + i));
+      this.orderLijst.set(dossier.patient.id,
+        genereerOrderhistorie(dossier, this.praktijk.peildatum, 7000 + i));
     });
 
     this.gesprekken = genereerGesprekken(this.praktijk);
     this.afspraken = genereerSpreekuur(this.praktijk);
-    this.agendaItems = [
+    this.agendaItems = zetDagstatus([
       ...genereerAgenda(this.praktijk),
       ...this.afspraken.map((a): AgendaItem => ({
         id: a.id, start: a.start, duurMinuten: a.eindeMinuten, rol: 'poh-s',
         patientId: a.patientId, naam: this.naamVan(a.patientId),
         soort: a.soort, titel: 'Chronische controle', reden: a.reden, status: 'gepland',
       })),
-    ].sort((a, b) => a.start.localeCompare(b.start));
+    ].sort((a, b) => a.start.localeCompare(b.start)), this.praktijk.peildatum);
     this.triageLijst = genereerTriage(this.praktijk);
     this.autorisatieLijst = genereerAutorisaties(this.praktijk);
 
@@ -137,7 +188,16 @@ export class InMemoryRepository implements DossierRepository {
         }],
       });
     }
+
+    this.bespreeklijst = genereerBespreekpunten(
+      this.praktijk.dossiers.slice(0, 30).map((d) => ({
+        patientId: d.patient.id, naam: this.naamVan(d.patient.id),
+      })),
+      this.praktijk.peildatum,
+    );
   }
+
+  herstelBeginstand(): void { this.bouwOp(); }
 
   private naamVan(patientId: string): string {
     const dossier = this.dossier(patientId);
@@ -246,6 +306,121 @@ export class InMemoryRepository implements DossierRepository {
     if (!dossier) return;
     dossier.observaties.push(...observaties);
     if (deelcontact) dossier.deelcontacten.push(deelcontact);
+
+    // De afspraak van vandaag is hiermee afgerond. Dat hoort het systeem zelf te weten:
+    // wie een consult vastlegt, heeft de patiënt gezien.
+    const vandaag = this.praktijk.peildatum.toISOString().slice(0, 10);
+    for (const item of this.agendaItems) {
+      if (item.patientId === patientId && item.start.startsWith(vandaag) && item.status !== 'noshow') {
+        item.status = 'afgerond';
+      }
+    }
+
+    // Orders die tijdens dit consult geplaatst zijn, horen aan het deelcontact te hangen;
+    // anders staat het plan in het journaal en de uitvoering ergens anders.
+    if (deelcontact) {
+      for (const order of this.orderLijst.get(patientId) ?? []) {
+        if (!order.deelcontactId && order.geplaatstOp.slice(0, 10) === vandaag) {
+          order.deelcontactId = deelcontact.id;
+        }
+      }
+    }
+  }
+
+  // ── Externe bronnen ──────────────────────────────────────────────────────
+
+  externeDocumenten(patientId: string): ExternDocument[] {
+    return this.externLijst.get(patientId) ?? [];
+  }
+  markeerExternGelezen(patientId: string, documentId: string): void {
+    const document = (this.externLijst.get(patientId) ?? []).find((d) => d.id === documentId);
+    if (document) document.gelezen = true;
+  }
+
+  // ── Orders ───────────────────────────────────────────────────────────────
+
+  orders(patientId: string): Order[] {
+    return [...(this.orderLijst.get(patientId) ?? [])]
+      .sort((a, b) => b.geplaatstOp.localeCompare(a.geplaatstOp));
+  }
+
+  plaatsOrders(
+    nieuw: NieuweOrder[], door: { id: string; naam: string; rol: Rol; rechten: string[] },
+  ): Order[] {
+    const geplaatst: Order[] = [];
+    for (const regel of nieuw) {
+      const bestaand = this.orderLijst.get(regel.patientId) ?? [];
+      const order = maakOrder(regel, door, bestaand.length + 1, new Date());
+      bestaand.push(order);
+      this.orderLijst.set(regel.patientId, bestaand);
+      geplaatst.push(order);
+
+      // Wat langs de huisarts moet, komt in dezelfde autorisatiestroom terecht als de
+      // rest — met de onderbouwing eraan vast, zodat tekenen een besluit is en geen vinkje.
+      if (order.status === 'ter-autorisatie') {
+        this.autorisatieLijst.unshift({
+          id: `aut-${order.id}`,
+          patientId: order.patientId,
+          naam: this.naamVan(order.patientId),
+          soort: order.soort === 'medicatie' ? 'medicatiewijziging' : 'verwijzing',
+          omschrijving: `${order.omschrijving}${order.detail ? ` — ${order.detail}` : ''}`,
+          aanleiding: order.uitSet
+            ? `Onderdeel van orderset "${order.uitSet.naam}".`
+            : 'Losse order vanuit het consult.',
+          ingediendDoor: { naam: door.naam, rol: door.rol },
+          ingediendOp: order.geplaatstOp,
+          routine: order.waarschuwingen.length === 0 && order.soort !== 'medicatie',
+          redenGeenRoutine: order.waarschuwingen[0]?.tekst
+            ?? (order.soort === 'medicatie' ? 'Medicatie vraagt altijd een arts.' : undefined),
+          status: 'open',
+        });
+      }
+    }
+    return geplaatst;
+  }
+
+  zetOrderstatus(orderId: string, status: Orderstatus, door: string, reden?: string): void {
+    for (const lijst of this.orderLijst.values()) {
+      const order = lijst.find((o) => o.id === orderId);
+      if (!order) continue;
+      order.status = status;
+      order.afgehandeldOp = new Date().toISOString();
+      order.afgehandeldDoor = door;
+      if (reden) order.reden = reden;
+      return;
+    }
+  }
+
+  // ── Bespreeklijst ────────────────────────────────────────────────────────
+
+  bespreekpunten(): Bespreekpunt[] { return this.bespreeklijst; }
+
+  zetOpBespreeklijst(
+    punt: NieuwBespreekpunt, door: { id: string; naam: string; rol: Rol },
+  ): Bespreekpunt {
+    const nieuw: Bespreekpunt = {
+      ...punt,
+      id: `bespreek-${this.bespreeklijst.length + 1}-${Date.now()}`,
+      ingebrachtDoor: door,
+      ingebrachtOp: new Date().toISOString(),
+      status: 'open',
+    };
+    this.bespreeklijst.unshift(nieuw);
+    return nieuw;
+  }
+
+  handelBespreekpuntAf(id: string, uitkomst: string, door: string): void {
+    const punt = this.bespreeklijst.find((p) => p.id === id);
+    if (!punt) return;
+    punt.status = 'besproken';
+    punt.uitkomst = uitkomst;
+    punt.besprokenOp = new Date().toISOString();
+    punt.besprokenDoor = door;
+  }
+
+  zetAfspraakstatus(afspraakId: string, status: Afspraakstatus): void {
+    const item = this.agendaItems.find((a) => a.id === afspraakId);
+    if (item) item.status = status;
   }
 
   afgehandeldeSuggesties(patientId: string): string[] {

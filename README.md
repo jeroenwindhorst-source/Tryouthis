@@ -109,6 +109,13 @@ npm test            # 51 tests: terminologie, protocol, zelfredzaamheid, plannin
 npm run web         # werkplek op http://localhost:5173 — draait zónder server
 ```
 
+Inloggen kan met `sanne` (POH-S), `ilse` (assistent), `daan` (huisarts) of `mirjam`
+(praktijkmanager); het wachtwoord is voor alle vier `cadans` en de tweefactorcode is
+`123456`. Rechtsboven staat **Demo herstellen**: dat gooit alle mutaties van de sessie
+weg en bouwt dezelfde beginstand opnieuw op, zodat je een demonstratie meerdere keren
+kunt draaien. De generatoren werken met vaste zaden, dus het resultaat is exact dezelfde
+praktijk — niet iets wat erop lijkt.
+
 De werkplek draait standaard **volledig in de browser**: `@zpe/praktijk` bevat geen HTTP
 en geen Node-afhankelijkheden, dus dezelfde motor die in de server draait, draait ook in
 het tabblad. Handig voor demo's, maar vooral een bewijs dat de domeinlaag echt losstaat
@@ -179,7 +186,7 @@ HTTP en geen opslag; `apps/*` bevatten geen klinische regels.
 | [15 — Zelfredzaamheid](docs/15-zelfredzaamheid.md) | Leefdomeinen, score, doorwerking op frequentie en kanaal |
 | [16 — Ordermanagement](docs/16-ordermanagement.md) | Ordersets, contra-indicatiecheck, rechten en autorisatie |
 | [17 — Toegang en samenwerking](docs/17-toegang-rollen-en-samenwerking.md) | Inloggen, vier rollen, rechten, berichten, persoonlijke voorkeuren |
-| [ADR's](docs/adr/) | Negen vastgelegde ontwerpbesluiten met alternatieven |
+| [ADR's](docs/adr/) | Tien vastgelegde ontwerpbesluiten met alternatieven |
 
 ---
 
@@ -202,9 +209,19 @@ wachtwoord in platte tekst en een vaste tweefactorcode
 ([`docs/17` §1](docs/17-toegang-rollen-en-samenwerking.md)). Er is geen hashing, geen
 sessiebeheer en geen koppeling met UZI. **Niet op een netwerk zetten met echte gegevens.**
 
-**Medicatiebewaking.** De contra-indicatiecheck bij ordersets kijkt naar nierfunctie,
-leeftijd en polyfarmacie — niet naar middel-middelinteracties. Dat vraagt de G-Standaard
-([`docs/16` §5](docs/16-ordermanagement.md)).
+**Medicatiebewaking.** De contra-indicatiecheck kijkt naar nierfunctie, leeftijd,
+polyfarmacie en dubbelmedicatie — niet naar middel-middelinteracties en niet naar
+overgevoeligheden. Dat vraagt de G-Standaard ([`docs/16` §5](docs/16-ordermanagement.md)).
+
+**Ordercatalogus.** De ~30 middelen, 20 bepalingen en 22 verwijsbestemmingen in
+`packages/care-engine/src/catalogus.ts` zijn plausibel en gangbaar, maar niet tegen de
+G-Standaard of de NHG-Tabellen gecontroleerd. Bewust klein en expliciet onvolledig:
+genoeg om het werkproces te bouwen, niet om zorg mee te leveren.
+
+**Externe bronnen.** De BgZ- en e-Overdracht-documenten in het journaal zijn synthetisch
+en volgen de sectiestructuur van die standaarden op hoofdlijnen. Er is geen LSP- of
+Nuts-adressering en geen echte mapping naar `DocumentReference`/`Composition`
+([ADR-0010](docs/adr/ADR-0010-externe-informatie-in-dezelfde-tijdlijn.md)).
 
 **Richtlijnverwijzingen.** De links naar `richtlijnen.nhg.org` volgen het bekende
 patroon maar zijn niet stuk voor stuk tegen de live index gecontroleerd. Doe dat vóór
