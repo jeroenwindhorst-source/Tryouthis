@@ -34,6 +34,12 @@ export interface Order {
   waarschuwingen: Waarschuwing[];
   /** Meetcodes die deze order gaat opleveren; het zorgplan rekent daarmee. */
   levert?: string[];
+  /** Bij een afspraak: bij welke rol, hoe lang, en langs welke route hij ingepland wordt. */
+  bijRol?: string;
+  duurMinuten?: number;
+  planroute?: string;
+  /** Verwijzing naar het afspraakverzoek dat hieruit voortkwam. */
+  verzoekId?: string;
   geplaatstOp: string;
   geplaatstDoor: { id: string; naam: string; rol: Rol };
   status: Orderstatus;
@@ -56,6 +62,9 @@ export interface NieuweOrder {
   richtlijn?: Richtlijn;
   waarschuwingen?: Waarschuwing[];
   levert?: string[];
+  bijRol?: string;
+  duurMinuten?: number;
+  planroute?: string;
   vereistRecht: string;
 }
 
@@ -85,6 +94,9 @@ export function maakOrder(
     richtlijn: nieuw.richtlijn,
     waarschuwingen: nieuw.waarschuwingen ?? [],
     levert: nieuw.levert,
+    bijRol: nieuw.bijRol,
+    duurMinuten: nieuw.duurMinuten,
+    planroute: nieuw.planroute,
     geplaatstOp: op.toISOString(),
     geplaatstDoor: { id: door.id, naam: door.naam, rol: door.rol },
     status: mag ? 'geplaatst' : 'ter-autorisatie',

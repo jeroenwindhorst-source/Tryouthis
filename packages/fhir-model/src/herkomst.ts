@@ -52,3 +52,20 @@ export function isKlinischGeldig(h: Herkomst): boolean {
   if (h.bron !== 'ai-suggestie') return true;
   return Boolean(h.ai?.bevestigdDoor);
 }
+
+/**
+ * Is dit een registratie van de praktijk zelf?
+ *
+ * Een thuisgemeten bloeddruk of een gewicht dat de patiënt doorgeeft, is een echte en
+ * bruikbare waarde — vaak zelfs betrouwbaarder dan de praktijkmeting. Maar het is geen
+ * registratie van de praktijk, en voor een ketenindicator of een declaratie is dat
+ * verschil bepalend. Wie dat onderscheid weglaat, declareert werk dat een ander deed.
+ *
+ * Het onderscheid is dus geen oordeel over de kwaliteit van de waarde. Het is het
+ * antwoord op de vraag: wie heeft dit vastgelegd, en waarvoor mag het meetellen.
+ */
+export function isEigenRegistratie(h: Herkomst): boolean {
+  if (h.bron === 'zorgverlener' || h.bron === 'apparaat') return true;
+  if (h.bron === 'ai-suggestie') return Boolean(h.ai?.bevestigdDoor);
+  return false;
+}

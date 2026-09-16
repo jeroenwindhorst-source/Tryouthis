@@ -60,6 +60,23 @@ Daarmee is het bericht onderdeel van het dossier in plaats van ernaast. Wat er
 klinisch toe doet hoort in het journaal; het overleg erheen hoort vindbaar te zijn
 zonder het journaal te vervuilen.
 
+## 4b. Berichten van patiënten
+
+Twee bakjes, want het zijn twee soorten gesprek. Met een collega overleg je; een patiënt
+stelt een vraag waar een antwoord op hoort — en soms is dat antwoord zorg.
+
+Daarom staat bij elk patiëntbericht of het **dossierwaardig** is:
+
+- *"Kan de afspraak van donderdag verzet worden?"* — administratief. Dit hoeft niet in
+  het dossier.
+- *"Mijn suikers zijn hoger sinds de vakantie, moet ik iets doen?"* — dit is zorg. Het
+  antwoord hoort als deelcontact in het journaal en niet alleen in het berichtenbakje,
+  anders weet over twee weken niemand meer wat er is afgesproken.
+
+Dat onderscheid is het hele punt van het kanaal. Het e-consult is in een gemiddelde
+praktijk het snelst groeiende contactkanaal en het slechtst vastgelegde: het komt binnen
+in een aparte postbak, het antwoord gaat daar de deur uit, en in het dossier staat niets.
+
 ## 5. Configuratie per gebruiker
 
 De vierde configuratielaag (`gebruiker`, zie `docs/14-configuratie.md`) is bewust

@@ -16,6 +16,8 @@ export * from './historie.js';
 export * from './externe-bronnen.js';
 export * from './orderopslag.js';
 export * from './bespreeklijst.js';
+export * from './planning.js';
+export * from './beleidsafspraken.js';
 export * from './terminologie.js';
 export * from './store.js';
 export * from './bff.js';

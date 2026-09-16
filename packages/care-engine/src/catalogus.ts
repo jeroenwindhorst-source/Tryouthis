@@ -17,7 +17,7 @@ import { CODE } from './protocol.js';
  * om het werkproces te bouwen en te laten zien welke velden een order nodig heeft.
  */
 
-export type CatalogusSoort = 'medicatie' | 'lab' | 'verwijzing' | 'onderzoek';
+export type CatalogusSoort = 'medicatie' | 'lab' | 'verwijzing' | 'onderzoek' | 'afspraak';
 
 export interface Middel {
   atc: string;
@@ -238,6 +238,56 @@ export const ONDERZOEKEN: Verrichting[] = [
   { code: 'audiometrie', naam: 'Audiometrie', waar: 'praktijk', indicaties: ['gehoor', 'oor'] },
 ];
 
+export interface Afspraaksoort {
+  code: string;
+  naam: string;
+  /** Bij wie in de praktijk. */
+  bijRol: 'huisarts' | 'poh-s' | 'assistent';
+  duurMinuten: number;
+  /** Waarvoor je dit gebruikt; ook het zoekwoord. */
+  redenen: string[];
+  vorm: 'op de praktijk' | 'telefonisch' | 'videoconsult' | 'visite';
+}
+
+/**
+ * Afspraken binnen de eigen praktijk.
+ *
+ * Dit stond er nog niet in, en dat was een gat: de POH die tijdens een consult
+ * concludeert dat de huisarts ernaar moet kijken, had geen andere uitweg dan een bericht
+ * sturen of het onthouden. Een afspraak bij een collega is gewoon een order — hij heeft
+ * een reden, een ontvanger en een route, net als een verwijzing naar de tweede lijn.
+ */
+export const AFSPRAKEN: Afspraaksoort[] = [
+  { code: 'afs-ha', naam: 'Afspraak bij de huisarts', bijRol: 'huisarts', duurMinuten: 10,
+    vorm: 'op de praktijk',
+    redenen: ['Beoordeling door de huisarts gevraagd', 'Medicatie bespreken', 'Klacht die buiten mijn kader valt',
+      'Uitslag bespreken', 'Verdenking nieuwe diagnose'] },
+  { code: 'afs-ha-dubbel', naam: 'Dubbel consult huisarts', bijRol: 'huisarts', duurMinuten: 20,
+    vorm: 'op de praktijk',
+    redenen: ['Meerdere klachten', 'Complexe problematiek', 'Gesprek over behandelwensen'] },
+  { code: 'afs-ha-video', naam: 'Videoconsult huisarts', bijRol: 'huisarts', duurMinuten: 10,
+    vorm: 'videoconsult',
+    redenen: ['Beoordeling op afstand volstaat', 'Patiënt kan niet naar de praktijk komen',
+      'Nabespreken uitslag'] },
+  { code: 'afs-ha-visite', naam: 'Visite huisarts', bijRol: 'huisarts', duurMinuten: 30,
+    vorm: 'visite',
+    redenen: ['Patiënt is niet mobiel', 'Beoordeling in de thuissituatie'] },
+  { code: 'afs-poh', naam: 'Controle bij de POH-Somatiek', bijRol: 'poh-s', duurMinuten: 20,
+    vorm: 'op de praktijk',
+    redenen: ['Reguliere controle chronische zorg', 'Controle na medicatiewijziging',
+      'Leefstijlbegeleiding', 'Controle na ziekenhuisopname'] },
+  { code: 'afs-poh-video', naam: 'Videoconsult POH-Somatiek', bijRol: 'poh-s', duurMinuten: 20,
+    vorm: 'videoconsult',
+    redenen: ['Controle op afstand', 'Bespreken thuismeetreeks', 'Coaching tussendoor'] },
+  { code: 'afs-poh-tel', naam: 'Telefonische controle POH', bijRol: 'poh-s', duurMinuten: 10,
+    vorm: 'telefonisch',
+    redenen: ['Korte controle', 'Navragen hoe het gaat na een wijziging'] },
+  { code: 'afs-as', naam: 'Afspraak bij de assistent', bijRol: 'assistent', duurMinuten: 10,
+    vorm: 'op de praktijk',
+    redenen: ['Bloeddrukmeting', 'Bloedafname', 'Injectie', 'Wondcontrole', 'Uitstrijkje',
+      'Oren uitspuiten'] },
+];
+
 // ── Zoeken ───────────────────────────────────────────────────────────────────
 
 export interface Catalogustreffer {
@@ -255,6 +305,10 @@ export interface Catalogustreffer {
   /** Voor verwijzingen: naar welke instelling het kan. */
   instellingen?: string[];
   portaal?: { naam: string; url: string };
+  /** Voor afspraken: bij welke rol en hoe lang. */
+  bijRol?: string;
+  duurMinuten?: number;
+  vorm?: string;
   vereistRecht: 'medicatie-voorschrijven' | 'verwijzen' | 'lab-aanvragen' | 'dossier-registreren';
 }
 
@@ -306,6 +360,18 @@ export function zoekCatalogus(vraag: string, soorten?: CatalogusSoort[]): Catalo
         varianten: ['deze week', 'binnen een maand'], levert: o.levert,
         route: o.waar === 'praktijk' ? 'inplannen bij de assistent' : 'aanvraag diagnostisch centrum',
         vereistRecht: o.waar === 'praktijk' ? 'dossier-registreren' : 'lab-aanvragen',
+      });
+    }
+  }
+
+  if (wil('afspraak')) {
+    for (const a of AFSPRAKEN) {
+      if (!past(vraag, a.naam, a.redenen, a.bijRol, a.vorm, 'afspraak')) continue;
+      treffers.push({
+        id: `afs-${a.code}`, soort: 'afspraak', naam: a.naam, detail: a.redenen[0],
+        varianten: a.redenen, bijRol: a.bijRol, duurMinuten: a.duurMinuten, vorm: a.vorm,
+        route: `${a.duurMinuten} minuten · ${a.vorm}`,
+        vereistRecht: 'dossier-registreren',
       });
     }
   }

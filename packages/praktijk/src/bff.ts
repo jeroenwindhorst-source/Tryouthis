@@ -18,7 +18,8 @@ import {
   groepeerAutorisaties, STATUSLABEL,
   type Afspraakstatus, type Autorisatiegroep, type Triageverzoek, type WachtkamerIntake,
 } from './werkvoorraad.js';
-import type { DossierRepository } from './store.js';
+import type { DossierRepository, Overlegnotitie } from './store.js';
+import { PLANROUTE_UITLEG, teplannen, type NieuwAfspraakverzoek, type Planroute } from './planning.js';
 
 /**
  * Samenstellingen per werkplek (docs/05). De FHIR-facade blijft generiek; deze laag
@@ -467,6 +468,7 @@ export function patientOverzicht(repo: DossierRepository, patientId: string) {
           laatste: numeriekeWaarde(laatste),
           eenheid: (laatste?.waarde as { unit?: string })?.unit,
           op: laatste?.effectief.slice(0, 10),
+          bron: laatste?.herkomst.bron,
           reeks: reeks.map((o) => ({ op: o.effectief.slice(0, 10), waarde: numeriekeWaarde(o) })),
         };
       }),
@@ -478,6 +480,23 @@ export function patientOverzicht(repo: DossierRepository, patientId: string) {
     oproepen,
     instroom: beoordeelInstroom(dossier, repo.bekendeModules(patientId), persoonlijk, peildatum),
     intake: repo.intakes().find((i) => i.patientId === patientId),
+    /** Behandelgrenzen — hoort bovenaan, niet ergens in het journaal. */
+    beleid: repo.beleidsafspraken(patientId),
+    /**
+     * Wat er voor déze patiënt bij de huisarts ligt.
+     *
+     * Een dossier openen vanuit de autorisatiestapel en dan niet meer kunnen tekenen,
+     * dwingt je terug naar de lijst en daar het item opnieuw op te zoeken. Het verzoek
+     * hoort mee te reizen met het dossier dat je erbij opent.
+     */
+    autorisaties: repo.autorisaties().filter((a) => a.patientId === patientId && a.status === 'open'),
+    /** Wat er nog ingepland moet worden voor deze patiënt. */
+    planverzoeken: repo.afspraakverzoeken()
+      .filter((v) => v.patientId === patientId && (v.status === 'open' || v.status === 'uitgezet')),
+    /** Het volgende geplande contact in de agenda, als dat er is. */
+    volgendeAfspraak: repo.agenda()
+      .filter((a) => a.patientId === patientId && a.status === 'gepland')
+      .sort((a, b) => a.start.localeCompare(b.start))[0],
   };
 }
 
@@ -548,10 +567,22 @@ export type { Task };
 // ── 8. Registratie vanuit het consult ───────────────────────────────────────
 
 export interface ConsultRegistratie {
-  /** Getalwaarden én gecodeerde keuzes; een rookstatus is geen getal. */
-  metingen: { code: string; waarde?: number; keuze?: { code: string; display?: string } }[];
+  /**
+   * Getalwaarden én gecodeerde keuzes; een rookstatus is geen getal.
+   *
+   * `bron` bepaalt wat de waarde is. `praktijk` betekent: jij legt hem vast en neemt hem
+   * voor je rekening. `patient` betekent: de patiënt heeft hem doorgegeven en je bewaart
+   * hem als zodanig — zichtbaar in het dossier, maar geen eigen registratie en dus geen
+   * grondslag voor een ketenindicator (docs/03 §3).
+   */
+  metingen: {
+    code: string; waarde?: number; keuze?: { code: string; display?: string };
+    bron?: 'praktijk' | 'patient';
+  }[];
   soep?: { S?: string; O?: string; E?: string; P?: string };
   episodeId?: string;
+  /** Wie registreert. Bepaalt de herkomst; de rol volgt uit de gebruiker. */
+  gebruikerId?: string;
 }
 
 export interface RegistratieUitkomst {
@@ -582,11 +613,23 @@ export function registreerConsult(
     voor.ketens.flatMap((k) => k.indicatoren.filter((i) => !i.voldaan).map((i) => `${k.naam}|${i.naam}`)),
   );
 
+  const gebruiker = registratie.gebruikerId ? vindGebruiker(registratie.gebruikerId) : undefined;
+  const auteurRol = (gebruiker && gebruiker.rol !== 'administrator' ? gebruiker.rol : 'poh-s') as Rol;
   const herkomst = {
     bron: 'zorgverlener' as const,
     vastgelegdOp: nu,
-    auteurId: 'zv-poh-1',
-    auteurRol: 'poh-s' as const,
+    auteurId: gebruiker?.id ?? 'zv-poh-1',
+    auteurRol,
+  };
+
+  // Een waarde die de patiënt zelf aanleverde krijgt zíjn herkomst, niet die van jou.
+  // Dat is geen formaliteit: het bepaalt of de waarde een ketenindicator vult en of hij
+  // straks als jouw registratie de deur uit gaat.
+  const patientHerkomst = {
+    bron: 'patient' as const,
+    vastgelegdOp: nu,
+    auteurId: patientId,
+    auteurRol: 'patient' as Rol,
   };
 
   const observaties = registratie.metingen.map((m, i) => ({
@@ -600,7 +643,7 @@ export function registreerConsult(
       ? { code: { system: 'http://snomed.info/sct', code: m.keuze.code, display: m.keuze.display } }
       : { value: m.waarde ?? 0, unit: '' },
     status: 'final' as const,
-    herkomst,
+    herkomst: m.bron === 'patient' ? patientHerkomst : herkomst,
   }));
 
   const soepRegels = Object.entries(registratie.soep ?? {})
@@ -937,9 +980,11 @@ export interface Meetreeks {
   laatsteOp?: string;
   /** Verschil met de meting daarvoor; null als er maar één meting is. */
   verschil?: number;
-  punten: { op: string; waarde: number }[];
+  punten: { op: string; waarde: number; bron?: string }[];
   /** Referentie- of streefwaarden om tegen af te zetten in de grafiek. */
   streef?: { onder?: number; boven?: number; label: string };
+  /** Hoeveel punten door de patiënt zelf zijn aangeleverd. */
+  vanPatient?: number;
 }
 
 const STREEFWAARDEN: Record<string, { onder?: number; boven?: number; label: string }> = {
@@ -964,8 +1009,12 @@ export function meetreeksen(repo: DossierRepository, patientId: string): Meetree
     .map((code): Meetreeks => {
       const reeks = metingReeks(dossier, code);
       const punten = reeks
-        .map((o) => ({ op: o.effectief.slice(0, 10), waarde: numeriekeWaarde(o) }))
-        .filter((p): p is { op: string; waarde: number } => typeof p.waarde === 'number');
+        .map((o) => ({
+          op: o.effectief.slice(0, 10), waarde: numeriekeWaarde(o), bron: o.herkomst.bron,
+        }))
+        .flatMap((p) => (typeof p.waarde === 'number'
+          ? [{ op: p.op, waarde: p.waarde, bron: p.bron as string }]
+          : []));
       const laatste = punten.at(-1);
       const vorige = punten.at(-2);
       return {
@@ -979,6 +1028,7 @@ export function meetreeksen(repo: DossierRepository, patientId: string): Meetree
         verschil: laatste && vorige ? Math.round((laatste.waarde - vorige.waarde) * 10) / 10 : undefined,
         punten,
         streef: STREEFWAARDEN[code],
+        vanPatient: punten.filter((p) => p.bron === 'patient').length,
       };
     })
     // Gecodeerde observaties (rookstatus, verrichtingen zonder getal) horen niet in een
@@ -998,7 +1048,8 @@ export function meetreeksen(repo: DossierRepository, patientId: string): Meetree
  */
 export type Tijdlijnitem =
   | { soort: 'contact'; datum: string; contact: JournaalRegel }
-  | { soort: 'extern'; datum: string; document: ExternDocument };
+  | { soort: 'extern'; datum: string; document: ExternDocument }
+  | { soort: 'overleg'; datum: string; notitie: Overlegnotitie };
 
 export interface Bron {
   id: string;
@@ -1062,9 +1113,15 @@ export function dossierHistorie(
     : extern;
   const zichtbaarContacten = bronId && !isEpisode ? [] : contacten;
 
+  // Het teamoverleg hoort in dezelfde tijdlijn: er is over deze mens gesproken en er is
+  // iets besloten. Het is geen consult, dus het krijgt geen SOEP — maar onzichtbaar
+  // maken zou betekenen dat het besluit alleen in het hoofd van twee mensen bestaat.
+  const notities = bronId && !isEpisode ? [] : repo.overlegnotities(patientId);
+
   const tijdlijn: Tijdlijnitem[] = [
     ...zichtbaarContacten.map((c): Tijdlijnitem => ({ soort: 'contact', datum: c.datum, contact: c })),
     ...zichtbaarExtern.map((d): Tijdlijnitem => ({ soort: 'extern', datum: d.datum, document: d })),
+    ...notities.map((n): Tijdlijnitem => ({ soort: 'overleg', datum: n.op.slice(0, 10), notitie: n })),
   ].sort((a, b) => b.datum.localeCompare(a.datum));
 
   return {
@@ -1075,6 +1132,7 @@ export function dossierHistorie(
     aantalContacten: dossier.deelcontacten.length,
     aantalExtern: extern.length,
     ongelezenExtern: extern.filter((d) => !d.gelezen).length,
+    aantalOverleg: repo.overlegnotities(patientId).length,
   };
 }
 
@@ -1159,6 +1217,160 @@ export function overleg(repo: DossierRepository, rol: Rol) {
   };
 }
 
+// ── 18. Plannen ─────────────────────────────────────────────────────────────
+
+/**
+ * Het planbord van één rol: de dag, de vrije plekken en wat er nog moet.
+ *
+ * Bewust in één antwoord. Wie een plek zoekt, wil de dag ernaast zien — een lijst met
+ * losse tijdstippen zonder context laat je de verkeerde plek kiezen, precies naast een
+ * visiteblok of vlak voor de lunch.
+ */
+export function planbord(repo: DossierRepository, rol: Rol, duurMinuten?: number) {
+  const slots = repo.vrijeSlots(rol, duurMinuten);
+  return {
+    rol,
+    agenda: agenda(repo, rol),
+    slots: slots.map((s) => ({ ...s, tijd: s.start.slice(11, 16) })),
+    vrij: slots.length,
+    patientPlanbaar: slots.filter((s) => s.patientPlanbaar).length,
+    teplannen: teplannen(repo.afspraakverzoeken()),
+    routes: PLANROUTE_UITLEG,
+  };
+}
+
+/**
+ * Het planbord van de assistent: alle drie de agenda's naast elkaar.
+ *
+ * Dit is het werk van de assistent en niet van het systeem: iemand aan de lijn krijgen
+ * en die in de juiste agenda op de juiste plek zetten. Daarvoor moet je alle drie de
+ * agenda's tegelijk zien, want "past het bij de POH of moet het naar de huisarts" is de
+ * eerste vraag en niet de laatste.
+ */
+export function planbordPraktijk(repo: DossierRepository) {
+  const rollen: Rol[] = ['huisarts', 'poh-s', 'assistent'];
+  return {
+    datum: repo.peildatum().toISOString().slice(0, 10),
+    kolommen: rollen.map((rol) => ({
+      rol,
+      agenda: agenda(repo, rol),
+      slots: repo.vrijeSlots(rol).map((s) => ({ ...s, tijd: s.start.slice(11, 16) })),
+    })),
+    teplannen: teplannen(repo.afspraakverzoeken()),
+    routes: PLANROUTE_UITLEG,
+  };
+}
+
+export function vraagAfspraakAan(
+  repo: DossierRepository, gebruikerId: string, verzoek: NieuwAfspraakverzoek,
+) {
+  const gebruiker = vindGebruiker(gebruikerId);
+  if (!gebruiker || gebruiker.rol === 'administrator') return undefined;
+  return repo.maakAfspraakverzoek(verzoek, {
+    id: gebruiker.id, naam: gebruiker.naam, rol: gebruiker.rol,
+  });
+}
+
+export type { Planroute };
+
+// ── 19. Praktijkrapportage ──────────────────────────────────────────────────
+
+/**
+ * Wat een praktijkmanager wil weten.
+ *
+ * Niet "hoeveel consulten waren er" — dat weet iedereen wel. Wel: lopen we ergens
+ * declaraties mis doordat de registratie niet compleet is, en waar zit dat dan? Dat is
+ * precies de vraag waarvoor praktijken nu een datadump naar Excel doen.
+ *
+ * De rapportage rekent daarom terug vanuit de ketenindicatoren die het systeem toch al
+ * afleidt. Geen aparte registratie, geen aparte telling: dezelfde bron als het
+ * zorgproces, zodat de cijfers niet uiteen kunnen lopen.
+ */
+export function praktijkrapportage(repo: DossierRepository) {
+  const peildatum = repo.peildatum();
+  const dossiers = repo.alleDossiers();
+
+  const perKeten = new Map<string, {
+    naam: string; prestatiecode: string; patienten: number; volledig: number;
+    ontbrekend: Map<string, number>;
+  }>();
+
+  let metZorgvraag = 0;
+  let zonderKeten = 0;
+  const modulesTelling = new Map<string, number>();
+
+  for (const dossier of dossiers) {
+    const plan = planVoor(repo, dossier);
+    if (plan.modules.length === 0) continue;
+    metZorgvraag++;
+    for (const module of plan.modules) {
+      modulesTelling.set(module.naam, (modulesTelling.get(module.naam) ?? 0) + 1);
+    }
+    if (plan.ketens.length === 0) { zonderKeten++; continue; }
+
+    for (const keten of plan.ketens) {
+      const regel = perKeten.get(keten.ketenId) ?? {
+        naam: keten.naam, prestatiecode: keten.declaratie.prestatiecode,
+        patienten: 0, volledig: 0, ontbrekend: new Map<string, number>(),
+      };
+      regel.patienten++;
+      if (keten.volledigheid === 1) regel.volledig++;
+      for (const indicator of keten.indicatoren.filter((i) => !i.voldaan)) {
+        regel.ontbrekend.set(indicator.naam, (regel.ontbrekend.get(indicator.naam) ?? 0) + 1);
+      }
+      perKeten.set(keten.ketenId, regel);
+    }
+  }
+
+  const ketens = [...perKeten.values()].map((k) => ({
+    naam: k.naam,
+    prestatiecode: k.prestatiecode,
+    patienten: k.patienten,
+    volledig: k.volledig,
+    percentage: k.patienten === 0 ? 0 : Math.round((k.volledig / k.patienten) * 100),
+    /** Waar het op vastloopt, grootste knelpunt eerst — daar valt de winst te halen. */
+    knelpunten: [...k.ontbrekend.entries()]
+      .map(([naam, aantal]) => ({ naam, aantal }))
+      .sort((a, b) => b.aantal - a.aantal)
+      .slice(0, 4),
+  })).sort((a, b) => b.patienten - a.patienten);
+
+  const autorisaties = repo.autorisaties();
+  const agendaVandaag = repo.agenda();
+
+  return {
+    datum: peildatum.toISOString().slice(0, 10),
+    populatie: {
+      ingeschreven: dossiers.length,
+      metZorgvraag,
+      zonderKeten,
+      modules: [...modulesTelling.entries()]
+        .map(([naam, aantal]) => ({ naam, aantal }))
+        .sort((a, b) => b.aantal - a.aantal),
+    },
+    ketens,
+    werkvoorraad: {
+      autorisatiesOpen: autorisaties.filter((a) => a.status === 'open').length,
+      autorisatiesRoutine: autorisaties.filter((a) => a.status === 'open' && a.routine).length,
+      triageOpen: repo.triage().filter((t) => t.status === 'nieuw').length,
+      teplannen: teplannen(repo.afspraakverzoeken()).length,
+      bespreekpunten: repo.bespreekpunten().filter((p) => p.status === 'open').length,
+    },
+    bezetting: ['huisarts', 'poh-s', 'assistent'].map((rol) => {
+      const eigen = agendaVandaag.filter((a) => a.rol === rol);
+      const geboekt = eigen.filter((a) => a.patientId);
+      const minuten = geboekt.reduce((som, a) => som + a.duurMinuten, 0);
+      return {
+        rol,
+        afspraken: geboekt.length,
+        geboekteMinuten: minuten,
+        vrijeSlots: repo.vrijeSlots(rol as Rol).length,
+        noshow: eigen.filter((a) => a.status === 'noshow').length,
+      };
+    }),
+  };
+}
+
 export function zetOpBespreeklijst(
   repo: DossierRepository, gebruikerId: string, punt: NieuwBespreekpunt,
 ) {
@@ -1173,11 +1385,24 @@ export function zetOpBespreeklijst(
 
 export function berichten(repo: DossierRepository, gebruikerId: string) {
   const eigen = gesprekkenVoor(repo.alleGesprekken(), gebruikerId);
-  return {
-    gesprekken: eigen.map((g) => ({
-      ...g,
-      berichten: g.berichten.map((b) => ({ ...b, van: naamVanGebruiker(b.vanId) })),
+  // Bij een patiëntgesprek is de afzender de patiënt en niet een gebruiker; die naam
+  // staat in het gesprek zelf. Zonder deze omweg heet de patiënt naar zijn eigen id.
+  const verrijk = (g: (typeof eigen)[number]) => ({
+    ...g,
+    berichten: g.berichten.map((b) => ({
+      ...b,
+      van: b.vanId === g.patientId ? (g.patientNaam ?? 'Patiënt') : naamVanGebruiker(b.vanId),
+      vanPatient: b.vanId === g.patientId,
     })),
+  });
+
+  const alle = eigen.map(verrijk);
+  return {
+    gesprekken: alle,
+    collega: alle.filter((g) => g.soort !== 'patient'),
+    patient: alle.filter((g) => g.soort === 'patient'),
     ongelezen: ongelezenVoor(repo.alleGesprekken(), gebruikerId),
+    ongelezenPatient: ongelezenVoor(
+      repo.alleGesprekken().filter((g) => g.soort === 'patient'), gebruikerId),
   };
 }

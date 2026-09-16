@@ -2,15 +2,17 @@ import { useState, type CSSProperties } from 'react';
 import {
   api, MODULE_NAAM,
   type ExternDocument, type GeplandContact, type GeplandItem, type Gebruiker,
-  type JournaalRegel, type Meetreeks, type NieuweOrder, type PatientOverzicht,
-  type RegistratieUitkomst, type Treffer,
+  type JournaalRegel, type Meetreeks, type NieuweOrder, type Overlegnotitie,
+  type PatientOverzicht, type RegistratieUitkomst, type Treffer,
 } from '../api';
 import { useData } from '../gebruik';
 import { Trendgrafiek } from '../grafiek';
+import { Soepveld } from '../soepveld';
+import { Zorgreis } from '../zorgreis';
 import { Icoon, icoonVanModule } from '../iconen';
 import {
-  ErnstMerk, Fout, IntakeKaart, Kaart, Laden, Leeg, ModuleIdChips, Signalen, SuggestieKaart,
-  Zelfredzaamheidsmeter,
+  Beleidsband, ErnstMerk, Fout, IntakeKaart, Kaart, Laden, Leeg, ModuleIdChips, Signalen,
+  SuggestieKaart, Zelfredzaamheidsmeter,
 } from '../onderdelen';
 import { Orders } from './Orders';
 import { Orderpaneel } from './Orderpaneel';
@@ -40,11 +42,30 @@ const INTENSITEITEN = [
 ];
 
 type Tab = 'consult' | 'journaal' | 'metingen' | 'orders';
-type OrderSoort = 'medicatie' | 'lab' | 'onderzoek' | 'verwijzing';
+type OrderSoort = 'medicatie' | 'lab' | 'onderzoek' | 'verwijzing' | 'afspraak';
+
+const PLAN_ICOON: Record<string, string> = {
+  medicatie: 'pil', lab: 'buisje', verwijzing: 'uitgaand', onderzoek: 'radar',
+  afspraak: 'agenda', begeleiding: 'gesprek',
+};
+
+const ROUTE_KORT: Record<string, string> = {
+  zelf: 'zelf inplannen', assistent: 'assistent plant', portaal: 'patiënt plant zelf',
+  automatisch: 'systeem plant',
+};
 
 /** Wat er tijdens het consult wordt ingevuld. Staat hier, zodat de wachtkamer-intake het kan vullen. */
 export interface Registratie {
   waarden: Record<string, string>;
+  /**
+   * Per meting: leg jij hem vast, of bewaar je hem als melding van de patiënt?
+   *
+   * Dat is geen formaliteit. Een gewicht dat de patiënt thuis noemde is een echte waarde
+   * en hoort zichtbaar te blijven — maar het is jouw registratie niet, en het vult dus
+   * geen ketenindicator. Zonder deze keuze moet je kiezen tussen weggooien en doen alsof
+   * je het zelf gemeten hebt.
+   */
+  bronnen: Record<string, 'praktijk' | 'patient'>;
   soep: Record<string, string>;
   episodeId: string;
   suggestieCodes: { icpc: string; display: string }[];
@@ -63,8 +84,10 @@ export function Consult({ patientId, gebruiker, terug }: {
   const [gekozenMeting, setGekozenMeting] = useState<string | undefined>();
   const [orderpaneel, setOrderpaneel] = useState<OrderSoort | 'alles' | undefined>();
   const [ordersVandaag, setOrdersVandaag] = useState<NieuweOrder[]>([]);
+  const [video, setVideo] = useState(false);
+  const [toonDetails, setToonDetails] = useState(false);
   const [registratie, setRegistratie] = useState<Registratie>({
-    waarden: {}, soep: {}, episodeId: '', suggestieCodes: [],
+    waarden: {}, bronnen: {}, soep: {}, episodeId: '', suggestieCodes: [],
   });
 
   if (fout) return <Fout boodschap={fout} />;
@@ -87,7 +110,7 @@ export function Consult({ patientId, gebruiker, terug }: {
    * kiesbare E-codering klaar te staan. Zonder die doorwerking is "overnemen" een knop
    * die niets doet.
    */
-  const neemIntakeOver = async () => {
+  const neemIntakeOver = async (alsPatientmelding = false) => {
     const intake = data.intake;
     if (!intake) return;
     setRegistratie((r) => ({
@@ -96,6 +119,11 @@ export function Consult({ patientId, gebruiker, terug }: {
       waarden: {
         ...r.waarden,
         ...Object.fromEntries(intake.metingen.map((m) => [m.code, String(m.waarde)])),
+      },
+      bronnen: {
+        ...r.bronnen,
+        ...Object.fromEntries(intake.metingen.map((m) =>
+          [m.code, alsPatientmelding ? 'patient' as const : 'praktijk' as const])),
       },
       suggestieCodes: intake.codesuggesties.map((c) => ({ icpc: c.icpc, display: c.display })),
     }));
@@ -108,6 +136,15 @@ export function Consult({ patientId, gebruiker, terug }: {
 
   const opMetingKlik = (code: string) => { setGekozenMeting(code); setTab('metingen'); };
 
+  const vandaag = new Date().toISOString().slice(0, 10);
+  // De laatste meting is de beste benadering van "wanneer heb ik deze mens gezien" die
+  // het patiëntoverzicht bevat; het volledige journaal staat één tab verderop.
+  const laatsteContactDatum = data.metingen
+    .map((m) => m.op)
+    .filter((op): op is string => Boolean(op))
+    .sort()
+    .at(-1);
+
   return (
     <>
       <div className="patientbalk">
@@ -119,7 +156,16 @@ export function Consult({ patientId, gebruiker, terug }: {
           {data.patient.geboortedatum} · {data.patient.leeftijd} jaar · BSN {data.patient.bsn}
         </span>
         <ModuleIdChips ids={plan.modules.map((m) => m.id)} />
-        <span style={{ marginLeft: 'auto' }}>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 7, alignItems: 'center' }}>
+          {/*
+            Videobellen hoort hier en niet in een apart scherm: het is een manier om dit
+            consult te voeren, geen andere soort zorg. De knop start in de demo niets —
+            wat hij laat zien is waar hij hoort te zitten in het werkproces.
+          */}
+          <button className="knop" onClick={() => setVideo(true)}
+            title="Start een videoconsult met deze patiënt">
+            <Icoon naam="video" grootte={13} /> Videobellen
+          </button>
           {data.patient.portaalActief
             ? <span className="merkje" data-toon="ok">portaal actief</span>
             : (
@@ -130,6 +176,13 @@ export function Consult({ patientId, gebruiker, terug }: {
             )}
         </span>
       </div>
+
+      <Beleidsband afspraken={data.beleid} peiljaar={new Date().getFullYear()} />
+
+      {video && (
+        <Videovenster naam={data.patient.naam} portaal={Boolean(data.patient.portaalActief)}
+          opSluit={() => setVideo(false)} />
+      )}
 
       <div className="dossiertabs">
         <button data-actief={tab === 'consult'} onClick={() => setTab('consult')}>
@@ -198,6 +251,23 @@ export function Consult({ patientId, gebruiker, terug }: {
                   Contact-intervallen staan hierdoor op factor {plan.zelfredzaamheid.factor}.
                   {!plan.zelfredzaamheid.digitaalBereikbaar && ' Digitale oproep is niet passend.'}
                 </div>
+
+                {plan.zelfredzaamheid.bijgesteld && (
+                  <div className="notitie" data-toon="waarschuwing" style={{ marginTop: 10 }}>
+                    <strong>Handmatig bijgesteld.</strong> Berekend niveau was{' '}
+                    {plan.zelfredzaamheid.bijgesteld.berekendNiveau} (factor{' '}
+                    {plan.zelfredzaamheid.bijgesteld.berekendeFactor}).{' '}
+                    {plan.zelfredzaamheid.bijgesteld.reden} — {plan.zelfredzaamheid.bijgesteld.door},{' '}
+                    {plan.zelfredzaamheid.bijgesteld.op}
+                  </div>
+                )}
+
+                <Bijstellen plan={data} gebruiker={gebruiker} bezig={Boolean(bezigMet)}
+                  opWijzig={(bijstelling) => wijzigPlan({
+                    zelfredzaamheid: data.persoonlijk.zelfredzaamheid
+                      ? { ...data.persoonlijk.zelfredzaamheid, bijstelling }
+                      : undefined,
+                  }, 'zrm')} />
               </Kaart>
             )}
 
@@ -255,6 +325,90 @@ export function Consult({ patientId, gebruiker, terug }: {
               </button>
             </Kaart>
 
+            {/*
+              Wie een dossier opent vanuit de autorisatiestapel, wil daar ook kunnen
+              tekenen. Terug naar de lijst en het item opnieuw opzoeken is precies het
+              loopwerk dat de stapel zo groot maakt.
+            */}
+            {data.autorisaties.length > 0 && gebruiker.rechten.includes('autoriseren') && (
+              <Kaart titel="Wacht op jouw akkoord" icoon="klembord" telling={data.autorisaties.length}>
+                {data.autorisaties.map((verzoek) => (
+                  <div key={verzoek.id} className="autorisatieregel">
+                    <div>
+                      <strong style={{ fontSize: 13 }}>{verzoek.omschrijving}</strong>
+                      <div className="reden">{verzoek.aanleiding}</div>
+                      <div className="mini">
+                        {verzoek.ingediendDoor.naam} · {verzoek.ingediendOp.slice(0, 10)}
+                        {verzoek.routine ? ' · routine' : ''}
+                      </div>
+                      {verzoek.redenGeenRoutine && (
+                        <div className="mini" style={{ color: 'var(--aandacht)' }}>
+                          {verzoek.redenGeenRoutine}
+                        </div>
+                      )}
+                    </div>
+                    <div className="knop-rij" style={{ marginTop: 7 }}>
+                      <button className="knop" data-toon="primair" disabled={bezigMet === verzoek.id}
+                        onClick={() => werk(verzoek.id, async () => {
+                          await api.accordeer([verzoek.id]);
+                          return api.patient(patientId);
+                        })}>
+                        <Icoon naam="vink" grootte={13} /> Akkoord
+                      </button>
+                      <button className="knop" data-toon="gevaar" disabled={bezigMet === verzoek.id}
+                        onClick={() => werk(verzoek.id, async () => {
+                          await api.wijsAutorisatieAf(verzoek.id, 'afgewezen vanuit het dossier');
+                          return api.patient(patientId);
+                        })}>
+                        <Icoon naam="kruis" grootte={13} /> Afwijzen
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </Kaart>
+            )}
+
+            <Kaart titel="Afspraken" icoon="agenda"
+              telling={data.planverzoeken.length > 0 ? `${data.planverzoeken.length} te plannen` : undefined}>
+              {data.volgendeAfspraak ? (
+                <div className="regel">
+                  <span className="sleutel">
+                    Volgende afspraak
+                    <div className="mini">{data.volgendeAfspraak.reden ?? data.volgendeAfspraak.titel}</div>
+                  </span>
+                  <span className="waarde">
+                    {data.volgendeAfspraak.start.slice(0, 10)}
+                    <div className="mini" style={{ fontWeight: 400 }}>
+                      {data.volgendeAfspraak.start.slice(11, 16)} · {data.volgendeAfspraak.duurMinuten} min
+                    </div>
+                  </span>
+                </div>
+              ) : (
+                <span className="mini">Geen afspraak gepland.</span>
+              )}
+
+              {data.planverzoeken.map((v) => (
+                <div key={v.id} className="regel">
+                  <span className="sleutel">
+                    {v.reden}
+                    <div className="mini">
+                      bij de {v.voorRol} · {v.duurMinuten} min · {ROUTE_KORT[v.route] ?? v.route}
+                    </div>
+                  </span>
+                  <span className="waarde">
+                    <span className="merkje" data-toon={v.status === 'uitgezet' ? 'informatief' : 'aandacht'}>
+                      {v.status === 'uitgezet' ? 'bij de patiënt' : 'te plannen'}
+                    </span>
+                  </span>
+                </div>
+              ))}
+
+              <button className="knop" style={{ marginTop: 10 }}
+                onClick={() => setOrderpaneel('afspraak')}>
+                <Icoon naam="plus" grootte={13} /> Afspraak plannen
+              </button>
+            </Kaart>
+
             <Bespreekknop patientId={patientId} naam={data.patient.naam} gebruiker={gebruiker} />
 
             <Kaart titel="Oproepen" icoon="gesprek" telling={data.oproepen.length}>
@@ -277,7 +431,8 @@ export function Consult({ patientId, gebruiker, terug }: {
           <div>
             {data.intake && (
               <IntakeKaart intake={data.intake} bezig={bezigMet === 'intake'}
-                opBevestig={neemIntakeOver} />
+                opBevestig={() => neemIntakeOver(false)}
+                opBewaarAlsMelding={() => neemIntakeOver(true)} />
             )}
 
             <Kaart titel="Beslissingsondersteuning" icoon="gesprek" telling={`${klinisch.length} voor jou`}>
@@ -359,7 +514,8 @@ export function Consult({ patientId, gebruiker, terug }: {
             )}
 
             {!uitkomst && (
-              <Registreren patientId={patientId} overzicht={data} registratie={registratie}
+              <Registreren patientId={patientId} overzicht={data} gebruiker={gebruiker}
+                registratie={registratie}
                 ordersVandaag={ordersVandaag} opOrder={() => setOrderpaneel('alles')}
                 opWijzig={setRegistratie}
                 opKlaar={(nieuw, uit) => { setData(nieuw); setUitkomst(uit); }} />
@@ -400,7 +556,16 @@ export function Consult({ patientId, gebruiker, terug }: {
                 </div>
               )}
 
-              {plan.contacten.map((contact) => (
+              <Zorgreis contacten={plan.contacten} vandaag={vandaag}
+                laatsteContact={laatsteContactDatum} />
+
+              <button className="knop" data-toon="stil" style={{ marginTop: 10 }}
+                onClick={() => setToonDetails(!toonDetails)}>
+                <Icoon naam={toonDetails ? 'kruis' : 'lijst'} grootte={13} />
+                {toonDetails ? 'Verberg de details per contact' : 'Wat er per contact gebeurt'}
+              </button>
+
+              {toonDetails && plan.contacten.map((contact) => (
                 <ContactKaart key={contact.id} contact={contact} opMetingKlik={opMetingKlik} />
               ))}
 
@@ -596,6 +761,146 @@ export function Consult({ patientId, gebruiker, terug }: {
   );
 }
 
+/**
+ * Videoconsult.
+ *
+ * Bewust géén nagebouwde videoverbinding: dat zou suggereren dat er iets werkt wat er
+ * niet is. Wat hier wél staat is het werkproces eromheen — hoe de patiënt de uitnodiging
+ * krijgt, dat het dossier ernaast open blijft, en dat er achteraf gewoon een deelcontact
+ * geregistreerd wordt. Dat is het deel dat een HIS moet regelen; het beeld komt van een
+ * partij die daar goed in is (docs/14 §4, ingebedde apps).
+ */
+function Videovenster({ naam, portaal, opSluit }: {
+  naam: string; portaal: boolean; opSluit: () => void;
+}) {
+  const [gestart, setGestart] = useState(false);
+  return (
+    <>
+      <div className="paneel-scherm" onClick={opSluit} />
+      <div className="videovenster" role="dialog" aria-label="Videoconsult">
+        <header>
+          <span className="kop"><Icoon naam="video" grootte={15} /> Videoconsult met {naam}</span>
+          <button className="knop" data-toon="stil" onClick={opSluit}>
+            <Icoon naam="kruis" grootte={15} />
+          </button>
+        </header>
+        <div className="beeld">
+          {gestart ? (
+            <>
+              <span className="stip-live" /> Verbinding wordt opgezet…
+              <div className="mini">
+                In de demo gebeurt er verder niets. In productie draait hier de ingebedde
+                videodienst, met dezelfde herkomstregels als elke andere partnerapp.
+              </div>
+            </>
+          ) : (
+            <>
+              <Icoon naam="video" grootte={40} />
+              <div className="mini">
+                {portaal
+                  ? 'De patiënt krijgt een link in het portaal en kan direct deelnemen.'
+                  : 'Deze patiënt heeft geen portaal. De link gaat per sms; dat is zwakker '
+                    + 'geauthenticeerd en dat hoor je te weten voordat je begint.'}
+              </div>
+            </>
+          )}
+        </div>
+        <footer>
+          <button className="knop" data-toon="primair" onClick={() => setGestart(true)}
+            disabled={gestart}>
+            <Icoon naam="video" grootte={13} /> {gestart ? 'Bezig…' : 'Uitnodiging versturen en starten'}
+          </button>
+          <span className="mini">
+            Na afloop leg je het consult vast zoals elk ander contact; de vorm komt in het
+            journaal te staan.
+          </span>
+        </footer>
+      </div>
+    </>
+  );
+}
+
+const ZRM_NIVEAUS = [
+  { id: 'acuut', label: 'acute problematiek', factor: 0.5 },
+  { id: 'beperkt', label: 'beperkt zelfredzaam', factor: 0.7 },
+  { id: 'voldoende', label: 'voldoende', factor: 1 },
+  { id: 'goed', label: 'goed', factor: 1.3 },
+  { id: 'volledig', label: 'volledig', factor: 1.6 },
+];
+
+/**
+ * De score overrulen op professionele gronden.
+ *
+ * Een gemiddelde van elf domeinen is een hulpmiddel, geen oordeel. Wie deze mens kent,
+ * ziet soms iets wat niet in de scores zit. Die inschatting mag winnen — maar alleen mét
+ * reden en zichtbaar naast het berekende getal, anders is het cijfer voor iedereen die
+ * er later naar kijkt onbetrouwbaar geworden.
+ */
+function Bijstellen({ plan, gebruiker, bezig, opWijzig }: {
+  plan: PatientOverzicht;
+  gebruiker: Gebruiker;
+  bezig: boolean;
+  opWijzig: (bijstelling: { niveau: string; reden: string; door: string; op: string } | undefined) => void;
+}) {
+  const huidig = plan.persoonlijk.zelfredzaamheid?.bijstelling;
+  const [open, setOpen] = useState(false);
+  const [niveau, setNiveau] = useState(huidig?.niveau ?? plan.zorgplan.zelfredzaamheid?.niveau ?? 'voldoende');
+  const [reden, setReden] = useState(huidig?.reden ?? '');
+
+  if (!plan.persoonlijk.zelfredzaamheid) return null;
+
+  if (!open) {
+    return (
+      <div className="knop-rij" style={{ marginTop: 10 }}>
+        <button className="knop" data-toon="stil" onClick={() => setOpen(true)}>
+          <Icoon naam="schakelaar" grootte={13} /> Zelf inschatten
+        </button>
+        {huidig && (
+          <button className="knop" data-toon="stil" disabled={bezig}
+            onClick={() => opWijzig(undefined)}>
+            <Icoon naam="herstel" grootte={13} /> Terug naar de score
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 10, borderTop: '1px solid var(--line)', paddingTop: 10 }}>
+      <label className="veld">Jouw inschatting</label>
+      <div className="chips" style={{ marginBottom: 9 }}>
+        {ZRM_NIVEAUS.map((n) => (
+          <button key={n.id} className="filterchip" data-actief={niveau === n.id}
+            onClick={() => setNiveau(n.id)}>
+            {n.label} <span className="mini">×{n.factor}</span>
+          </button>
+        ))}
+      </div>
+      <label className="veld">Waarom wijk je af van de score?</label>
+      <input type="text" value={reden} autoFocus
+        placeholder="Bijvoorbeeld: partner is vorige maand overleden, netwerk valt weg"
+        onChange={(e) => setReden(e.target.value)} />
+      <div className="knop-rij" style={{ marginTop: 9 }}>
+        <button className="knop" data-toon="primair" disabled={bezig || !reden.trim()}
+          onClick={() => {
+            opWijzig({
+              niveau, reden: reden.trim(), door: gebruiker.naam,
+              op: new Date().toISOString().slice(0, 10),
+            });
+            setOpen(false);
+          }}>
+          <Icoon naam="vink" grootte={13} /> Vastleggen
+        </button>
+        <button className="knop" onClick={() => setOpen(false)}>Annuleren</button>
+      </div>
+      <p className="mini" style={{ marginTop: 7 }}>
+        De bijstelling werkt door op alle contact-intervallen en blijft naast het berekende
+        niveau zichtbaar, met jouw naam erbij.
+      </p>
+    </div>
+  );
+}
+
 function ContactKaart({ contact, opMetingKlik }: {
   contact: GeplandContact; opMetingKlik: (code: string) => void;
 }) {
@@ -729,15 +1034,23 @@ function Journaal({ patientId }: { patientId: string }) {
       <Kaart titel="Tijdlijn" icoon="boek" telling={`${data.tijdlijn.length} items`}>
         {data.tijdlijn.length === 0 && <Leeg tekst="Nog niets vastgelegd voor deze bron." />}
         <div className="journaal">
-          {data.tijdlijn.map((item) => item.soort === 'contact' ? (
-            <Contactregel key={item.contact.encounterId + item.datum} regel={item.contact}
-              open={open === item.contact.encounterId}
-              opKlik={() => setOpen(open === item.contact.encounterId ? undefined : item.contact.encounterId)}
-              opEpisode={() => setBron(item.contact.episodeId)} />
-          ) : (
-            <Externregel key={item.document.id} document={item.document}
-              open={open === item.document.id} opKlik={() => lees(item.document.id)} />
-          ))}
+          {data.tijdlijn.map((item) => {
+            if (item.soort === 'contact') {
+              return (
+                <Contactregel key={item.contact.encounterId + item.datum} regel={item.contact}
+                  open={open === item.contact.encounterId}
+                  opKlik={() => setOpen(open === item.contact.encounterId ? undefined : item.contact.encounterId)}
+                  opEpisode={() => setBron(item.contact.episodeId)} />
+              );
+            }
+            if (item.soort === 'overleg') {
+              return <Overlegregel key={item.notitie.id} notitie={item.notitie} />;
+            }
+            return (
+              <Externregel key={item.document.id} document={item.document}
+                open={open === item.document.id} opKlik={() => lees(item.document.id)} />
+            );
+          })}
         </div>
       </Kaart>
     </div>
@@ -792,6 +1105,53 @@ function Contactregel({ regel, open, opKlik, opEpisode }: {
             </button>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Wat er in het teamoverleg over deze patiënt besloten is.
+ *
+ * Geen SOEP: er is geen patiënt gezien, geen anamnese afgenomen en geen onderzoek
+ * gedaan. Er is óver iemand gesproken en daar kwam iets uit. Die vorm — vraag, uitkomst,
+ * wie erbij waren — is wat het is, en dat is precies waarom het een eigen soort is en
+ * geen consult dat niet heeft plaatsgevonden.
+ */
+function Overlegregel({ notitie }: { notitie: Overlegnotitie }) {
+  return (
+    <div className="journaalregel overleg">
+      <div>
+        <div className="wanneer">{notitie.op.slice(0, 10)}</div>
+        <div className="mini">teamoverleg</div>
+      </div>
+      <div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span className="merkje" data-toon="neutraal">
+            <Icoon naam="persoon" grootte={11} /> besproken in het teamoverleg
+          </span>
+          <span className="mini">{notitie.deelnemers.join(' en ')}</span>
+        </div>
+        <div className="overlegblok">
+          <div className="regel">
+            <span className="sleutel">Vraag<div className="mini">ingebracht door {notitie.ingebrachtDoor}</div></span>
+            <span className="waarde" style={{ fontWeight: 400, textAlign: 'left', maxWidth: 460 }}>
+              {notitie.vraag}
+            </span>
+          </div>
+          {notitie.context && (
+            <div className="regel">
+              <span className="sleutel">Context</span>
+              <span className="waarde" style={{ fontWeight: 400, textAlign: 'left', maxWidth: 460 }}>
+                {notitie.context}
+              </span>
+            </div>
+          )}
+          <div className="regel">
+            <span className="sleutel">Afgesproken<div className="mini">door {notitie.besprokenDoor}</div></span>
+            <span className="waarde" style={{ textAlign: 'left', maxWidth: 460 }}>{notitie.uitkomst}</span>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1087,10 +1447,11 @@ function Labtabel({ reeksen }: { reeksen: Meetreeks[] }) {
  * hoort.
  */
 function Registreren({
-  patientId, overzicht, registratie, ordersVandaag, opOrder, opWijzig, opKlaar,
+  patientId, overzicht, gebruiker, registratie, ordersVandaag, opOrder, opWijzig, opKlaar,
 }: {
   patientId: string;
   overzicht: PatientOverzicht;
+  gebruiker: Gebruiker;
   registratie: Registratie;
   /** Wat er tijdens dit consult al besteld is; komt onder P te staan. */
   ordersVandaag: NieuweOrder[];
@@ -1144,17 +1505,19 @@ function Registreren({
     try {
       const metingen = ingevuld.map((m) => {
         const ruw = registratie.waarden[m.code];
+        const bron = registratie.bronnen[m.code] ?? 'praktijk';
         if (m.invoer.soort === 'keuze') {
           const optie = m.invoer.opties.find((o) => o.code === ruw);
-          return { code: m.code, keuze: { code: ruw, display: optie?.label } };
+          return { code: m.code, keuze: { code: ruw, display: optie?.label }, bron };
         }
-        if (m.invoer.soort === 'verrichting') return { code: m.code, waarde: 1 };
-        return { code: m.code, waarde: Number(ruw) };
+        if (m.invoer.soort === 'verrichting') return { code: m.code, waarde: 1, bron };
+        return { code: m.code, waarde: Number(ruw), bron };
       });
       const antwoord = await api.consult(patientId, {
         metingen, soep: registratie.soep, episodeId: episodeId || undefined,
+        gebruikerId: gebruiker.id,
       });
-      opWijzig({ waarden: {}, soep: {}, episodeId: '', suggestieCodes: [] });
+      opWijzig({ waarden: {}, bronnen: {}, soep: {}, episodeId: '', suggestieCodes: [] });
       opKlaar(antwoord.overzicht, antwoord.uitkomst);
     } finally { setBezig(false); }
   };
@@ -1198,9 +1561,33 @@ function Registreren({
                 placeholder={m.laatsteWaarde !== undefined ? String(m.laatsteWaarde) : '—'}
                 onChange={(e) => zet({ waarden: { ...registratie.waarden, [m.code]: e.target.value } })} />
             )}
+
+            {(registratie.waarden[m.code] ?? '').trim() !== '' && (
+              <div className="bronkeuze">
+                <button data-actief={(registratie.bronnen[m.code] ?? 'praktijk') === 'praktijk'}
+                  onClick={() => zet({ bronnen: { ...registratie.bronnen, [m.code]: 'praktijk' } })}
+                  title="Jij legt deze waarde vast en neemt hem voor je rekening">
+                  hier gemeten
+                </button>
+                <button data-actief={registratie.bronnen[m.code] === 'patient'}
+                  onClick={() => zet({ bronnen: { ...registratie.bronnen, [m.code]: 'patient' } })}
+                  title="Blijft zichtbaar met de patiënt als bron; vult geen ketenindicator">
+                  door patiënt
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>
+
+      {Object.values(registratie.bronnen).includes('patient') && (
+        <div className="notitie" style={{ marginBottom: 12 }}>
+          <strong>Eén of meer waarden staan op “door patiënt”.</strong> Die blijven in het
+          dossier staan met de patiënt als bron en zijn overal als zodanig herkenbaar — maar
+          ze vullen geen ketenindicator, want het is jouw registratie niet. Zet hem op
+          “hier gemeten” als je hem overneemt.
+        </div>
+      )}
 
       {viaVragenlijst.length > 0 && (
         <div className="mini" style={{ marginBottom: 12, display: 'flex', gap: 7, alignItems: 'center' }}>
@@ -1261,15 +1648,15 @@ function Registreren({
         {([['S', 'Subjectief — wat vertelt de patiënt'], ['O', 'Objectief — wat zie en meet je'],
            ['E', 'Evaluatie — wat is je conclusie'], ['P', 'Plan — wat spreek je af']] as const)
           .map(([letter, uitleg]) => (
-          <div key={letter} style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
-            <span className="soepletter" data-letter={letter} style={{ marginTop: 7 }}>{letter}</span>
-            <textarea rows={letter === 'S' && registratie.soep.S ? 4 : 1} placeholder={uitleg}
-              value={registratie.soep[letter] ?? ''}
-              style={{ resize: 'vertical', fontFamily: 'inherit' }}
-              onChange={(e) => zet({ soep: { ...registratie.soep, [letter]: e.target.value } })} />
-          </div>
+          <Soepveld key={letter} letter={letter} uitleg={uitleg}
+            waarde={registratie.soep[letter] ?? ''}
+            opWijzig={(nieuw) => zet({ soep: { ...registratie.soep, [letter]: nieuw } })} />
         ))}
       </div>
+      <p className="mini" style={{ marginTop: 6 }}>
+        Typ een afkorting (<code>con</code>, <code>gb</code>, <code>lst</code>) en druk op Tab
+        om hem af te maken, of dicteer met de microfoonknop.
+      </p>
 
       {/*
         Het plan is de plek waar het consult de praktijk verlaat. Vrije tekst blijft,
@@ -1297,18 +1684,26 @@ function Registreren({
 
         {ordersVandaag.length > 0 && (
           <div className="planorders">
-            <div className="mini" style={{ marginBottom: 4 }}>
-              Deze orders hangen straks aan dit deelcontact
+            <div className="mini" style={{ marginBottom: 6 }}>
+              Wat je vandaag besteld hebt — hangt straks aan dit deelcontact
             </div>
-            {ordersVandaag.map((o, i) => (
-              <div key={i} className="regel">
-                <span className="sleutel">
-                  {o.omschrijving}
-                  <div className="mini">{o.soort}{o.route ? ` · ${o.route}` : ''}</div>
-                </span>
-                <span className="waarde" style={{ fontWeight: 400, fontSize: 12.5 }}>{o.detail}</span>
-              </div>
-            ))}
+            <ol className="orderlijst">
+              {ordersVandaag.map((o, i) => (
+                <li key={i}>
+                  <span className="soortmerk" data-soort={o.soort}>
+                    <Icoon naam={PLAN_ICOON[o.soort] ?? 'doel'} grootte={12} />
+                  </span>
+                  <span>
+                    <strong>{o.omschrijving}</strong>
+                    {o.detail ? <> — {o.detail}</> : null}
+                    <div className="mini">
+                      {o.route ?? o.soort}
+                      {o.planroute ? ` · ${ROUTE_KORT[o.planroute] ?? o.planroute}` : ''}
+                    </div>
+                  </span>
+                </li>
+              ))}
+            </ol>
           </div>
         )}
       </div>

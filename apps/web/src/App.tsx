@@ -17,6 +17,8 @@ import { HuisartsWerkplek } from './schermen/Huisarts';
 import { Beheer } from './schermen/Beheer';
 import { Berichten } from './schermen/Berichten';
 import { Overleg } from './schermen/Overleg';
+import { Plannen } from './schermen/Plannen';
+import { Rapportage } from './schermen/Rapportage';
 import { Gebruikers } from './schermen/Gebruikers';
 import { STANDAARD_VOORKEUREN, Voorkeuren, type Persoonlijk } from './schermen/Voorkeuren';
 
@@ -40,6 +42,7 @@ const WERKPROCES: Record<string, Ingang[]> = {
   assistent: [
     { id: 'as-overzicht', label: 'Dagstart', icoon: 'zon' },
     { id: 'as-triage', label: 'Triage', icoon: 'gesprek' },
+    { id: 'plannen', label: 'Plannen', icoon: 'slot' },
     { id: 'spreekuur', label: 'Dossiers', icoon: 'klembord' },
     { id: 'overleg', label: 'Overleg', icoon: 'persoon' },
   ],
@@ -51,6 +54,7 @@ const WERKPROCES: Record<string, Ingang[]> = {
     { id: 'ha-team', label: 'Het team', icoon: 'persoon' },
   ],
   administrator: [
+    { id: 'rapportage', label: 'Praktijk in cijfers', icoon: 'rapport' },
     { id: 'beheer', label: 'Configuratie', icoon: 'schakelaar' },
     { id: 'gebruikers', label: 'Gebruikers', icoon: 'persoon' },
     { id: 'protocol', label: 'Het protocol', icoon: 'boek' },
@@ -60,11 +64,13 @@ const WERKPROCES: Record<string, Ingang[]> = {
 const PRAKTIJK: Record<string, Ingang[]> = {
   'poh-s': [
     { id: 'instroom', label: 'Instroom', icoon: 'instroom' },
+    { id: 'plannen', label: 'Plannen', icoon: 'slot' },
     { id: 'protocol', label: 'Het protocol', icoon: 'boek' },
   ],
   assistent: [{ id: 'protocol', label: 'Het protocol', icoon: 'boek' }],
   huisarts: [
     { id: 'instroom', label: 'Instroom', icoon: 'instroom' },
+    { id: 'plannen', label: 'Plannen', icoon: 'slot' },
     { id: 'protocol', label: 'Het protocol', icoon: 'boek' },
   ],
   administrator: [],
@@ -72,7 +78,7 @@ const PRAKTIJK: Record<string, Ingang[]> = {
 
 const START: Record<string, string> = {
   'poh-s': 'dagstart', assistent: 'as-overzicht',
-  huisarts: 'ha-overzicht', administrator: 'beheer',
+  huisarts: 'ha-overzicht', administrator: 'rapportage',
 };
 
 export function App() {
@@ -131,6 +137,7 @@ function Werkplek({
     tellingen[stap.id] = { n: stap.aandacht || stap.aantal, urgent: stap.aandacht > 0 };
   }
   if (assistent.data) tellingen['as-triage'] = { n: assistent.data.stroom.triageNieuw, urgent: true };
+  if (assistent.data) tellingen.plannen = { n: 0 };
   if (huisarts.data) {
     tellingen['ha-autoriseren'] = {
       n: huisarts.data.autorisatie.vraagtOordeel, urgent: huisarts.data.autorisatie.vraagtOordeel > 0,
@@ -199,7 +206,7 @@ function Werkplek({
               <div className="mini">{gebruiker.functie}</div>
             </span>
             <button className="knop" data-toon="stil" onClick={opAfmelden} title="Afmelden">
-              <Icoon naam="kruis" grootte={14} />
+              <Icoon naam="uitloggen" grootte={15} />
             </button>
           </div>
         </header>
@@ -236,6 +243,8 @@ function Werkplek({
           {scherm === 'gebruikers' && <Gebruikers />}
           {scherm === 'berichten' && <Berichten gebruiker={gebruiker} openPatient={opOpen} />}
           {scherm === 'overleg' && <Overleg gebruiker={gebruiker} openPatient={opOpen} />}
+          {scherm === 'plannen' && <Plannen gebruiker={gebruiker} openPatient={opOpen} />}
+          {scherm === 'rapportage' && <Rapportage />}
           {scherm === 'voorkeuren' && (
             <Voorkeuren gebruiker={gebruiker} voorkeuren={voorkeuren} opWijzig={opVoorkeuren} />
           )}

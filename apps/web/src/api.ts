@@ -135,7 +135,8 @@ export interface ExternDocument {
 
 export type Tijdlijnitem =
   | { soort: 'contact'; datum: string; contact: JournaalRegel }
-  | { soort: 'extern'; datum: string; document: ExternDocument };
+  | { soort: 'extern'; datum: string; document: ExternDocument }
+  | { soort: 'overleg'; datum: string; notitie: Overlegnotitie };
 
 export interface Bron {
   id: string; aard: string; titel: string; toelichting: string; aantal: number;
@@ -150,14 +151,16 @@ export interface DossierHistorie {
   aantalContacten: number;
   aantalExtern: number;
   ongelezenExtern: number;
+  aantalOverleg: number;
 }
 
 export interface Meetreeks {
   code: string; naam: string; soort: 'lab' | 'lichamelijk' | 'vragenlijst' | 'verrichting';
   eenheid?: string; relevantNu: boolean;
   laatste?: number; laatsteOp?: string; verschil?: number;
-  punten: { op: string; waarde: number }[];
+  punten: { op: string; waarde: number; bron?: string }[];
   streef?: { onder?: number; boven?: number; label: string };
+  vanPatient?: number;
 }
 
 export interface OrderRegel {
@@ -178,10 +181,11 @@ export interface VoorgesteldeOrderSet {
 }
 
 export interface Catalogustreffer {
-  id: string; soort: 'medicatie' | 'lab' | 'verwijzing' | 'onderzoek';
+  id: string; soort: 'medicatie' | 'lab' | 'verwijzing' | 'onderzoek' | 'afspraak';
   naam: string; detail: string; varianten: string[];
   atc?: string; levert?: string[]; route?: string;
   instellingen?: string[]; portaal?: { naam: string; url: string };
+  bijRol?: string; duurMinuten?: number; vorm?: string;
   vereistRecht: string;
   waarschuwingen: Waarschuwing[];
 }
@@ -189,6 +193,7 @@ export interface Catalogustreffer {
 export interface NieuweOrder {
   patientId: string; soort: string; omschrijving: string; detail?: string;
   atc?: string; route?: string; bestemming?: string;
+  bijRol?: string; duurMinuten?: number; planroute?: string;
   uitSet?: { id: string; naam: string };
   richtlijn?: { naam: string; versie?: string; paragraaf?: string; url?: string; uitgever?: string };
   waarschuwingen?: Waarschuwing[]; levert?: string[]; vereistRecht: string;
@@ -226,15 +231,87 @@ export interface Overleg {
   besproken: Bespreekpunt[];
 }
 
-export interface Gesprek {
-  id: string; onderwerp: string; deelnemers: string[];
-  patientId?: string; patientNaam?: string;
-  aanleiding?: { soort: string; tekst: string };
-  urgent: boolean;
-  berichten: { id: string; vanId: string; van: string; tekst: string; op: string; gelezen: boolean }[];
+export type Planroute = 'zelf' | 'assistent' | 'portaal' | 'automatisch';
+
+export interface Slot {
+  id: string; rol: string; start: string; tijd: string; duurMinuten: number;
+  patientPlanbaar: boolean; bestemd?: string;
 }
 
-export interface Berichtenbox { gesprekken: Gesprek[]; ongelezen: number }
+export interface Afspraakverzoek {
+  id: string; patientId: string; naam: string; voorRol: string;
+  reden: string; duurMinuten: number; route: Planroute;
+  status: 'open' | 'uitgezet' | 'ingepland' | 'geannuleerd';
+  aangevraagdDoor: { id: string; naam: string; rol: string };
+  aangevraagdOp: string; gewensteTermijn?: string; vragenlijst?: string;
+  ingepland?: { start: string; duurMinuten: number; rol: string };
+  portaalVerstuurdOp?: string; toelichting?: string;
+}
+
+export type Routeuitleg = Record<string, { label: string; uitleg: string }>;
+
+export interface Planbord {
+  rol: string; agenda: AgendaRegel[]; slots: Slot[];
+  vrij: number; patientPlanbaar: number;
+  teplannen: Afspraakverzoek[]; routes: Routeuitleg;
+}
+
+export interface Praktijkplanbord {
+  datum: string;
+  kolommen: { rol: string; agenda: AgendaRegel[]; slots: Slot[] }[];
+  teplannen: Afspraakverzoek[]; routes: Routeuitleg;
+}
+
+export interface Beleidsafspraak {
+  id: string; patientId: string; soort: string; besluit: string;
+  samenvatting: string; besprokenMet: string;
+  vastgelegdOp: string; vastgelegdDoor: { naam: string; rol: string };
+  evaluatieOp?: string; toelichting?: string;
+}
+
+export interface Overlegnotitie {
+  id: string; patientId: string; op: string; vraag: string; context?: string;
+  uitkomst: string; ingebrachtDoor: string; besprokenDoor: string; deelnemers: string[];
+}
+
+export interface Praktijkrapportage {
+  datum: string;
+  populatie: {
+    ingeschreven: number; metZorgvraag: number; zonderKeten: number;
+    modules: { naam: string; aantal: number }[];
+  };
+  ketens: {
+    naam: string; prestatiecode: string; patienten: number; volledig: number;
+    percentage: number; knelpunten: { naam: string; aantal: number }[];
+  }[];
+  werkvoorraad: {
+    autorisatiesOpen: number; autorisatiesRoutine: number; triageOpen: number;
+    teplannen: number; bespreekpunten: number;
+  };
+  bezetting: {
+    rol: string; afspraken: number; geboekteMinuten: number; vrijeSlots: number; noshow: number;
+  }[];
+}
+
+export interface Gesprek {
+  id: string; soort: 'collega' | 'patient'; onderwerp: string; deelnemers: string[];
+  patientId?: string; patientNaam?: string;
+  kanaal?: string; dossierwaardig?: boolean;
+  aanleiding?: { soort: string; tekst: string };
+  urgent: boolean;
+  berichten: {
+    id: string; vanId: string; van: string; tekst: string; op: string;
+    gelezen: boolean; vanPatient?: boolean;
+  }[];
+}
+
+export interface Berichtenbox {
+  gesprekken: Gesprek[];
+  collega: Gesprek[];
+  patient: Gesprek[];
+  ongelezen: number;
+  ongelezenPatient: number;
+}
 
 export interface Beheer {
   lagen: { niveau: string; naam: string; beheerder: string; gewijzigdOp: string; uitleg: string; instellingen: string[] }[];
@@ -318,6 +395,9 @@ export interface Zelfredzaamheidsbeeld {
   sterk: { domein: { id: string; naam: string }; score: number }[];
   digitaalBereikbaar: boolean; raaktModules: string[];
   trend?: { verschil: number; richting: string };
+  bijgesteld?: {
+    berekendNiveau: string; berekendeFactor: number; reden: string; door: string; op: string;
+  };
 }
 
 export interface Zorgplan {
@@ -339,6 +419,11 @@ export interface Zorgplan {
 
 export interface PersoonlijkPlan {
   patientId: string; intensiteit: string;
+  zelfredzaamheid?: {
+    scores: Record<string, number>; afgenomenOp: string; afgenomenDoor: string;
+    vorige?: { gemiddelde: number; afgenomenOp: string }; toelichting?: string;
+    bijstelling?: { niveau: string; reden: string; door: string; op: string };
+  };
   moduleKeuzes: { moduleId: string; aan: boolean; reden: string; door: string; op: string }[];
   itemKeuzes: { code: string; intervalDagen: number; reden: string }[];
   doelen: { id: string; tekst: string; gekoppeldeModules: string[]; afgesprokenOp: string }[];
@@ -349,7 +434,7 @@ export interface PatientOverzicht {
   patient: { id: string; naam: string; leeftijd: number; geboortedatum: string; geslacht: string; bsn?: string; portaalActief?: boolean };
   episodes: { id: string; titel: string; status: string; icpc?: string; start?: string }[];
   medicatie: { naam: string; atc?: string; dosering: string; chronisch: boolean }[];
-  metingen: { code: string; naam: string; laatste?: number; eenheid?: string; op?: string; reeks: { op: string; waarde?: number }[] }[];
+  metingen: { code: string; naam: string; laatste?: number; eenheid?: string; op?: string; bron?: string; reeks: { op: string; waarde?: number }[] }[];
   signalen: Signaal[];
   zorgplan: Zorgplan;
   persoonlijk: PersoonlijkPlan;
@@ -358,6 +443,10 @@ export interface PatientOverzicht {
   oproepen: { uitnodigenOp: string; kanaal: string; escalatieOp: string; toelichting: string }[];
   instroom: { nieuw: { moduleId: string; naam: string; onderbouwing: string }[] };
   intake?: WachtkamerIntake;
+  beleid: Beleidsafspraak[];
+  autorisaties: Autorisatieverzoek[];
+  planverzoeken: Afspraakverzoek[];
+  volgendeAfspraak?: { id: string; start: string; duurMinuten: number; rol: string; titel: string; reden?: string };
 }
 
 export interface RegistratieUitkomst {
@@ -441,9 +530,13 @@ const httpApi = {
   plan: (patientId: string, wijziging: Partial<PersoonlijkPlan>) =>
     stuur<PatientOverzicht>(`/api/patient/${patientId}/plan`, wijziging),
   consult: (patientId: string, registratie: {
-    metingen: { code: string; waarde?: number; keuze?: { code: string; display?: string } }[];
+    metingen: {
+      code: string; waarde?: number; keuze?: { code: string; display?: string };
+      bron?: 'praktijk' | 'patient';
+    }[];
     soep?: Record<string, string>;
     episodeId?: string;
+    gebruikerId?: string;
   }) => stuur<{ uitkomst: RegistratieUitkomst; overzicht: PatientOverzicht }>(
     `/api/patient/${patientId}/consult`, registratie),
   accepteerModule: (patientId: string, moduleId: string) =>
@@ -472,6 +565,22 @@ const httpApi = {
     stuur<Orderoverzicht>('/api/orders', { gebruikerId, orders }),
   markeerExternGelezen: (patientId: string, documentId: string) =>
     stuur<DossierHistorie>(`/api/patient/${patientId}/extern/${documentId}/gelezen`, {}),
+
+  planbord: (rol: string, duurMinuten?: number) =>
+    haal<Planbord>(`/api/planbord/${rol}${duurMinuten ? `?duur=${duurMinuten}` : ''}`),
+  planbordPraktijk: () => haal<Praktijkplanbord>('/api/planbord'),
+  vraagAfspraakAan: (gebruikerId: string, verzoek: {
+    patientId: string; naam: string; voorRol: string; reden: string;
+    duurMinuten?: number; route: string; gewensteTermijn?: string; vragenlijst?: string;
+  }) => stuur<Praktijkplanbord>('/api/planning/verzoek', { gebruikerId, verzoek }),
+  planAfspraak: (verzoekId: string, start: string) =>
+    stuur<Praktijkplanbord>(`/api/planning/${verzoekId}/inplannen`, { start }),
+  planLosseAfspraak: (gegevens: {
+    patientId: string; rol: string; start: string; duurMinuten: number; reden: string;
+  }) => stuur<Praktijkplanbord>('/api/planning/afspraak', gegevens),
+  annuleerVerzoek: (verzoekId: string, reden: string) =>
+    stuur<Praktijkplanbord>(`/api/planning/${verzoekId}/annuleren`, { reden }),
+  rapportage: () => haal<Praktijkrapportage>('/api/praktijk/rapportage'),
 
   overleg: (rol: string) => haal<Overleg>(`/api/overleg/${rol}`),
   zetOpBespreeklijst: (gebruikerId: string, punt: {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, type Gebruiker } from '../api';
 import { Icoon } from '../iconen';
 import { Logo } from '../logo';
@@ -25,6 +25,14 @@ export function Inloggen({ opAangemeld }: { opAangemeld: (gebruiker: Gebruiker) 
   const [gebruiker, setGebruiker] = useState<Gebruiker | undefined>();
   const [fout, setFout] = useState<string | undefined>();
   const [bezig, setBezig] = useState(false);
+  const codeveld = useRef<HTMLInputElement>(null);
+
+  // `autoFocus` alleen is niet betrouwbaar wanneer het formulier van vorm wisselt: de
+  // browser geeft de focus dan soms terug aan de knop. Wie net zijn wachtwoord heeft
+  // ingetypt, wil de code kunnen typen zonder eerst in een vakje te klikken.
+  useEffect(() => {
+    if (stap === 'tweefactor') codeveld.current?.focus();
+  }, [stap]);
 
   const stuurGegevens = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -143,7 +151,7 @@ export function Inloggen({ opAangemeld }: { opAangemeld: (gebruiker: Gebruiker) 
               <div className="veldrij">
                 <label className="veld" htmlFor="code">Code</label>
                 <input id="code" className="code-invoer" type="text" inputMode="numeric"
-                  maxLength={6} autoFocus autoComplete="one-time-code"
+                  ref={codeveld} maxLength={6} autoFocus autoComplete="one-time-code"
                   value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} />
               </div>
 

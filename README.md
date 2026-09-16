@@ -111,7 +111,7 @@ npm run web         # werkplek op http://localhost:5173 — draait zónder serve
 
 Inloggen kan met `sanne` (POH-S), `ilse` (assistent), `daan` (huisarts) of `mirjam`
 (praktijkmanager); het wachtwoord is voor alle vier `cadans` en de tweefactorcode is
-`123456`. Rechtsboven staat **Demo herstellen**: dat gooit alle mutaties van de sessie
+`123456`. Het codeveld krijgt vanzelf de focus, dus je kunt doortypen. Rechtsboven staat **Demo herstellen**: dat gooit alle mutaties van de sessie
 weg en bouwt dezelfde beginstand opnieuw op, zodat je een demonstratie meerdere keren
 kunt draaien. De generatoren werken met vaste zaden, dus het resultaat is exact dezelfde
 praktijk — niet iets wat erop lijkt.
@@ -185,8 +185,9 @@ HTTP en geen opslag; `apps/*` bevatten geen klinische regels.
 | [14 — Configuratie en apps](docs/14-configuratie.md) | Vier niveaus, terminologie als instelling, ingebedde partnerapps |
 | [15 — Zelfredzaamheid](docs/15-zelfredzaamheid.md) | Leefdomeinen, score, doorwerking op frequentie en kanaal |
 | [16 — Ordermanagement](docs/16-ordermanagement.md) | Ordersets, contra-indicatiecheck, rechten en autorisatie |
-| [17 — Toegang en samenwerking](docs/17-toegang-rollen-en-samenwerking.md) | Inloggen, vier rollen, rechten, berichten, persoonlijke voorkeuren |
-| [ADR's](docs/adr/) | Tien vastgelegde ontwerpbesluiten met alternatieven |
+| [17 — Toegang en samenwerking](docs/17-toegang-rollen-en-samenwerking.md) | Inloggen, vier rollen, rechten, berichten van collega's én patiënten |
+| [18 — Plannen en agenda](docs/18-plannen-en-agenda.md) | Planbord, vrije plekken, vier planroutes, afspraken als order |
+| [ADR's](docs/adr/) | Twaalf vastgelegde ontwerpbesluiten met alternatieven |
 
 ---
 
@@ -217,6 +218,20 @@ overgevoeligheden. Dat vraagt de G-Standaard ([`docs/16` §5](docs/16-ordermanag
 `packages/care-engine/src/catalogus.ts` zijn plausibel en gangbaar, maar niet tegen de
 G-Standaard of de NHG-Tabellen gecontroleerd. Bewust klein en expliciet onvolledig:
 genoeg om het werkproces te bouwen, niet om zorg mee te leveren.
+
+**Spraakherkenning.** De dicteerknop in de SOEP-velden gebruikt de spraakherkenning van
+de browser. Dat is genoeg om het werkproces te laten zien en niet genoeg voor de
+spreekkamer: geen vaktermen, geen medicatienamen, en de spraak verlaat de eigen omgeving.
+Een medische dicteeroplossing verwerkt binnen de eigen omgeving, en dat is een AVG-eis en
+geen detail. In browsers zonder ondersteuning is de knop uitgeschakeld.
+
+**Videoconsult.** De knop opent een venster dat het werkproces toont en géén
+videoverbinding opzet. Dat is expres: een nagebouwd beeld zou suggereren dat er iets
+werkt wat er niet is ([`docs/05` §4e](docs/05-werkplekken.md)).
+
+**Behandelgrenzen.** De beleidsafspraken zijn synthetisch gegenereerd voor ongeveer een
+kwart van de populatie. Ze tonen de vorm — wie, wanneer, met wie besproken — en zijn
+nadrukkelijk geen echte wilsverklaringen.
 
 **Externe bronnen.** De BgZ- en e-Overdracht-documenten in het journaal zijn synthetisch
 en volgen de sectiestructuur van die standaarden op hoofdlijnen. Er is geen LSP- of

@@ -2,7 +2,8 @@ import type { ReactNode } from 'react';
 import { Icoon, icoonVanModule } from './iconen';
 import {
   MODULE_NAAM,
-  type AgendaRegel, type Ernst, type ModuleChip, type Signaal, type Suggestie, type WachtkamerIntake,
+  type AgendaRegel, type Beleidsafspraak, type Ernst, type ModuleChip, type Signaal,
+  type Suggestie, type WachtkamerIntake,
 } from './api';
 
 export function Kaart({ titel, icoon, telling, extra, strak, children }: {
@@ -248,6 +249,58 @@ export function Agenda({ regels, openPatient, opStatus }: {
   );
 }
 
+const BELEIDSLABEL: Record<string, string> = {
+  reanimatie: 'Reanimatie', ziekenhuisopname: 'Ziekenhuisopname', 'ic-opname': 'IC-opname',
+  antibiotica: 'Antibiotica', wilsverklaring: 'Wilsverklaring',
+  vertegenwoordiger: 'Vertegenwoordiger', donorregistratie: 'Donorregistratie',
+};
+
+/**
+ * Behandelgrenzen, boven het dossier.
+ *
+ * "Niet reanimeren" moet je zien vóórdat je iets doet, niet nadat je hebt gezocht. Als
+ * het tussen de andere regels staat, wordt het niet gelezen — en dan is de afspraak er
+ * wel maar werkt hij niet. Daarom een band die niet weg te klikken is, met wie het
+ * besloot en wanneer, want een afspraak van acht jaar geleden vraagt om herbevestiging.
+ */
+export function Beleidsband({ afspraken, peiljaar }: {
+  afspraken: Beleidsafspraak[]; peiljaar?: number;
+}) {
+  if (afspraken.length === 0) return null;
+  const waarschuwend = afspraken.filter(
+    (a) => a.besluit === 'niet' || (a.soort === 'reanimatie' && a.besluit !== 'wel'));
+  if (waarschuwend.length === 0) {
+    return (
+      <div className="beleidsband" data-toon="neutraal">
+        <span className="kop"><Icoon naam="schild" grootte={14} /> Behandelwensen vastgelegd</span>
+        {afspraken.map((a) => (
+          <span key={a.id} className="punt">
+            <strong>{BELEIDSLABEL[a.soort] ?? a.soort}:</strong> {a.samenvatting}
+            <span className="mini"> · {a.vastgelegdOp}, met {a.besprokenMet}</span>
+          </span>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div className="beleidsband" data-toon="grens">
+      <span className="kop"><Icoon naam="beperking" grootte={14} /> Behandelgrens</span>
+      {afspraken.map((a) => {
+        const jaren = peiljaar ? peiljaar - Number(a.vastgelegdOp.slice(0, 4)) : 0;
+        return (
+          <span key={a.id} className="punt">
+            <strong>{BELEIDSLABEL[a.soort] ?? a.soort}:</strong> {a.samenvatting}
+            <span className="mini">
+              {' '}· vastgelegd {a.vastgelegdOp} door {a.vastgelegdDoor.naam}, besproken met {a.besprokenMet}
+              {jaren >= 2 ? ` — ${jaren} jaar oud, herbevestigen` : ''}
+            </span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Zelfredzaamheid als getal én als balk — het getal alleen zegt te weinig. */
 export function Zelfredzaamheidsmeter({ gemiddelde, niveau, richting, compact }: {
   gemiddelde: number; niveau: string; richting?: string; compact?: boolean;
@@ -271,8 +324,9 @@ export function Zelfredzaamheidsmeter({ gemiddelde, niveau, richting, compact }:
  * maar de herkomst blijft zichtbaar en niets telt mee zonder bevestiging. Naadloos mag
  * niet betekenen: niet meer te zien waar het vandaan komt.
  */
-export function IntakeKaart({ intake, bezig, opBevestig }: {
+export function IntakeKaart({ intake, bezig, opBevestig, opBewaarAlsMelding }: {
   intake: WachtkamerIntake; bezig?: boolean; opBevestig?: () => void;
+  opBewaarAlsMelding?: () => void;
 }) {
   return (
     <div className="intake">
@@ -323,14 +377,30 @@ export function IntakeKaart({ intake, bezig, opBevestig }: {
       )}
 
       {!intake.bevestigd && opBevestig && (
-        <div className="knop-rij" style={{ marginTop: 12 }}>
-          <button className="knop" data-toon="primair" disabled={bezig} onClick={opBevestig}>
-            <Icoon naam="vink" grootte={13} /> Overnemen in het dossier
-          </button>
-          <span className="mini" style={{ alignSelf: 'center' }}>
-            Tot je bevestigt telt dit nergens in mee — niet in indicatoren, niet in uitwisseling.
-          </span>
-        </div>
+        <>
+          <div className="knop-rij" style={{ marginTop: 12 }}>
+            <button className="knop" data-toon="primair" disabled={bezig} onClick={opBevestig}>
+              <Icoon naam="vink" grootte={13} /> Overnemen in het dossier
+            </button>
+            {opBewaarAlsMelding && (
+              <button className="knop" disabled={bezig} onClick={opBewaarAlsMelding}>
+                <Icoon naam="persoon" grootte={13} /> Bewaren als melding van de patiënt
+              </button>
+            )}
+          </div>
+          {/*
+            Twee routes, want er zijn twee situaties. Overnemen betekent: jij legt deze
+            waarden vast en neemt ze voor je rekening. Bewaren als melding betekent: ze
+            blijven zichtbaar in het dossier met de patiënt als bron, maar het is jouw
+            registratie niet en het vult dus geen ketenindicator. Zonder dat onderscheid
+            moet je kiezen tussen weggooien en doen alsof je het zelf gemeten hebt.
+          */}
+          <p className="mini" style={{ marginTop: 8, marginBottom: 0 }}>
+            Tot je iets kiest telt dit nergens in mee — niet in indicatoren, niet in
+            uitwisseling. Per meting kun je de bron daarna nog wijzigen in het
+            registratieblok.
+          </p>
+        </>
       )}
     </div>
   );

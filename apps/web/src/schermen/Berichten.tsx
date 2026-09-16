@@ -4,6 +4,11 @@ import { useData } from '../gebruik';
 import { Icoon } from '../iconen';
 import { Fout, Kaart, Laden, Leeg } from '../onderdelen';
 
+const KANAAL_LABEL: Record<string, string> = {
+  'e-consult': 'e-consult', herhaalrecept: 'herhaalrecept',
+  uitslagvraag: 'vraag over uitslag', portaalvraag: 'portaalvraag',
+};
+
 const AANLEIDING_ICOON: Record<string, string> = {
   uitslag: 'buisje', autorisatie: 'klembord', monitoring: 'radar',
   consult: 'agenda', overleg: 'persoon',
@@ -22,14 +27,16 @@ export function Berichten({ gebruiker, openPatient }: {
 }) {
   const { data, fout, bezig, setData } = useData(() => api.berichten(gebruiker.id), [gebruiker.id]);
   const [actiefId, setActiefId] = useState<string | undefined>();
+  const [bak, setBak] = useState<'collega' | 'patient'>('collega');
   const [concept, setConcept] = useState('');
   const [bezigMet, setBezigMet] = useState(false);
 
   if (fout) return <Fout boodschap={fout} />;
   if (bezig || !data) return <Laden wat="Berichten" />;
 
+  const lijst = bak === 'patient' ? data.patient : data.collega;
   const actief: Gesprek | undefined =
-    data.gesprekken.find((g) => g.id === actiefId) ?? data.gesprekken[0];
+    lijst.find((g) => g.id === actiefId) ?? lijst[0];
 
   const open = async (gesprek: Gesprek) => {
     setActiefId(gesprek.id);
@@ -58,14 +65,37 @@ export function Berichten({ gebruiker, openPatient }: {
             {data.ongelezen > 0 && ` · ${data.ongelezen} ongelezen`}
           </div>
         </div>
+        <div className="acties">
+          {/*
+            Twee bakjes, want het zijn twee soorten gesprek. Met een collega overleg je;
+            een patiënt stelt een vraag waar een antwoord op hoort — en soms is dat antwoord
+            zorg en hoort het in het dossier. Eén lange lijst dwingt je bij elk bericht
+            opnieuw te kijken wie er aan de andere kant zit.
+          */}
+          <div className="segment">
+            <button data-actief={bak === 'collega'}
+              onClick={() => { setBak('collega'); setActiefId(undefined); }}>
+              <Icoon naam="persoon" grootte={13} /> Collega's ({data.collega.length})
+            </button>
+            <button data-actief={bak === 'patient'}
+              onClick={() => { setBak('patient'); setActiefId(undefined); }}>
+              <Icoon naam="gesprek" grootte={13} /> Patiënten ({data.patient.length})
+              {data.ongelezenPatient > 0 && (
+                <span className="badge" data-toon="urgent">{data.ongelezenPatient}</span>
+              )}
+            </button>
+          </div>
+        </div>
       </div>
 
-      {data.gesprekken.length === 0 && <Leeg tekst="Geen berichten." />}
+      {lijst.length === 0 && (
+        <Leeg tekst={bak === 'patient' ? 'Geen berichten van patiënten.' : 'Geen berichten.'} />
+      )}
 
-      {data.gesprekken.length > 0 && (
+      {lijst.length > 0 && (
         <div className="gesprekken">
           <Kaart strak>
-            {data.gesprekken.map((g) => {
+            {lijst.map((g) => {
               const laatste = g.berichten.at(-1);
               const ongelezen = g.berichten.some((b) => !b.gelezen && b.vanId !== gebruiker.id);
               return (
@@ -79,6 +109,12 @@ export function Berichten({ gebruiker, openPatient }: {
                     {g.patientNaam ? `${g.patientNaam} · ` : ''}
                     {laatste?.van.split(' ')[0]} · {laatste?.op.slice(11, 16)}
                   </div>
+                  {g.kanaal && (
+                    <span className="merkje" data-toon="neutraal"
+                      style={{ marginTop: 5, display: 'inline-block' }}>
+                      {KANAAL_LABEL[g.kanaal] ?? g.kanaal}
+                    </span>
+                  )}
                   {g.urgent && (
                     <span className="merkje" data-toon="urgent" style={{ marginTop: 5, display: 'inline-block' }}>
                       urgent
@@ -95,7 +131,9 @@ export function Berichten({ gebruiker, openPatient }: {
                 <div style={{ flex: 1, minWidth: 220 }}>
                   <h2 style={{ fontSize: 15 }}>{actief.onderwerp}</h2>
                   <div className="mini" style={{ marginTop: 3 }}>
-                    {actief.deelnemers.length} deelnemers
+                    {actief.soort === 'patient'
+                      ? `Via het portaal · ${KANAAL_LABEL[actief.kanaal ?? ''] ?? actief.kanaal}`
+                      : `${actief.deelnemers.length} deelnemers`}
                   </div>
                 </div>
                 {actief.patientId && (
@@ -104,6 +142,25 @@ export function Berichten({ gebruiker, openPatient }: {
                   </button>
                 )}
               </div>
+
+              {actief.soort === 'patient' && (
+                <div className="notitie" data-toon={actief.dossierwaardig ? 'waarschuwing' : undefined}
+                  style={{ marginBottom: 14 }}>
+                  {actief.dossierwaardig ? (
+                    <>
+                      <strong>Dit is zorg, geen berichtje.</strong> De vraag gaat over het
+                      beloop van een aandoening, dus het antwoord hoort als deelcontact in het
+                      journaal te komen en niet alleen in dit bakje. Anders weet over twee weken
+                      niemand meer wat er is afgesproken.
+                    </>
+                  ) : (
+                    <>
+                      <strong>Administratief.</strong> Dit hoeft niet in het dossier; het is een
+                      vraag over een recept of een afspraak.
+                    </>
+                  )}
+                </div>
+              )}
 
               {actief.aanleiding && (
                 <div className="notitie" style={{ marginBottom: 14 }}>
@@ -131,13 +188,28 @@ export function Berichten({ gebruiker, openPatient }: {
               </div>
 
               <form onSubmit={verstuur} style={{ marginTop: 14, display: 'flex', gap: 8 }}>
-                <input type="text" value={concept} placeholder="Schrijf een bericht…"
+                <input type="text" value={concept}
+                  placeholder={actief.soort === 'patient'
+                    ? 'Antwoord aan de patiënt…' : 'Schrijf een bericht…'}
                   onChange={(e) => setConcept(e.target.value)} />
                 <button className="knop" data-toon="primair" type="submit"
                   disabled={bezigMet || !concept.trim()}>
                   <Icoon naam="pijl" grootte={13} /> Versturen
                 </button>
               </form>
+
+              {actief.soort === 'patient' && (
+                <div className="knop-rij" style={{ marginTop: 10 }}>
+                  <button className="knop" onClick={() => actief.patientId && openPatient(actief.patientId)}>
+                    <Icoon naam="klembord" grootte={13} /> Openen en vastleggen in het dossier
+                  </button>
+                  <span className="mini" style={{ alignSelf: 'center' }}>
+                    {actief.dossierwaardig
+                      ? 'Het antwoord hoort hier als deelcontact terecht te komen.'
+                      : 'Alleen nodig als er alsnog iets klinisch uit komt.'}
+                  </span>
+                </div>
+              )}
             </Kaart>
           )}
         </div>

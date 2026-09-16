@@ -14,6 +14,21 @@ const SOORTEN = [
   { id: 'lab', label: 'Lab' },
   { id: 'onderzoek', label: 'Onderzoek' },
   { id: 'verwijzing', label: 'Verwijzing' },
+  { id: 'afspraak', label: 'Afspraak' },
+] as const;
+
+/**
+ * Hoe een afspraak in de agenda komt.
+ *
+ * Vier routes, en welke je kiest hangt af van de patiënt en niet van de gebruiker.
+ * Dezelfde POH kiest bij de ene mens het portaal en belt bij de andere; dat is geen
+ * inconsistentie maar zorg. Daarom staat de keuze bij de order en niet in een instelling.
+ */
+const ROUTES = [
+  { id: 'zelf', label: 'Ik plan het nu in', uitleg: 'Je kiest zelf een vrije plek in de agenda.' },
+  { id: 'assistent', label: 'Assistent belt en plant', uitleg: 'Komt op de werklijst van de assistent, met de reden erbij.' },
+  { id: 'portaal', label: 'Patiënt plant zelf', uitleg: 'Uitnodiging in het portaal; de patiënt kiest uit de opengestelde plekken.' },
+  { id: 'automatisch', label: 'Systeem plant', uitleg: 'Alleen voor routine zonder beoordeling. De patiënt krijgt een bevestiging.' },
 ] as const;
 
 type Soort = (typeof SOORTEN)[number]['id'];
@@ -73,16 +88,19 @@ export function Orderpaneel({ patientId, patientNaam, gebruiker, startSoort, opS
   const legIn = (regel: Omit<Mandjeregel, 'sleutel'>) =>
     setMandje((m) => [...m, { ...regel, sleutel: `${regel.omschrijving}-${m.length}-${Date.now()}` }]);
 
-  const uitCatalogus = (t: Catalogustreffer) => legIn({
+  const uitCatalogus = (t: Catalogustreffer, detail: string, planroute?: string) => legIn({
     patientId,
     soort: t.soort,
     omschrijving: t.naam,
-    detail: t.detail,
+    detail,
     atc: t.atc,
     route: t.route,
     bestemming: t.instellingen?.[0],
     waarschuwingen: t.waarschuwingen,
     levert: t.levert,
+    bijRol: t.bijRol,
+    duurMinuten: t.duurMinuten,
+    planroute: t.soort === 'afspraak' ? (planroute ?? 'assistent') : undefined,
     vereistRecht: t.vereistRecht,
     varianten: t.varianten,
   });
@@ -173,7 +191,7 @@ export function Orderpaneel({ patientId, patientNaam, gebruiker, startSoort, opS
 
           {treffers.map((t) => (
             <Trefferregel key={t.id} treffer={t} mag={gebruiker.rechten.includes(t.vereistRecht)}
-              opKies={(detail) => uitCatalogus({ ...t, detail })} />
+              opKies={(detail, planroute) => uitCatalogus(t, detail, planroute)} />
           ))}
 
           {vraag.trim().length < 2 && (
@@ -242,6 +260,11 @@ export function Orderpaneel({ patientId, patientNaam, gebruiker, startSoort, opS
                       {m.detail && <div className="mini">{m.detail}</div>}
                       {m.uitSet && <div className="mini">uit pakket {m.uitSet.naam}</div>}
                     </span>
+                    {m.planroute && (
+                      <span className="merkje" data-toon="informatief">
+                        {ROUTES.find((r) => r.id === m.planroute)?.label ?? m.planroute}
+                      </span>
+                    )}
                     {!gebruiker.rechten.includes(m.vereistRecht) && (
                       <span className="merkje" data-toon="aandacht">naar huisarts</span>
                     )}
@@ -281,9 +304,10 @@ export function Orderpaneel({ patientId, patientNaam, gebruiker, startSoort, opS
  * klaar; typen is de uitzondering.
  */
 function Trefferregel({ treffer, mag, opKies }: {
-  treffer: Catalogustreffer; mag: boolean; opKies: (detail: string) => void;
+  treffer: Catalogustreffer; mag: boolean; opKies: (detail: string, planroute?: string) => void;
 }) {
   const [detail, setDetail] = useState(treffer.detail);
+  const [planroute, setPlanroute] = useState<string>('assistent');
   const [open, setOpen] = useState(false);
   const blokkerend = treffer.waarschuwingen.some((w) => w.ernst === 'blokkerend');
 
@@ -329,6 +353,24 @@ function Trefferregel({ treffer, mag, opKies }: {
             </div>
           )}
 
+          {treffer.soort === 'afspraak' && (
+            <div style={{ marginTop: 11 }}>
+              <label className="veld">Wie plant deze afspraak in?</label>
+              <div className="routekeuze">
+                {ROUTES.map((r) => (
+                  <button key={r.id} className="routeknop" data-actief={planroute === r.id}
+                    onClick={() => setPlanroute(r.id)}>
+                    <strong>{r.label}</strong>
+                    <span className="mini">{r.uitleg}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="mini" style={{ marginTop: 6 }}>
+                Bij de {treffer.bijRol} · {treffer.duurMinuten} minuten · {treffer.vorm}
+              </div>
+            </div>
+          )}
+
           {treffer.instellingen && treffer.instellingen.length > 0 && (
             <div className="mini" style={{ marginTop: 7 }}>
               Bestemming: {treffer.instellingen.join(', ')}
@@ -343,7 +385,7 @@ function Trefferregel({ treffer, mag, opKies }: {
 
           <div className="knop-rij" style={{ marginTop: 9 }}>
             <button className="knop" data-toon="primair" disabled={blokkerend}
-              onClick={() => { opKies(detail); setOpen(false); }}>
+              onClick={() => { opKies(detail, planroute); setOpen(false); }}>
               <Icoon naam="plus" grootte={13} /> Toevoegen
             </button>
             {blokkerend && (

@@ -62,6 +62,7 @@ Daarom staat naast de sets een **catalogus** met één zoekveld over vier soorte
 | lab | 20 bepalingen met materiaal | aanvraag naar het laboratorium |
 | onderzoek | ECG, spirometrie, 24-uursmeting, enkel-armindex, beeldvorming | praktijk of diagnostisch centrum |
 | verwijzing | 22 bestemmingen in eerste en tweede lijn, met vraagstellingen | ZorgDomein of directe verwijsbrief |
+| afspraak | 8 afspraaksoorten binnen de eigen praktijk, inclusief video en visite | agenda, via een van vier planroutes (docs/18) |
 
 Eén zoekveld voor alle vier, want de zorgverlener denkt in "wat moet er gebeuren" en
 niet in "welke van de vier ordersoorten is dit". Die indeling is een systeemindeling en
@@ -73,6 +74,10 @@ knop klaar; typen is de uitzondering. Bij een verwijzing staat de route erbij �
 ZorgDomein gaat krijgt een gestructureerd formulier met een verplichte vraagstelling en
 een terugkoppeling, de rest is een brief. Dat verschil hoort zichtbaar te zijn op het
 moment van verwijzen, niet pas als de brief terugkomt.
+
+Een afspraak-order krijgt er één veld bij: **wie plant hem in**. Vier routes — zelf, de
+assistent, de patiënt via het portaal, of automatisch — en die keuze hoort bij deze
+afspraak en niet bij de gebruiker. Zie [ADR-0011](adr/ADR-0011-vier-planroutes.md).
 
 Gekozen orders gaan in een **mandje** en worden in één handeling geplaatst. Een consult
 levert zelden één order op: je bestelt de pijnstiller én de controle én de verwijzing,

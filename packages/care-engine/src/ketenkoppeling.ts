@@ -1,4 +1,5 @@
 import type { Dossier } from '@zpe/fhir-model';
+import { isEigenRegistratie } from '@zpe/fhir-model';
 import type { Criterium } from './criteria.js';
 import { alle, enigeVan, heeftActieveEpisode, minimaalChronischeEpisodes, minimaleLeeftijd } from './criteria.js';
 import { CHRONISCHE_ICPC, CODE, type ModuleId } from './protocol.js';
@@ -125,11 +126,23 @@ export function ketenbijdragen(
     if (!grondslag.voldaan) continue;
 
     const indicatoren = keten.indicatorItems.map((item) => {
-      const meting = dossier.observaties
+      const alle = dossier.observaties
         .filter((o) => o.status !== 'entered-in-error')
         .filter((o) => o.code.coding?.some((c) => c.code === item.code))
-        .sort((a, b) => b.effectief.localeCompare(a.effectief))[0];
+        .sort((a, b) => b.effectief.localeCompare(a.effectief));
+      // Alleen eigen registraties vullen een ketenindicator. Een waarde die de patiënt
+      // zelf doorgaf is echt en bruikbaar, maar hij is niet door de praktijk vastgelegd
+      // en mag dus niet stilzwijgend een declaratiegrondslag worden (docs/03 §3).
+      const meting = alle.find((o) => isEigenRegistratie(o.herkomst));
+      const alleenVanPatient = !meting && alle.length > 0;
 
+      if (alleenVanPatient) {
+        return {
+          code: item.code, naam: item.naam, voldaan: false,
+          toelichting: `wel een waarde van ${alle[0].effectief.slice(0, 10)}, maar door de patiënt `
+            + 'aangeleverd en nog niet overgenomen',
+        };
+      }
       if (!meting) {
         return { code: item.code, naam: item.naam, voldaan: false, toelichting: 'nooit vastgelegd' };
       }

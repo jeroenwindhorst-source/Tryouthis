@@ -73,6 +73,16 @@ export interface Zelfredzaamheid {
   vorige?: { gemiddelde: number; afgenomenOp: string };
   /** Wat de patiënt zelf zegt nodig te hebben. */
   toelichting?: string;
+  /**
+   * Handmatige bijstelling door de zorgverlener.
+   *
+   * Een gemiddelde van elf domeinen is een hulpmiddel, geen oordeel. Wie deze mens kent,
+   * ziet soms iets wat niet in de scores zit: een partner die wegvalt, een gesprek dat
+   * anders liep dan de vragenlijst suggereert. Die professionele inschatting mag winnen —
+   * maar alleen mét reden, en zichtbaar naast het berekende getal. Stilzwijgend
+   * overschrijven maakt het cijfer onbetrouwbaar voor iedereen die er later naar kijkt.
+   */
+  bijstelling?: { niveau: Niveau; reden: string; door: string; op: string };
 }
 
 export type Niveau = 'acuut' | 'beperkt' | 'voldoende' | 'goed' | 'volledig';
@@ -93,6 +103,11 @@ export interface Zelfredzaamheidsbeeld {
   /** Aandachtsgebieden die hierdoor relevant worden, los van de diagnose. */
   raaktModules: string[];
   trend?: { verschil: number; richting: 'vooruit' | 'achteruit' | 'stabiel' };
+  /** Als de zorgverlener het berekende niveau heeft overruled: wat er is bijgesteld en waarom. */
+  bijgesteld?: {
+    berekendNiveau: Niveau; berekendeFactor: number;
+    reden: string; door: string; op: string;
+  };
 }
 
 const NIVEAUS: { tot: number; niveau: Niveau; factor: number; betekenis: string }[] = [
@@ -172,12 +187,27 @@ export function beoordeelZelfredzaamheid(z: Zelfredzaamheid): Zelfredzaamheidsbe
       }
     : undefined;
 
+  // De professionele inschatting wint van het gemiddelde, maar het berekende niveau
+  // blijft in het beeld staan: anders is achteraf niet te zien dat er is afgeweken.
+  const bijstelling = z.bijstelling;
+  const gekozen = bijstelling
+    ? (NIVEAUS.find((n) => n.niveau === bijstelling.niveau) ?? niveau)
+    : niveau;
+
   return {
     gemiddelde,
-    niveau: niveau.niveau,
-    factor: niveau.factor,
-    betekenis: niveau.betekenis,
+    niveau: gekozen.niveau,
+    factor: gekozen.factor,
+    betekenis: bijstelling
+      ? `${gekozen.betekenis} Handmatig bijgesteld: ${bijstelling.reden}`
+      : niveau.betekenis,
     knelpunten, sterk, digitaalBereikbaar, raaktModules, trend,
+    bijgesteld: bijstelling
+      ? {
+          berekendNiveau: niveau.niveau, berekendeFactor: niveau.factor,
+          reden: bijstelling.reden, door: bijstelling.door, op: bijstelling.op,
+        }
+      : undefined,
   };
 }
 

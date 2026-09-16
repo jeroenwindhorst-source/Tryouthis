@@ -8,10 +8,11 @@ import {
   agenda, assistentOverzicht, beheer, berichten, consultvoorbereiding, controleerTweefactor,
   dagafsluiting, dagstart, dossierHistorie, gebruikersoverzicht, huisartsOverzicht, instroom,
   InMemoryRepository, intakes, meetreeksen, meldAan, monitoringCohort, orderOverzicht,
-  orderVoorstellen, overleg, patientOverzicht, plaatsLosseOrders, praktijkSamenvatting,
-  registreerConsult, terminologie, verwerkVragenlijst, zetOpBespreeklijst, zoekOrders,
-  zoekPatient,
-  type Afspraakstatus, type ConsultRegistratie, type NieuweOrder, type NieuwBespreekpunt,
+  orderVoorstellen, overleg, patientOverzicht, plaatsLosseOrders, planbord, planbordPraktijk,
+  praktijkrapportage, praktijkSamenvatting, registreerConsult, terminologie, verwerkVragenlijst,
+  vraagAfspraakAan, zetOpBespreeklijst, zoekOrders, zoekPatient,
+  type Afspraakstatus, type ConsultRegistratie, type NieuweOrder, type NieuwAfspraakverzoek,
+  type NieuwBespreekpunt,
 } from '@zpe/praktijk';
 
 const repo = new InMemoryRepository();
@@ -172,6 +173,54 @@ app.post<{ Body: { gebruikerId: string; orders: NieuweOrder[] } }>(
     return overzicht ?? reply.code(404).send({ fout: 'patiënt niet gevonden' });
   },
 );
+
+// ── Plannen ─────────────────────────────────────────────────────────────────
+
+app.get<{ Params: { rol: string }; Querystring: { duur?: string } }>(
+  '/api/planbord/:rol',
+  async (req) => planbord(repo, req.params.rol as 'poh-s' | 'assistent' | 'huisarts',
+    req.query.duur ? Number(req.query.duur) : undefined),
+);
+
+app.get('/api/planbord', async () => planbordPraktijk(repo));
+
+app.post<{ Body: { gebruikerId: string; verzoek: NieuwAfspraakverzoek } }>(
+  '/api/planning/verzoek',
+  async (req) => {
+    vraagAfspraakAan(repo, req.body.gebruikerId, req.body.verzoek);
+    return planbordPraktijk(repo);
+  },
+);
+
+app.post<{ Params: { id: string }; Body: { start: string } }>(
+  '/api/planning/:id/inplannen',
+  async (req) => {
+    repo.planAfspraak(req.params.id, req.body.start);
+    return planbordPraktijk(repo);
+  },
+);
+
+app.post<{ Body: {
+  patientId: string; rol: string; start: string; duurMinuten: number; reden: string;
+} }>(
+  '/api/planning/afspraak',
+  async (req) => {
+    repo.planLosseAfspraak({
+      ...req.body, rol: req.body.rol as 'poh-s' | 'assistent' | 'huisarts',
+    });
+    return planbordPraktijk(repo);
+  },
+);
+
+app.post<{ Params: { id: string }; Body: { reden: string } }>(
+  '/api/planning/:id/annuleren',
+  async (req) => {
+    repo.annuleerVerzoek(req.params.id, req.body.reden);
+    return planbordPraktijk(repo);
+  },
+);
+
+app.get('/api/praktijk/rapportage', async () => praktijkrapportage(repo));
 
 // ── Overleg en bespreeklijst ────────────────────────────────────────────────
 

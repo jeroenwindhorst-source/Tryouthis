@@ -75,6 +75,24 @@ Wat een mens moet zien, staat bovenaan en is klein in aantal.
 Verder: consultvoering, episodebeheer, medicatie, verwijzen, en het overzicht van wat
 het team heeft gedaan — met herkomst zichtbaar.
 
+## 3b. Praktijkmanager
+
+Geen dossiertoegang (`docs/17` §2), wel het praktijkbeeld. Het scherm **Praktijk in
+cijfers** beantwoordt de vraag die nu met een kwartaallijkse datadump naar Excel wordt
+beantwoord: lopen we ergens zorg of geld mis doordat de registratie niet compleet is, en
+waar zit dat dan?
+
+Per keten: hoeveel patiënten, bij hoeveel de registratie compleet is, en waar het op
+vastloopt — "23× funduscontrole ontbreekt". Dat laatste is de winst: een percentage zegt
+dat er iets mis is, een knelpunt zegt wát.
+
+De cijfers worden afgeleid uit dezelfde ketenindicatoren die het zorgproces toch al
+gebruikt. Geen tweede registratie en geen tweede telling, zodat het cijfer van de manager
+en het scherm van de POH niet uiteen kunnen lopen.
+
+Wat er bewust níet staat: de namen achter een knelpunt. Die lijst is zorginhoudelijk en
+hoort naar de POH te gaan, niet naar een beheerscherm.
+
 ## 4. Patiënt
 
 Portaal/app conform MedMij. Ingang is niet het dossier maar **de volgende stap**:
@@ -117,6 +135,39 @@ De POH heeft daarnaast een blok **voorbereidingstijd** aan het begin van de dag.
 werk, en werk hoort tijd in de agenda te krijgen — anders gebeurt het tussendoor en dus
 niet.
 
+## 4d. Behandelgrenzen
+
+"Niet reanimeren" is geen dossierregel tussen de andere dossierregels. Het is een
+afspraak die je moet zien vóórdat je iets doet, en als hij niet zichtbaar is wordt hij
+niet nageleefd. Daarom staat hij als band boven het dossier, niet in het journaal:
+
+```
+⊘ BEHANDELGRENS
+Reanimatie: Niet reanimeren. Patiënt wil geen reanimatie, onder alle omstandigheden.
+· vastgelegd 2025-05-23 door Daan Verhoeven, besproken met patiënt en dochter
+```
+
+Drie dingen zijn verplicht bij zo'n afspraak: **met wie** hij besproken is (een
+behandelgrens zonder gesprek is een aanname), **wanneer** (een afspraak van acht jaar
+geleden vraagt om herbevestiging, en dat staat erbij), en **door wie**. Wat er verder
+kan staan: IC-opname, ziekenhuisopname, antibioticabeleid, wilsverklaring, wettelijk
+vertegenwoordiger.
+
+Wie géén beperking heeft afgesproken maar wél een gesprek heeft gehad, krijgt een
+neutrale band. Dat verschil — "niets afgesproken" versus "besproken en alles mag" — is
+klinisch relevant en gaat in de meeste systemen verloren.
+
+## 4e. Videoconsult
+
+Vanuit de patiëntbalk, bij huisarts en POH. Het is een manier om dit consult te voeren
+en geen andere soort zorg, dus het staat bij de patiënt en niet in een apart scherm.
+
+De demo bouwt geen videoverbinding na — dat zou suggereren dat er iets werkt wat er niet
+is. Wat er wél staat is het werkproces eromheen: hoe de patiënt de uitnodiging krijgt
+(portaal als dat er is, anders sms, en dan staat erbij dat dat zwakker geauthenticeerd
+is), dat het dossier ernaast open blijft, en dat je achteraf gewoon een deelcontact
+registreert. Het beeld zelf komt van een ingebedde partij (`docs/14` §4).
+
 ## 5. Dossierdiepte
 
 Een startscherm dat met werk opent, mag niet betekenen dat je er niet doorheen kunt.
@@ -140,9 +191,28 @@ Het dossier heeft daarom drie ingangen naast het consult zelf:
   vorm. Zie ADR-0010. Per bron staat er een ingang naar het portaal van die instelling.
 
 Het orderpad zit níet in de tabbalk maar in de linkerkolom van het consult, onder de
-medicatie: **Medicatie · Verwijzing · Lab · Onderzoek**. Bestellen hoort bij het moment
-waarop het besluit valt, niet bij een overzichtsscherm. Het ordertabblad is wat daaruit
-gekomen is (docs/16).
+medicatie: **Medicatie · Verwijzing · Lab · Onderzoek · Afspraak**. Bestellen hoort bij
+het moment waarop het besluit valt, niet bij een overzichtsscherm. Het ordertabblad is
+wat daaruit gekomen is (docs/16).
+
+**Het plan als tijdlijn.** "Het plan van deze patiënt" was volledig maar je moest het
+lézen om te zien waar iemand in zijn jaar staat. Nu staat het als zorgreis: laatste
+contact, vandaag, en de geplande contacten als haltes met datum, duur en de
+aandachtsgebieden die bij die halte horen. De tekstuele uitwerking staat er nog steeds
+onder — een plaatje zonder onderbouwing is een aanname, en dit plan is te
+consequentieel om op een vormpje te vertrouwen. Bewust geen voortgangsbalk: een
+chronische aandoening heeft geen eindpunt en een balk die voor 60% vol staat, suggereert
+dat er ergens een 100% is.
+
+**Wat de patiënt zelf aanleverde** blijft als zodanig zichtbaar. Per meting kies je bij
+het vastleggen tussen *hier gemeten* en *door patiënt* — zie
+[ADR-0012](adr/ADR-0012-patientgegevens-zijn-geen-eigen-registratie.md). Een waarde van
+de patiënt telt mee in het beloop maar vult geen ketenindicator, en de indicator zegt dat
+dan ook letterlijk in plaats van een gat te laten.
+
+**Wat er in het overleg besloten is**, staat als eigen soort in de tijdlijn: vraag,
+context en uitkomst, met wie erbij waren. Geen SOEP, want er is geen patiënt gezien —
+maar wel vindbaar, want er is wel iets besloten.
 
 En, ondanks principe 1: **een patiëntzoekveld staat in de kopbalk, altijd.** Het
 systeem opent met werk, maar iemand die belt terwijl je iets anders doet, moet in twee

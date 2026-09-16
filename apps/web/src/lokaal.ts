@@ -2,9 +2,11 @@ import {
   agenda, assistentOverzicht, beheer, berichten, consultvoorbereiding, controleerTweefactor,
   dagafsluiting, dagstart, dossierHistorie, gebruikersoverzicht, huisartsOverzicht, instroom,
   InMemoryRepository, intakes, meetreeksen, meldAan, monitoringCohort, orderOverzicht,
-  orderVoorstellen, overleg, patientOverzicht, plaatsLosseOrders, praktijkSamenvatting,
-  registreerConsult, terminologie, zetOpBespreeklijst, zoekOrders, zoekPatient,
-  type Afspraakstatus, type ConsultRegistratie, type NieuweOrder, type NieuwBespreekpunt,
+  orderVoorstellen, overleg, patientOverzicht, plaatsLosseOrders, planbord, planbordPraktijk,
+  praktijkrapportage, praktijkSamenvatting, registreerConsult, terminologie, vraagAfspraakAan,
+  zetOpBespreeklijst, zoekOrders, zoekPatient,
+  type Afspraakstatus, type ConsultRegistratie, type NieuweOrder, type NieuwAfspraakverzoek,
+  type NieuwBespreekpunt,
 } from '@zpe/praktijk';
 import {
   ketens, modules, REGELSET_VERSIE, type CatalogusSoort, type PersoonlijkPlan,
@@ -72,6 +74,29 @@ export const lokaleApi = {
     repo.markeerExternGelezen(patientId, documentId);
     return traag(dossierHistorie(repo, patientId)!);
   },
+
+  planbord: (rol: string, duurMinuten?: number) =>
+    traag(planbord(repo, rol as 'poh-s' | 'assistent' | 'huisarts', duurMinuten)),
+  planbordPraktijk: () => traag(planbordPraktijk(repo)),
+  vraagAfspraakAan: (gebruikerId: string, verzoek: NieuwAfspraakverzoek) => {
+    vraagAfspraakAan(repo, gebruikerId, verzoek);
+    return traag(planbordPraktijk(repo));
+  },
+  planAfspraak: (verzoekId: string, start: string) => {
+    repo.planAfspraak(verzoekId, start);
+    return traag(planbordPraktijk(repo));
+  },
+  planLosseAfspraak: (gegevens: {
+    patientId: string; rol: string; start: string; duurMinuten: number; reden: string;
+  }) => {
+    repo.planLosseAfspraak({ ...gegevens, rol: gegevens.rol as 'poh-s' | 'assistent' | 'huisarts' });
+    return traag(planbordPraktijk(repo));
+  },
+  annuleerVerzoek: (verzoekId: string, reden: string) => {
+    repo.annuleerVerzoek(verzoekId, reden);
+    return traag(planbordPraktijk(repo));
+  },
+  rapportage: () => traag(praktijkrapportage(repo)),
 
   overleg: (rol: string) => traag(overleg(repo, rol as 'poh-s' | 'assistent' | 'huisarts')),
   zetOpBespreeklijst: (gebruikerId: string, punt: NieuwBespreekpunt) => {
