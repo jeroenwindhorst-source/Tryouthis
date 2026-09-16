@@ -219,6 +219,55 @@ export interface VoorgesteldeOrderSet {
   waarschuwingen: Waarschuwing[];
 }
 
+/** Waar een recept heen kan. Per recept gekozen, niet één instelling per patiënt. */
+export interface Apotheek {
+  id: string; naam: string; plaats: string; digitaal: boolean; bijzonderheid?: string;
+}
+
+export type Afleverroute = 'digitaal' | 'print' | 'meegeven';
+export type Wijzigingsoort = 'dosering' | 'vervangen' | 'stoppen' | 'starten';
+
+export interface Medicatiewijziging {
+  patientId: string;
+  soort: Wijzigingsoort;
+  statementId?: string;
+  nieuw?: { atc: string; naam: string; dosering: string; chronisch?: boolean };
+  reden: string;
+  aflevering: { route: Afleverroute; apotheekId?: string; opmerking?: string };
+  episodeId?: string;
+}
+
+export interface Medicatieregel {
+  id: string; naam: string; atc?: string; dosering: string; chronisch: boolean;
+  begin?: string; einde?: string; status: string; voorschrijver: string;
+  waarschuwingen: Waarschuwing[];
+  laatsteOrder?: {
+    id: string; status: string; route?: string; bestemming?: string; geplaatstOp: string;
+  };
+}
+
+export interface Medicatieoverzicht {
+  lopend: Medicatieregel[];
+  gestopt: Medicatieregel[];
+  apotheken: Apotheek[];
+  voorkeursapotheek: { id: string; naam: string; plaats: string };
+  redenen: Record<Wijzigingsoort, string[]>;
+  soortLabel: Record<Wijzigingsoort, string>;
+  episodes: { id: string; titel: string; icpc?: string }[];
+}
+
+export interface Medicatievoorbeeld {
+  regels: string[];
+  waarschuwing?: string;
+  waarschuwingen: Waarschuwing[];
+}
+
+export interface Medicatieuitkomst {
+  overzicht: Medicatieoverzicht;
+  order?: Order;
+  naarAutorisatie: boolean;
+}
+
 export interface Catalogustreffer {
   id: string; soort: 'medicatie' | 'lab' | 'verwijzing' | 'onderzoek' | 'afspraak';
   naam: string; detail: string; varianten: string[];
@@ -255,7 +304,7 @@ export interface Orderoverzicht {
   openstaand: Order[];
   afgehandeld: Order[];
   voorstellen: VoorgesteldeOrderSet[];
-  medicatie: { naam: string; atc?: string; dosering: string; chronisch: boolean }[];
+  medicatie: { id?: string; naam: string; atc?: string; dosering: string; chronisch: boolean }[];
 }
 
 export interface Bespreekpunt {
@@ -601,7 +650,7 @@ export interface PersoonlijkPlan {
 export interface PatientOverzicht {
   patient: { id: string; naam: string; leeftijd: number; geboortedatum: string; geslacht: string; bsn?: string; portaalActief?: boolean };
   episodes: { id: string; titel: string; status: string; icpc?: string; start?: string }[];
-  medicatie: { naam: string; atc?: string; dosering: string; chronisch: boolean }[];
+  medicatie: { id?: string; naam: string; atc?: string; dosering: string; chronisch: boolean }[];
   metingen: { code: string; naam: string; laatste?: number; eenheid?: string; op?: string; bron?: string; reeks: { op: string; waarde?: number }[] }[];
   signalen: Signaal[];
   zorgplan: Zorgplan;
@@ -727,6 +776,12 @@ const httpApi = {
     haal<DossierHistorie>(`/api/patient/${patientId}/historie${bronId ? `?bron=${encodeURIComponent(bronId)}` : ''}`),
   contactdossier: (patientId: string, encounterId: string) =>
     haal<Contactdossier>(`/api/patient/${patientId}/contact/${encounterId}`),
+  medicatieoverzicht: (patientId: string) =>
+    haal<Medicatieoverzicht>(`/api/patient/${patientId}/medicatie`),
+  medicatievoorbeeld: (wijziging: Medicatiewijziging) =>
+    stuur<Medicatievoorbeeld>('/api/medicatie/voorbeeld', wijziging),
+  wijzigMedicatie: (gebruikerId: string, wijziging: Medicatiewijziging) =>
+    stuur<Medicatieuitkomst>('/api/medicatie/wijzig', { gebruikerId, wijziging }),
   meetreeksen: (patientId: string) => haal<Meetreeks[]>(`/api/patient/${patientId}/meetreeksen`),
   orders: (patientId: string) => haal<VoorgesteldeOrderSet[]>(`/api/patient/${patientId}/orders`),
   orderOverzicht: (patientId: string) => haal<Orderoverzicht>(`/api/patient/${patientId}/orderoverzicht`),

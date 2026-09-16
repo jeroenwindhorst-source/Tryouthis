@@ -18,6 +18,7 @@ import {
 } from '../onderdelen';
 import { Orders } from './Orders';
 import { Orderpaneel } from './Orderpaneel';
+import { Medicatiepaneel } from './Medicatiepaneel';
 import { Verrichtingen } from './Verrichtingen';
 import { Overzicht } from './Overzicht';
 import { Media } from './Media';
@@ -165,13 +166,15 @@ export function Consult({ patientId, gebruiker, terug, startTab = 'consult' }: {
   /** Waarmee het dossier opent. Persoonlijke voorkeur — zie Voorkeuren. */
   startTab?: Tab;
 }) {
-  const { data, fout, bezig, setData } = useData(() => api.patient(patientId), [patientId]);
+  const { data, fout, bezig, herlaad, setData } = useData(() => api.patient(patientId), [patientId]);
   const [tab, setTab] = useState<Tab>(startTab);
   const [bezigMet, setBezigMet] = useState<string | undefined>();
   const [toonNietActief, setToonNietActief] = useState(false);
   const [uitkomst, setUitkomst] = useState<RegistratieUitkomst | undefined>();
   const [gekozenMeting, setGekozenMeting] = useState<string | undefined>();
   const [orderpaneel, setOrderpaneel] = useState<OrderSoort | 'alles' | undefined>();
+  const [medicatiepaneel, setMedicatiepaneel] = useState<{ middelId?: string } | undefined>();
+  const [medicatieGewijzigd, setMedicatieGewijzigd] = useState(false);
   const [ordersVandaag, setOrdersVandaag] = useState<NieuweOrder[]>([]);
   const [video, setVideo] = useState(false);
   const [toonDetails, setToonDetails] = useState(false);
@@ -311,11 +314,33 @@ export function Consult({ patientId, gebruiker, terug, startTab = 'consult' }: {
       )}
       {tab === 'orders' && (
         <Orders patientId={patientId} gebruiker={gebruiker}
-          opNieuweOrder={() => setOrderpaneel('alles')} />
+          opNieuweOrder={() => setOrderpaneel('alles')}
+          opMedicatie={(middelId) => setMedicatiepaneel({ middelId })} />
       )}
 
       {tab === 'verrichtingen' && (
         <Verrichtingen patientId={patientId} patientNaam={data.patient.naam} gebruiker={gebruiker} />
+      )}
+
+      {medicatiepaneel && (
+        <Medicatiepaneel patientId={patientId} patientNaam={data.patient.naam} gebruiker={gebruiker}
+          startMiddelId={medicatiepaneel.middelId}
+          opSluit={() => {
+            // Pas bij het sluiten het hele dossier opnieuw ophalen: de suggesties en het
+            // zorgplan rekenen met de medicatie. Tijdens het wijzigen niet, want dan
+            // verdwijnt het paneel onder je handen terwijl je nog leest wat er gebeurd is.
+            setMedicatiepaneel(undefined);
+            if (medicatieGewijzigd) { setMedicatieGewijzigd(false); herlaad(); }
+          }}
+          opGewijzigd={(overzicht) => {
+            setMedicatieGewijzigd(true);
+            setData((huidig) => huidig && {
+              ...huidig,
+              medicatie: overzicht.lopend.map((m) => ({
+                id: m.id, naam: m.naam, atc: m.atc, dosering: m.dosering, chronisch: m.chronisch,
+              })),
+            });
+          }} />
       )}
 
       {orderpaneel && (
@@ -412,14 +437,28 @@ export function Consult({ patientId, gebruiker, terug, startTab = 'consult' }: {
               </Kaart>
             )}
 
+            {/*
+              Medicatie is niet alleen iets om naar te kijken. Een regel is een knop:
+              erop klikken opent het paneel waarin je dit middel aanpast, stopt of
+              vervangt — met het recept in dezelfde handeling. Een lijst waar je niets
+              mee kunt, dwingt de zorgverlener naar een ander scherm en laat hem daar
+              vier losse handelingen doen.
+            */}
             <Kaart titel="Medicatie" icoon="pil" telling={data.medicatie.length}>
               {data.medicatie.length === 0 && <span className="mini">Geen chronische medicatie.</span>}
               {data.medicatie.map((m) => (
-                <div key={m.naam} className="regel">
+                <button key={m.id ?? m.naam} className="medicatieregel"
+                  onClick={() => setMedicatiepaneel({ middelId: m.id })}>
                   <span className="sleutel">{m.naam}<div className="mini">{m.atc}</div></span>
-                  <span className="waarde" style={{ fontWeight: 500 }}>{m.dosering}</span>
-                </div>
+                  <span className="waarde">{m.dosering}</span>
+                  <Icoon naam="schakelaar" grootte={13} />
+                </button>
               ))}
+              <div className="knop-rij" style={{ marginTop: 9 }}>
+                <button className="knop" onClick={() => setMedicatiepaneel({})}>
+                  <Icoon naam="pil" grootte={13} /> Medicatie aanpassen
+                </button>
+              </div>
             </Kaart>
 
             {/*

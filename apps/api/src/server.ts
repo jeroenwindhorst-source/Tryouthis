@@ -8,6 +8,7 @@ import {
   agenda, assistentOverzicht, beheer, berichten, consultvoorbereiding, controleerTweefactor,
   dagafsluiting, dagstart, dossierHistorie, gebruikersoverzicht, huisartsOverzicht, instroom,
   acuteInstroom, beantwoordPatientbericht, contactdossier, contactvormen, groepsconsulten, handelAcuutAf,
+  medicatieoverzicht, medicatievoorbeeld, wijzigMedicatie,
   maakGroepsconsult, media, rapport, rapportExport, samenvatting,
   InMemoryRepository, intakes, legVerrichtingVast, meetreeksen, meldAan, monitoringCohort,
   orderOverzicht, orderVoorstellen, overleg, pakAcuutOp, patientOverzicht, plaatsLosseOrders,
@@ -15,7 +16,7 @@ import {
   terminologie, verrichtingen, verwerkVragenlijst, vraagAfspraakAan, zetOpBespreeklijst,
   zoekOrders, zoekPatient,
   type Afspraakstatus, type Beoordelaar, type ConsultRegistratie, type Contactvorm,
-  type Criteria, type Groepsdeelnemer, type Mediasoort, type Mediabron,
+  type Criteria, type Groepsdeelnemer, type Mediasoort, type Mediabron, type Medicatiewijziging,
   type NieuweOrder, type NieuwAfspraakverzoek, type NieuwBespreekpunt, type NieuwGroepsconsult,
 } from '@zpe/praktijk';
 
@@ -155,6 +156,27 @@ app.get<{ Params: { id: string; encounterId: string } }>(
   async (req, reply) => {
     const dossier = contactdossier(repo, req.params.id, req.params.encounterId);
     return dossier ?? reply.code(404).send({ fout: 'contact niet gevonden' });
+  },
+);
+
+app.get<{ Params: { id: string } }>(
+  '/api/patient/:id/medicatie',
+  async (req, reply) => {
+    const overzicht = medicatieoverzicht(repo, req.params.id);
+    return overzicht ?? reply.code(404).send({ fout: 'patiënt niet gevonden' });
+  },
+);
+
+app.post<{ Body: Medicatiewijziging }>('/api/medicatie/voorbeeld', async (req, reply) => {
+  const beeld = medicatievoorbeeld(repo, req.body);
+  return beeld ?? reply.code(404).send({ fout: 'patiënt niet gevonden' });
+});
+
+app.post<{ Body: { gebruikerId: string; wijziging: Medicatiewijziging } }>(
+  '/api/medicatie/wijzig',
+  async (req, reply) => {
+    const uitkomst = wijzigMedicatie(repo, req.body.gebruikerId, req.body.wijziging);
+    return uitkomst ?? reply.code(400).send({ fout: 'wijziging niet toegestaan of onvolledig' });
   },
 );
 

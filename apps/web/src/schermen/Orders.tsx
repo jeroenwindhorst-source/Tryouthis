@@ -29,10 +29,12 @@ const STATUS_LABEL: Record<string, string> = {
  * iets open waar iemand iets mee moet? Dan pas: wat is er ooit besteld. Een overzicht dat
  * begint met de geschiedenis, laat het openstaande werk onderin verdwijnen.
  */
-export function Orders({ patientId, gebruiker, opNieuweOrder }: {
+export function Orders({ patientId, gebruiker, opNieuweOrder, opMedicatie }: {
   patientId: string;
   gebruiker: Gebruiker;
   opNieuweOrder: () => void;
+  /** Een lopend middel aanpassen; opent hetzelfde paneel als vanuit het consult. */
+  opMedicatie: (middelId?: string) => void;
 }) {
   const { data, fout, bezig, setData } = useData(() => api.orderOverzicht(patientId), [patientId]);
   const [toonHistorie, setToonHistorie] = useState(false);
@@ -127,17 +129,24 @@ export function Orders({ patientId, gebruiker, opNieuweOrder }: {
           <Kaart titel="Actuele medicatie" icoon="pil" telling={data.medicatie.length}>
             {data.medicatie.length === 0 && <span className="mini">Geen chronische medicatie.</span>}
             {data.medicatie.map((m) => (
-              <div key={m.naam} className="regel">
+              <button key={m.id ?? m.naam} className="medicatieregel"
+                onClick={() => opMedicatie(m.id)}>
                 <span className="sleutel">
                   {m.naam}
                   <div className="mini">{m.atc}{m.chronisch ? ' · chronisch' : ''}</div>
                 </span>
-                <span className="waarde" style={{ fontWeight: 500 }}>{m.dosering}</span>
-              </div>
+                <span className="waarde">{m.dosering}</span>
+                <Icoon naam="schakelaar" grootte={13} />
+              </button>
             ))}
-            <button className="knop" style={{ marginTop: 10 }} onClick={opNieuweOrder}>
-              <Icoon naam="plus" grootte={13} /> Medicatie toevoegen
-            </button>
+            <div className="knop-rij" style={{ marginTop: 10 }}>
+              <button className="knop" onClick={() => opMedicatie()}>
+                <Icoon naam="pil" grootte={13} /> Medicatie aanpassen
+              </button>
+              <button className="knop" data-toon="stil" onClick={opNieuweOrder}>
+                <Icoon naam="plus" grootte={13} /> Andere order
+              </button>
+            </div>
           </Kaart>
 
           <div className="notitie">

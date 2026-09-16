@@ -2,13 +2,14 @@ import {
   agenda, assistentOverzicht, beheer, berichten, consultvoorbereiding, controleerTweefactor,
   dagafsluiting, dagstart, dossierHistorie, gebruikersoverzicht, huisartsOverzicht, instroom,
   acuteInstroom, beantwoordPatientbericht, contactdossier, contactvormen, groepsconsulten, handelAcuutAf,
+  medicatieoverzicht, medicatievoorbeeld, wijzigMedicatie,
   maakGroepsconsult, media, rapport, rapportExport, samenvatting,
   InMemoryRepository, intakes, legVerrichtingVast, meetreeksen, meldAan, monitoringCohort,
   orderOverzicht, orderVoorstellen, overleg, pakAcuutOp, patientOverzicht, plaatsLosseOrders,
   planbord, planbordPraktijk, praktijkrapportage, praktijkSamenvatting, registreerConsult,
   terminologie, verrichtingen, vraagAfspraakAan, zetOpBespreeklijst, zoekOrders, zoekPatient,
   type Afspraakstatus, type Beoordelaar, type ConsultRegistratie, type Contactvorm,
-  type Criteria, type Groepsdeelnemer, type Mediafilter, type NieuweOrder,
+  type Criteria, type Groepsdeelnemer, type Mediafilter, type Medicatiewijziging, type NieuweOrder,
   type NieuwAfspraakverzoek, type NieuwBespreekpunt, type NieuwGroepsconsult,
 } from '@zpe/praktijk';
 import {
@@ -66,6 +67,13 @@ export const lokaleApi = {
     traag(dossierHistorie(repo, patientId, bronId)!),
   contactdossier: (patientId: string, encounterId: string) =>
     traag(contactdossier(repo, patientId, encounterId)!),
+  medicatieoverzicht: (patientId: string) => traag(medicatieoverzicht(repo, patientId)!),
+  medicatievoorbeeld: (wijziging: Medicatiewijziging) => traag(medicatievoorbeeld(repo, wijziging)!),
+  wijzigMedicatie: (gebruikerId: string, wijziging: Medicatiewijziging) => {
+    const uitkomst = wijzigMedicatie(repo, gebruikerId, wijziging);
+    if (!uitkomst) return Promise.reject(new Error('wijziging niet toegestaan of onvolledig'));
+    return traag(uitkomst);
+  },
   meetreeksen: (patientId: string) => traag(meetreeksen(repo, patientId)),
   orders: (patientId: string) => traag(orderVoorstellen(repo, patientId)),
   orderOverzicht: (patientId: string) => traag(orderOverzicht(repo, patientId)!),

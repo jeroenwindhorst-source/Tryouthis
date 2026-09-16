@@ -15,6 +15,7 @@ import { genereerBespreekpunten, type Bespreekpunt, type NieuwBespreekpunt } fro
 import { genereerBeleidsafspraken, type Beleidsafspraak } from './beleidsafspraken.js';
 import { genereerAcuteSignalen, type AcuutSignaal } from './acuut.js';
 import { filterMedia, genereerMedia, type Mediabestand, type Mediafilter } from './media.js';
+import { vindApotheek, type Medicatiewijziging } from './medicatie.js';
 import {
   genereerGroepsconsulten, type Groepsconsult, type Groepsdeelnemer, type NieuwGroepsconsult,
 } from './groepsconsult.js';
@@ -100,6 +101,14 @@ export interface DossierRepository {
   /** Uitkomst van een verrichting vastleggen, inclusief teleconsultatie. */
   legVerrichtingVast(uitslag: Verrichtinguitslag): void;
   verrichtinguitslagen(patientId: string): Verrichtinguitslag[];
+
+  /**
+   * Een medicatiewijziging als één handeling: stoppen, starten, intrekken, voorschrijven.
+   * Geeft de order terug die eruit voortkwam, of undefined bij een enkel stoppen.
+   */
+  wijzigMedicatie(
+    wijziging: Medicatiewijziging, door: { id: string; naam: string; rol: Rol; rechten: string[] },
+  ): Order | undefined;
 
   /** Documenten, foto's en stroken, gekoppeld aan hun aanleiding. */
   media(patientId: string, filter?: Mediafilter): Mediabestand[];
@@ -774,6 +783,103 @@ export class InMemoryRepository implements DossierRepository {
         status: 'open',
       });
     }
+  }
+
+  /**
+   * Een middel wijzigen in één handeling.
+   *
+   * De volgorde is die van het besluit en niet die van het datamodel: eerst stopt wat er
+   * liep, dan wordt de order die daarbij hoorde ingetrokken, dan start het nieuwe middel,
+   * dan gaat het recept de deur uit. Wie dit over vier schermen verdeelt, krijgt dossiers
+   * met twee keer hetzelfde middel erin — en dat ziet de apotheek wel en de patiënt niet.
+   */
+  wijzigMedicatie(
+    wijziging: Medicatiewijziging, door: { id: string; naam: string; rol: Rol; rechten: string[] },
+  ): Order | undefined {
+    const dossier = this.dossier(wijziging.patientId);
+    if (!dossier) return undefined;
+    const nu = this.praktijk.peildatum.toISOString();
+    const vandaag = nu.slice(0, 10);
+
+    const huidig = wijziging.statementId
+      ? dossier.medicatie.find((m) => m.id === wijziging.statementId)
+      : undefined;
+
+    // 1. Wat er liep, stopt — met de reden erbij, want een gestopt middel zonder reden
+    //    is over een jaar een raadsel dat niemand meer durft terug te draaien.
+    if (huidig && wijziging.soort !== 'starten') {
+      huidig.status = 'stopped';
+      huidig.einde = vandaag;
+      huidig.herkomst = {
+        bron: 'zorgverlener', vastgelegdOp: nu, auteurId: door.id, auteurRol: door.rol,
+      };
+    }
+
+    // 2. De openstaande order voor dat middel wordt ingetrokken. Blijft hij staan, dan
+    //    levert de apotheek straks allebei.
+    const atcOud = huidig?.middel.coding?.[0]?.code;
+    if (atcOud) {
+      for (const order of this.orderLijst.get(wijziging.patientId) ?? []) {
+        const loopt = order.status === 'geplaatst' || order.status === 'ter-autorisatie';
+        if (order.soort === 'medicatie' && order.atc === atcOud && loopt) {
+          order.status = 'ingetrokken';
+          order.afgehandeldOp = nu;
+          order.afgehandeldDoor = door.naam;
+          order.reden = wijziging.soort === 'stoppen'
+            ? `Middel gestopt: ${wijziging.reden}`
+            : `Vervangen door een nieuw recept: ${wijziging.reden}`;
+        }
+      }
+    }
+
+    // 3. Het nieuwe middel start.
+    if (wijziging.soort !== 'stoppen' && wijziging.nieuw) {
+      dossier.medicatie.push({
+        resourceType: 'MedicationStatement',
+        id: `${wijziging.patientId}-med-${dossier.medicatie.length + 1}-${Date.now()}`,
+        patientId: wijziging.patientId,
+        episodeId: wijziging.episodeId,
+        middel: {
+          coding: [{ system: 'http://www.whocc.no/atc', code: wijziging.nieuw.atc }],
+          text: wijziging.nieuw.naam,
+        },
+        dosering: wijziging.nieuw.dosering,
+        chronisch: wijziging.nieuw.chronisch ?? huidig?.chronisch ?? true,
+        status: 'active',
+        begin: vandaag,
+        herkomst: {
+          bron: 'zorgverlener', vastgelegdOp: nu, auteurId: door.id, auteurRol: door.rol,
+        },
+      });
+    }
+
+    // 4. En dan pas het recept. Bij stoppen is er niets te versturen; dat is geen
+    //    ontbrekende order maar het hele punt van de handeling.
+    if (wijziging.soort === 'stoppen' || !wijziging.nieuw) return undefined;
+
+    const apotheek = wijziging.aflevering.apotheekId
+      ? vindApotheek(wijziging.aflevering.apotheekId) : undefined;
+    const route = wijziging.aflevering.route === 'digitaal'
+      ? `elektronisch recept naar ${apotheek?.naam ?? 'de apotheek'}`
+      : wijziging.aflevering.route === 'print'
+        ? 'recept geprint aan de balie'
+        : 'recept meegegeven aan de patiënt';
+
+    const [order] = this.plaatsOrders([{
+      patientId: wijziging.patientId,
+      soort: 'medicatie',
+      omschrijving: wijziging.nieuw.naam,
+      detail: wijziging.nieuw.dosering,
+      atc: wijziging.nieuw.atc,
+      route,
+      bestemming: wijziging.aflevering.route === 'digitaal' ? apotheek?.naam : undefined,
+      vereistRecht: 'medicatie-voorschrijven',
+    }], door);
+
+    if (order && wijziging.aflevering.opmerking) {
+      order.reden = wijziging.aflevering.opmerking;
+    }
+    return order;
   }
 
   verrichtinguitslagen(patientId: string): Verrichtinguitslag[] {

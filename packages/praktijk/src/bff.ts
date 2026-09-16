@@ -18,6 +18,10 @@ import {
 import { acuutVoor, BRON_LABEL, URGENTIE_UITLEG } from './acuut.js';
 import { bouwSamenvatting } from './samenvatting.js';
 import { MEDIABRON_LABEL, MEDIASOORT_LABEL, type Mediafilter } from './media.js';
+import {
+  APOTHEKEN, beschrijfWijziging, REDENEN, vindApotheek, voorkeursapotheek,
+  WIJZIGING_LABEL, type Medicatiewijziging,
+} from './medicatie.js';
 import type { NieuwGroepsconsult } from './groepsconsult.js';
 import {
   draaiRapport, exporteerGeaggregeerd, filtervelden, type Criteria,
@@ -469,7 +473,11 @@ export function patientOverzicht(repo: DossierRepository, patientId: string) {
       icpc: e.code.coding?.find((c) => c.system.includes('icpc'))?.code,
       start: e.periode.start,
     })),
-    medicatie: dossier.medicatie.map((m) => ({
+    // Alleen wat de patiënt nu gebruikt. Gestopte middelen horen in het
+    // medicatiepaneel, waar de geschiedenis bij de wijziging staat — niet in de kaart
+    // waar je op een spreekuur naar kijkt.
+    medicatie: dossier.medicatie.filter((m) => m.status === 'active').map((m) => ({
+      id: m.id,
       naam: m.middel.text ?? '', atc: m.middel.coding?.[0]?.code, dosering: m.dosering, chronisch: m.chronisch,
     })),
     metingen: [...new Set(dossier.observaties.map((o) => o.code.coding?.[0]?.code))]
@@ -1419,6 +1427,142 @@ export function contactdossier(
       };
     }),
     declaratie: contact.declaratie,
+  };
+}
+
+// ── 15b. Medicatie wijzigen ─────────────────────────────────────────────────
+
+/** De bron waarmee de bewaking dubbelmedicatie markeert; zie packages/care-engine/catalogus.ts. */
+const DUBBELMEDICATIE = 'medicatiebewaking — dubbelmedicatie';
+
+/**
+ * Het medicatieoverzicht zoals het paneel het nodig heeft.
+ *
+ * Lopende middelen mét hun openstaande order, gestopte middelen eronder, en de apotheken
+ * waar dit recept heen kan. Dat laatste hoort erbij en niet in een instelling: de keuze
+ * wordt per recept gemaakt, want de patiënt is vandaag hier en morgen bij zijn dochter.
+ */
+export function medicatieoverzicht(repo: DossierRepository, patientId: string) {
+  const dossier = repo.dossier(patientId);
+  if (!dossier) return undefined;
+  const orders = repo.orders(patientId);
+  const peildatum = repo.peildatum();
+
+  const bij = (middel: { middel: { coding?: { code: string }[] } }) => {
+    const atc = middel.middel.coding?.[0]?.code;
+    return orders
+      .filter((o) => o.soort === 'medicatie' && o.atc === atc)
+      .sort((a, b) => b.geplaatstOp.localeCompare(a.geplaatstOp))[0];
+  };
+
+  const naarRegel = (m: (typeof dossier.medicatie)[number]) => {
+    const atc = m.middel.coding?.[0]?.code;
+    const laatste = bij(m);
+    return {
+      id: m.id,
+      naam: m.middel.text ?? m.middel.coding?.[0]?.display ?? 'Middel',
+      atc,
+      dosering: m.dosering,
+      chronisch: m.chronisch,
+      begin: m.begin,
+      einde: m.einde,
+      status: m.status,
+      voorschrijver: m.herkomst.auteurRol,
+      // De waarschuwingen zoals ze nú gelden: een nierfunctie die gedaald is, maakt een
+      // middel dat vorig jaar prima was vandaag een aandachtspunt.
+      //
+      // Behalve de dubbelmedicatiecheck: die vuurt per definitie op elk middel dat de
+      // patiënt gebruikt, en "dit middel staat al in het dossier" naast het middel dat
+      // in het dossier staat, is ruis die de echte waarschuwingen onzichtbaar maakt.
+      waarschuwingen: atc
+        ? bewaakMiddel(atc, dossier, peildatum).filter((w) => w.bron !== DUBBELMEDICATIE)
+        : [],
+      laatsteOrder: laatste
+        ? {
+            id: laatste.id, status: laatste.status, route: laatste.route,
+            bestemming: laatste.bestemming, geplaatstOp: laatste.geplaatstOp.slice(0, 10),
+          }
+        : undefined,
+    };
+  };
+
+  const vaste = voorkeursapotheek(dossier);
+  return {
+    lopend: dossier.medicatie.filter((m) => m.status === 'active').map(naarRegel),
+    gestopt: dossier.medicatie
+      .filter((m) => m.status !== 'active')
+      .sort((a, b) => (b.einde ?? '').localeCompare(a.einde ?? ''))
+      .slice(0, 12)
+      .map(naarRegel),
+    apotheken: APOTHEKEN,
+    voorkeursapotheek: { id: vaste.id, naam: vaste.naam, plaats: vaste.plaats },
+    redenen: REDENEN,
+    soortLabel: WIJZIGING_LABEL,
+    episodes: dossier.episodes
+      .filter((e) => e.status === 'active')
+      .map((e) => ({
+        id: e.id, titel: e.titel,
+        icpc: e.code.coding?.find((c) => c.system.includes('icpc'))?.code,
+      })),
+  };
+}
+
+/**
+ * Wat er gaat gebeuren, vóórdat het gebeurt.
+ *
+ * Het paneel vraagt dit op terwijl de gebruiker nog aan het kiezen is. Dezelfde functie
+ * die de zinnen maakt, zit in de domeinlaag — zodat de samenvatting die je leest en de
+ * handeling die volgt niet uit elkaar kunnen lopen.
+ */
+export function medicatievoorbeeld(
+  repo: DossierRepository, wijziging: Medicatiewijziging,
+) {
+  const dossier = repo.dossier(wijziging.patientId);
+  if (!dossier) return undefined;
+  const huidig = wijziging.statementId
+    ? dossier.medicatie.find((m) => m.id === wijziging.statementId)
+    : undefined;
+  // Bij het aanpassen van een bestaand middel is de dubbelmedicatiemelding het advies dat
+  // je op dat moment juist opvolgt — dan is hij geen waarschuwing maar een bevestiging.
+  // Bij vervangen door een ánder middel dat de patiënt al gebruikt, blijft hij staan.
+  const zelfdeAlsHuidig = Boolean(
+    huidig && wijziging.nieuw?.atc && huidig.middel.coding?.[0]?.code === wijziging.nieuw.atc,
+  );
+  const nieuweWaarschuwingen = (wijziging.nieuw?.atc
+    ? bewaakMiddel(wijziging.nieuw.atc, dossier, repo.peildatum())
+    : []
+  ).filter((w) => !(zelfdeAlsHuidig && w.bron === DUBBELMEDICATIE));
+  return { ...beschrijfWijziging(wijziging, huidig), waarschuwingen: nieuweWaarschuwingen };
+}
+
+export function wijzigMedicatie(
+  repo: DossierRepository, gebruikerId: string, wijziging: Medicatiewijziging,
+) {
+  const gebruiker = vindGebruiker(gebruikerId);
+  if (!gebruiker || gebruiker.rol === 'administrator') return undefined;
+  if (!wijziging.reden.trim()) return undefined;
+
+  // Een apotheek die niet elektronisch ontvangt, krijgt geen elektronisch recept. Dat
+  // stilletjes omzetten naar printen zou betekenen dat de zorgverlener denkt dat het
+  // verstuurd is terwijl er een vel papier in een la ligt.
+  const apotheek = wijziging.aflevering.apotheekId
+    ? vindApotheek(wijziging.aflevering.apotheekId) : undefined;
+  if (wijziging.aflevering.route === 'digitaal' && (!apotheek || !apotheek.digitaal)) {
+    return undefined;
+  }
+
+  const order = repo.wijzigMedicatie(wijziging, {
+    id: gebruiker.id, naam: gebruiker.naam, rol: gebruiker.rol, rechten: gebruiker.rechten,
+  });
+  const overzicht = medicatieoverzicht(repo, wijziging.patientId);
+  if (!overzicht) return undefined;
+
+  return {
+    overzicht,
+    order,
+    // De POH stelt voor, de huisarts schrijft voor (docs/16 §4). Dat verschil is hier
+    // zichtbaar in plaats van verstopt in een foutmelding achteraf.
+    naarAutorisatie: order?.status === 'ter-autorisatie',
   };
 }
 

@@ -23,6 +23,7 @@ export * from './verrichtingen.js';
 export * from './acuut.js';
 export * from './samenvatting.js';
 export * from './media.js';
+export * from './medicatie.js';
 export * from './groepsconsult.js';
 export * from './rapportage.js';
 export * from './terminologie.js';

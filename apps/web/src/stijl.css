@@ -1352,3 +1352,56 @@ body {
 .contactblok .reden { font-size: 13px; line-height: 1.5; margin: 0 0 4px; }
 .contactblok .waardetabel { width: 100%; }
 .contactblok .soep { margin-top: 4px; }
+
+/* ── Medicatie wijzigen ───────────────────────────────────────────────────── */
+
+/*
+ * Een medicatieregel is een knop en dat moet je zien vóór je erop klikt: hij licht op bij
+ * hover en draagt rechts het schakelaartje. Een lijst die er statisch uitziet maar wel
+ * klikbaar is, wordt niet aangeklikt.
+ */
+.medicatieregel {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 9px;
+  align-items: center; width: 100%; text-align: left;
+  border: 0; border-bottom: 1px solid var(--line-zacht); background: none;
+  padding: 8px 6px; margin: 0 -6px; border-radius: var(--rond-klein);
+  color: var(--ink-3);
+}
+.medicatieregel:last-of-type { border-bottom: 0; }
+.medicatieregel:hover { background: var(--merk-zacht); color: var(--merk); }
+.medicatieregel .sleutel { font-size: 13px; font-weight: 550; color: var(--ink); }
+.medicatieregel .waarde { font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
+
+/* Een middel in het paneel: dezelfde regel, maar met ruimte voor herkomst en bewaking. */
+.middelregel {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px;
+  align-items: start; width: 100%; text-align: left;
+  border: 1px solid var(--line); border-radius: var(--rond-klein);
+  background: var(--vlak); padding: 10px 12px; margin-bottom: 7px; color: var(--ink-3);
+}
+.middelregel:hover { border-color: var(--merk-lijn); background: #fbfdfd; }
+.middelregel .ikoon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: var(--rond-klein);
+  background: var(--bg); color: var(--ink-3); flex: none;
+}
+.middelregel .tekst { display: grid; gap: 3px; min-width: 0; }
+.middelregel .tekst strong { font-size: 13px; color: var(--ink); }
+/* Een waarschuwing is een zin, geen label: hij mag afbreken in plaats van het paneel uit
+   te lopen. Daarom hier wél witruimte-afbreking, anders dan bij een gewoon merkje. */
+.middelregel .merkje {
+  justify-self: start; white-space: normal; line-height: 1.4; padding: 3px 9px;
+}
+
+.middelkop {
+  border: 1px solid var(--merk-lijn); border-radius: var(--rond-klein);
+  background: var(--merk-zacht); padding: 10px 12px; margin-bottom: 12px;
+}
+.middelkop strong { font-size: 13.5px; color: var(--merk-diep); }
+
+/* Wat er gaat gebeuren, vóór de knop. Niet als waarschuwing maar als samenvatting. */
+.watergebeurt {
+  border-left: 3px solid var(--merk); background: var(--vlak);
+  border-radius: var(--rond-klein); padding: 9px 12px; margin-bottom: 10px;
+}
+.watergebeurt .uitleg { margin: 4px 0 0; }

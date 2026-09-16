@@ -95,6 +95,39 @@ en je wilt in één overzicht zien wat er uitgaat en wat er langs de huisarts mo
 > G-Standaard gecontroleerd, en de lijst is bewust klein. Een echt formularium komt uit
 > de G-Standaard en de NHG-Tabellen, onder licentie.
 
+## 2c. Medicatie wijzigen
+
+Zie [ADR-0016](adr/ADR-0016-medicatiewijziging-is-een-handeling.md).
+
+Een middel aanpassen is voor de zorgverlener één besluit en voor het dossier vier mutaties:
+het lopende middel stopt, het nieuwe start, de openstaande order wordt ingetrokken en er
+gaat een recept uit. Die vier over vier schermen verdelen is hoe het misgaat — een verhoogde
+dosering zonder recept, of een recept zonder dat het oude gestopt is.
+
+Daarom schuift vanuit het medicatieblok in het dossier een paneel open, hetzelfde patroon als
+het orderpaneel. Je kiest wat je met dit middel doet:
+
+| Keuze | Wat er gebeurt |
+|---|---|
+| dosering aanpassen | zelfde ATC, nieuwe dosering; oude regel stopt vandaag, nieuwe start vandaag |
+| vervangen | zoek een ander middel in het formularium; oude stopt, nieuwe start |
+| stoppen | het middel stopt en er gaat géén recept uit |
+| nieuw middel starten | zonder dat er iets stopt |
+
+**Vóór de bevestiging staat er in zinnen wat er gaat gebeuren**, opgesteld door dezelfde
+functie in de domeinlaag die de wijziging daarna uitvoert. Een reden is verplicht, met de
+veelvoorkomende redenen als knop ernaast — een verplicht vrij tekstveld levert "ivm" op.
+
+**Waar het recept heen gaat, is een keuze per recept.** Elektronisch naar een apotheek,
+printen aan de balie, of meegeven zonder apotheek. De vaste apotheek van de patiënt staat
+voorgeselecteerd en is per keer te wijzigen: wie morgen bij zijn dochter logeert, wil het
+daar ophalen. Een apotheek die geen elektronische recepten ontvangt, krijgt er ook geen —
+de keuze wordt geweigerd met de reden erbij in plaats van stilletjes omgezet naar printen.
+
+Het rechtenmodel verandert niet: de POH wijzigt het dossier en het recept gaat met de
+onderbouwing naar de autorisatiestroom van de huisarts (§4). Dat staat op de knop en niet in
+een foutmelding achteraf.
+
 ## 3. De contra-indicatiecheck
 
 `controleer(regel, dossier)` geeft `Waarschuwing[]` terug, elk met een niveau:
@@ -139,4 +172,9 @@ nemen — zie `docs/05-werkplekken.md` §3.
   overgevoeligheden, want die staan nog niet in het dossiermodel. Dat vraagt een
   G-Standaard-licentie en hoort in dezelfde MDR-beoordeling als de rest.
 - Geen herhaalservice-logica. De 84 herhaalrecepten in de werkvoorraad zijn gegenereerd,
-  niet geordend via dit pad.
+  niet geordend via dit pad. Een medicatiewijziging trekt de lopende order in, maar er is
+  geen herhaalservice die meeloopt.
+- Geen afbouwschema's. Een taper is nu een reeks losse wijzigingen in plaats van één
+  schema met data erin.
+- Geen receptverkeer. "Elektronisch naar de apotheek" zet de bestemming op de order; er is
+  geen NHG-Tabel 25, geen EDIFACT en geen LSP-adressering achter.
