@@ -75,20 +75,41 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -.01em; }
 
 /* ── Raamwerk ─────────────────────────────────────────────────────────────── */
 
-.app { display: grid; grid-template-columns: 224px minmax(0, 1fr); min-height: 100%; }
-@media (max-width: 1000px) { .app { grid-template-columns: 1fr; } }
+/*
+ * De applicatieschil.
+ *
+ * Twee kolommen die allebei het volle scherm vullen en niet meebewegen: de zijbalk staat
+ * stil, de kopbalk staat stil, en alleen het werkblad scrolt. Dat klinkt vanzelfsprekend
+ * en is het niet — met `position: sticky` scrolt de zijbalk in de praktijk toch mee zodra
+ * de pagina zelf de scroller is. Daarom scrolt de pagina hier niet: de schil is precies
+ * één schermhoogte en het scrollen gebeurt binnenin.
+ */
+.app {
+  display: grid; grid-template-columns: 224px minmax(0, 1fr);
+  height: 100vh; height: 100dvh; overflow: hidden;
+}
+.app > .werkkolom {
+  display: grid; grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0; overflow: hidden;
+}
+.werkblad { overflow-y: auto; overscroll-behavior: contain; }
+
+@media (max-width: 1000px) {
+  .app { grid-template-columns: 1fr; height: auto; overflow: visible; }
+  .app > .werkkolom { height: auto; overflow: visible; }
+  .werkblad { overflow: visible; }
+}
 
 .zijbalk {
   background: #1b2026;
   color: #c3ccd1;
   padding: 14px 10px;
   display: flex; flex-direction: column; gap: 4px;
-  /* Blijft staan als het werkblad scrolt. Een menu dat wegscrolt dwingt je terug naar
-     boven voordat je ergens anders heen kunt, en dat is bij elk scherm een keer te veel. */
-  position: sticky; top: 0; align-self: start;
-  height: 100vh; overflow-y: auto; overscroll-behavior: contain;
+  /* Staat stil. Een menu dat wegscrolt dwingt je terug naar boven voordat je ergens
+     anders heen kunt, en dat is bij elk scherm een keer te veel. */
+  height: 100%; overflow-y: auto; overscroll-behavior: contain;
 }
-@media (max-width: 1000px) { .zijbalk { position: static; height: auto; } }
+@media (max-width: 1000px) { .zijbalk { height: auto; } }
 .zijbalk .merk {
   display: flex; align-items: center; gap: 9px;
   padding: 4px 8px 14px; color: #fff; font-weight: 650; font-size: 14px;
@@ -209,6 +230,11 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -.01em; }
 .knop[data-toon="stil"] { border-color: transparent; background: none; color: var(--ink-2); padding: 4px 6px; }
 .knop[data-toon="stil"]:hover { background: var(--bg); color: var(--ink); }
 .knop[data-toon="gevaar"] { color: var(--urgent); }
+/* Er is iets te halen achter deze knop. Kleur plús het getal in het label, nooit kleur alleen. */
+.knop[data-toon="aandacht"] {
+  background: var(--aandacht-zacht); border-color: #e7c68a; color: var(--aandacht); font-weight: 650;
+}
+.knop[data-toon="aandacht"]:hover { background: #fdf3da; border-color: #d9b271; }
 .knop-rij { display: flex; gap: 7px; flex-wrap: wrap; }
 
 .segment { display: inline-flex; background: var(--bg); border-radius: var(--rond-klein); padding: 2px; gap: 2px; }
@@ -478,7 +504,7 @@ label.veld { display: block; font-size: 12px; color: var(--ink-2); font-weight: 
 .kopbalk {
   display: flex; align-items: center; gap: 14px;
   padding: 10px 24px; background: var(--vlak); border-bottom: 1px solid var(--line);
-  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
+  z-index: 20;
 }
 @media (max-width: 720px) { .kopbalk { padding: 10px 14px; } }
 .zoekdoos { position: relative; flex: 1; max-width: 460px; }
@@ -572,7 +598,7 @@ label.veld { display: block; font-size: 12px; color: var(--ink-2); font-weight: 
 .selectiebalk {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   background: var(--merk-zacht); border: 1px solid var(--merk-lijn); border-radius: var(--rond);
-  padding: 11px 15px; margin-bottom: 12px; position: sticky; top: 64px; z-index: 10;
+  padding: 11px 15px; margin-bottom: 12px; position: sticky; top: 0; z-index: 10;
 }
 .selectiebalk strong { color: var(--merk-diep); }
 
@@ -761,6 +787,9 @@ body {
 
 .orderknoppen { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
 .orderknoppen .knop { justify-content: center; }
+/* Een knop met een langer label krijgt de hele breedte in plaats van over twee regels
+   te breken; een pictogram naast afgebroken tekst leest als een vlekje. */
+.orderknoppen .knop[data-breed="true"] { grid-column: 1 / -1; }
 
 .orderregel-vast {
   display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px;
@@ -970,7 +999,7 @@ body {
 
 /* ── Planbord ─────────────────────────────────────────────────────────────── */
 
-.planbord { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 14px; align-items: start; }
+.planbord { display: grid; grid-template-columns: 284px minmax(0, 1fr); gap: 14px; align-items: start; }
 @media (max-width: 1100px) { .planbord { grid-template-columns: 1fr; } }
 .planzijde { display: block; }
 
@@ -985,7 +1014,21 @@ body {
 .planverzoek .kop { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 3px; }
 
 .dagkolommen { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-@media (max-width: 1250px) { .dagkolommen { grid-template-columns: 1fr; } }
+/* Eigen agenda vooraan en breder; de twee andere zijn context. Voor de assistent, die voor
+   de hele praktijk plant, blijven de drie kolommen even breed — zij heeft geen 'eigen' dag. */
+.dagkolommen[data-nadruk="true"] { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr); }
+/* De twee agenda's van je collega's zijn context: smaller, dus compacter gezet. Dezelfde
+   regelhoogte in een halve kolom breekt in vier regels en wordt onleesbaar. */
+.dagkolommen[data-nadruk="true"] .dagkolom:not([data-eigen="true"]) .dagregel,
+.dagkolommen[data-nadruk="true"] .dagkolom:not([data-eigen="true"]) .vrijeplek {
+  grid-template-columns: 42px minmax(0, 1fr); padding-left: 9px; padding-right: 9px; gap: 7px;
+}
+.dagkolommen[data-nadruk="true"] .dagkolom:not([data-eigen="true"]) .dagregel > :nth-child(3) {
+  grid-column: 2; justify-self: start; margin-top: 3px;
+}
+@media (max-width: 1250px) {
+  .dagkolommen, .dagkolommen[data-nadruk="true"] { grid-template-columns: 1fr; }
+}
 .dagkolom {
   background: var(--vlak); border: 1px solid var(--line); border-radius: var(--rond);
   box-shadow: var(--schaduw); overflow: hidden;
@@ -995,6 +1038,13 @@ body {
   border-bottom: 1px solid var(--line-zacht);
   background: linear-gradient(180deg, rgba(15, 95, 110, .06), rgba(15, 95, 110, 0));
 }
+.dagkolom > header .merkje { align-self: flex-start; margin: 2px 0; }
+.dagkolom[data-eigen="true"] { border-color: var(--merk-lijn); box-shadow: var(--schaduw-op); }
+.dagkolom[data-eigen="true"] > header {
+  background: linear-gradient(180deg, rgba(15, 95, 110, .14), rgba(15, 95, 110, .02));
+}
+.dagkolom[data-eigen="true"] > header strong { font-size: 14.5px; color: var(--merk-diep); }
+
 .dagregels { max-height: 72vh; overflow-y: auto; }
 .dagregel {
   display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; gap: 9px;
@@ -1156,3 +1206,149 @@ body {
 }
 .uitslagblok .kop { display: flex; gap: 9px; align-items: baseline; flex-wrap: wrap; margin-bottom: 7px; }
 .uitslagblok .waardetabel td { padding: 5px 0; }
+
+/* ── Samenvatting van het dossier ─────────────────────────────────────────── */
+
+/*
+ * Een samenvatting is geen lijst met feiten maar een verhaal in stukjes. Elk stukje
+ * draagt zijn eigen herkomst, want een zorgverlener moet kunnen zien waar een zin
+ * vandaan komt voordat hij erop vaart (ADR-0005).
+ */
+.alinea { padding: 11px 0; border-bottom: 1px solid var(--line-zacht); }
+.alinea:last-of-type { border-bottom: 0; padding-bottom: 2px; }
+.alinea .kop { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.alinea .kop h3 { font-size: 12.5px; font-weight: 650; color: var(--ink-2); letter-spacing: .01em; }
+.alinea .ikoon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: var(--rond-klein); flex: none;
+  background: var(--bg); color: var(--ink-3);
+}
+.alinea p { font-size: 13.5px; line-height: 1.55; margin: 0 0 4px; }
+.alinea .bron { font-size: 11px; color: var(--ink-3); }
+.alinea[data-nadruk="aandacht"] .ikoon { background: var(--aandacht-zacht); color: var(--aandacht); }
+.alinea[data-nadruk="urgent"] .ikoon  { background: var(--urgent-zacht); color: var(--urgent); }
+.alinea[data-nadruk="urgent"] p { font-weight: 550; }
+
+/* Kengetallen binnen een kaart dragen hun eigen rand niet: die staat er al omheen. */
+.kaart .kengetallen { grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 9px; }
+.kaart .kengetal { box-shadow: none; padding: 11px 12px; background: var(--bg); }
+.kaart .kengetal .getal { font-size: 22px; }
+
+/* ── Media ────────────────────────────────────────────────────────────────── */
+
+.mediaraster { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 11px; align-items: start; }
+.mediakaart {
+  background: var(--vlak); border: 1px solid var(--line); border-radius: var(--rond);
+  box-shadow: var(--schaduw); overflow: hidden;
+}
+.mediakaart[data-open="true"] { border-color: var(--merk-lijn); box-shadow: var(--schaduw-op); grid-column: 1 / -1; }
+.mediakaart .voorkant {
+  display: flex; gap: 11px; align-items: flex-start; width: 100%;
+  border: 0; background: none; padding: 12px 13px; text-align: left;
+}
+.mediakaart .voorkant:hover { background: var(--bg); }
+.miniatuur {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 46px; height: 58px; border-radius: var(--rond-klein);
+  background: var(--bg); border: 1px solid var(--line); color: var(--ink-3);
+}
+.miniatuur[data-soort="foto"]      { background: var(--info-zacht); border-color: #c7d7fe; color: var(--info); }
+.miniatuur[data-soort="beeld"]     { background: var(--merk-zacht); border-color: var(--merk-lijn); color: var(--merk); }
+.miniatuur[data-soort="meetstrook"]{ background: var(--ok-zacht); border-color: #b8e6cd; color: var(--ok); }
+.mediakaart .tekst { display: block; min-width: 0; }
+.mediakaart .tekst strong { display: block; font-size: 13px; margin-bottom: 4px; }
+.merkjes { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+.mediakaart .achterkant { border-top: 1px solid var(--line-zacht); padding: 12px 13px; }
+.mediakaart .achterkant .reden { font-size: 13px; line-height: 1.5; margin: 0 0 10px; }
+.voorbeeld {
+  display: flex; gap: 11px; align-items: center;
+  border: 1px dashed var(--line); border-radius: var(--rond-klein);
+  background: var(--bg); color: var(--ink-3); padding: 12px 13px; margin-bottom: 10px;
+}
+
+/* ── Groepsconsulten ──────────────────────────────────────────────────────── */
+
+.deelnemerregel {
+  display: grid; grid-template-columns: minmax(120px, 1fr) minmax(0, 1.6fr) 148px auto auto;
+  gap: 9px; align-items: center;
+  padding: 8px 0; border-bottom: 1px solid var(--line-zacht);
+}
+.deelnemerregel:last-of-type { border-bottom: 0; }
+.deelnemerregel .mini { line-height: 1.4; }
+.statuskeuze { padding: 5px 8px; font-size: 12px; }
+@media (max-width: 860px) {
+  .deelnemerregel { grid-template-columns: minmax(0, 1fr) auto; }
+  .deelnemerregel .mini { grid-column: 1 / -1; }
+}
+
+/* ── Rapporten ────────────────────────────────────────────────────────────── */
+
+.rapportkop { display: flex; align-items: center; gap: 13px; }
+.rapportkop .cijfer {
+  font-size: 34px; font-weight: 700; letter-spacing: -.02em; line-height: 1;
+  color: var(--merk-diep); font-variant-numeric: tabular-nums;
+}
+
+/* ── Monitoren ────────────────────────────────────────────────────────────── */
+
+.monitorregel {
+  display: grid; grid-template-columns: 200px minmax(0, 1fr) auto;
+  gap: 14px; align-items: start;
+}
+.monitorregel .doen { display: flex; gap: 7px; align-items: flex-start; }
+@media (max-width: 1100px) {
+  .monitorregel { grid-template-columns: 190px minmax(0, 1fr); }
+  .monitorregel .doen { grid-column: 2; justify-content: flex-start; }
+}
+
+/* ── Berichten: twee bakjes ───────────────────────────────────────────────── */
+
+.bakken { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 11px; margin-bottom: 14px; }
+.bakken button {
+  display: flex; align-items: center; gap: 11px; text-align: left;
+  background: var(--vlak); border: 1px solid var(--line); border-radius: var(--rond);
+  padding: 12px 14px; box-shadow: var(--schaduw);
+  transition: border-color .12s, background .12s;
+}
+.bakken button:hover { border-color: #cbd5e1; }
+.bakken .ikoon {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 36px; height: 36px; border-radius: var(--rond-klein);
+  background: var(--bg); color: var(--ink-3);
+}
+.bakken .tekst { display: block; min-width: 0; }
+.bakken .tekst strong { display: block; font-size: 14px; }
+.bakken .tekst .mini { display: block; }
+.bakken .telling {
+  margin-left: auto; display: flex; align-items: center; gap: 7px;
+  font-size: 19px; font-weight: 680; color: var(--ink-3); font-variant-numeric: tabular-nums;
+}
+.bakken button[data-actief="true"] {
+  border-color: var(--merk); background: var(--merk-zacht); box-shadow: var(--schaduw-op);
+}
+.bakken button[data-actief="true"] .ikoon { background: var(--merk); color: #fff; }
+.bakken button[data-actief="true"] .telling { color: var(--merk-diep); }
+
+/* ── Het hele consult ─────────────────────────────────────────────────────── */
+
+.journaalregel .contactkop {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 6px;
+}
+/* De knop naar het hele consult staat rechts, op een vaste plek in elke regel. */
+.journaalregel .contactkop > .knop { margin-left: auto; }
+
+.journaalregel.eigen { background: linear-gradient(90deg, rgba(161, 98, 7, .05), transparent 40%); }
+.journaalregel.eigen .wanneer { color: var(--aandacht); }
+
+.contactblok {
+  padding: 10px 0; border-bottom: 1px solid var(--line);
+}
+.contactblok:last-of-type { border-bottom: 0; }
+.contactblok h4 {
+  display: flex; align-items: center; gap: 6px; margin: 0 0 6px;
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--ink-3); font-weight: 650;
+}
+.contactblok .reden { font-size: 13px; line-height: 1.5; margin: 0 0 4px; }
+.contactblok .waardetabel { width: 100%; }
+.contactblok .soep { margin-top: 4px; }

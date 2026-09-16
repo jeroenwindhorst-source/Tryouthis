@@ -20,8 +20,10 @@ const URGENTIE_TOON: Record<string, string> = {
  * moet het heen. Telefonisch en digitaal lopen door één triagemodel — in de procesplaat
  * komen die twee routes samen bij dezelfde gestructureerde zorgvraag (docs/12 §2.2).
  */
-export function AssistentWerkplek({ scherm, openPatient }: {
+export function AssistentWerkplek({ scherm, gaNaar, openPatient }: {
   scherm: 'overzicht' | 'triage';
+  /** Ook hier zijn de tegels knoppen: elke tegel brengt je naar het scherm waar dat werk staat. */
+  gaNaar: (scherm: string) => void;
   openPatient: (id: string) => void;
 }) {
   const { data, fout, bezig, setData } = useData(() => api.assistent());
@@ -56,7 +58,8 @@ export function AssistentWerkplek({ scherm, openPatient }: {
         </div>
 
         <div className="stappen">
-          <div className="stap">
+          <button className="stap" onClick={() => gaNaar('as-triage')}>
+            <span className="pijl"><Icoon naam="pijl" grootte={14} /></span>
             <div className="kop">
               <span className="ikoon"><Icoon naam="gesprek" /></span>
               <h3>Binnengekomen</h3>
@@ -68,8 +71,9 @@ export function AssistentWerkplek({ scherm, openPatient }: {
             <div className="wat">
               {data.stroom.viaPortaal} via het portaal (al getrieerd), {data.stroom.viaTelefoon} telefonisch of aan de balie.
             </div>
-          </div>
-          <div className="stap">
+          </button>
+          <button className="stap" onClick={() => gaNaar('as-triage')}>
+            <span className="pijl"><Icoon naam="pijl" grootte={14} /></span>
             <div className="kop">
               <span className="ikoon"><Icoon naam="bliksem" /></span>
               <h3>Zelf afgevangen</h3>
@@ -81,8 +85,9 @@ export function AssistentWerkplek({ scherm, openPatient }: {
             <div className="wat">
               Digitale triage gaf een advies waarmee de patiënt verder kon. Geen afspraak nodig.
             </div>
-          </div>
-          <div className="stap">
+          </button>
+          <button className="stap" onClick={() => gaNaar('plannen')}>
+            <span className="pijl"><Icoon naam="pijl" grootte={14} /></span>
             <div className="kop">
               <span className="ikoon"><Icoon naam="agenda" /></span>
               <h3>Mijn agenda</h3>
@@ -92,8 +97,9 @@ export function AssistentWerkplek({ scherm, openPatient }: {
               <span className="naast">verrichtingen</span>
             </div>
             <div className="wat">Plus telefonisch spreekuur en het routeren van post en uitslagen.</div>
-          </div>
-          <div className="stap">
+          </button>
+          <button className="stap" onClick={() => gaNaar('overleg')}>
+            <span className="pijl"><Icoon naam="pijl" grootte={14} /></span>
             <div className="kop">
               <span className="ikoon"><Icoon naam="klembord" /></span>
               <h3>Naar de huisarts</h3>
@@ -103,7 +109,7 @@ export function AssistentWerkplek({ scherm, openPatient }: {
               <span className="naast">wachten op akkoord</span>
             </div>
             <div className="wat">Recepten, uitslagen en post die jij hebt klaargezet.</div>
-          </div>
+          </button>
         </div>
 
         <div className="raster2">

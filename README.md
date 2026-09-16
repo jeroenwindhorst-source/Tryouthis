@@ -189,7 +189,8 @@ HTTP en geen opslag; `apps/*` bevatten geen klinische regels.
 | [17 — Toegang en samenwerking](docs/17-toegang-rollen-en-samenwerking.md) | Inloggen, vier rollen, rechten, berichten van collega's én patiënten |
 | [18 — Plannen en agenda](docs/18-plannen-en-agenda.md) | Planbord, vrije plekken, vier planroutes, afspraken als order |
 | [19 — Contactvormen en declaratie](docs/19-contactvormen-en-declaratie.md) | Contactvorm bij het contact, verrichtingen met uitslag, acute instroom |
-| [ADR's](docs/adr/) | Dertien vastgelegde ontwerpbesluiten met alternatieven |
+| [20 — Dossierdiepte en rapportage](docs/20-dossierdiepte-en-rapportage.md) | Overzichtstab, samenvatting, het hele contact, media, groepsconsulten, rapporten |
+| [ADR's](docs/adr/) | Vijftien vastgelegde ontwerpbesluiten met alternatieven |
 
 ---
 
@@ -245,6 +246,23 @@ werkt wat er niet is ([`docs/05` §4e](docs/05-werkplekken.md)).
 **Behandelgrenzen.** De beleidsafspraken zijn synthetisch gegenereerd voor ongeveer een
 kwart van de populatie. Ze tonen de vorm — wie, wanneer, met wie besproken — en zijn
 nadrukkelijk geen echte wilsverklaringen.
+
+**Dossiersamenvatting.** De samenvatting op het overzichtstabblad is regelgebaseerd en
+nadrukkelijk niet gegenereerd: elke alinea komt uit gestructureerde gegevens en draagt zijn
+eigen bron. De regels zijn plausibel maar niet met zorgverleners getoetst — welke zeven
+vragen een waarnemer werkelijk als eerste stelt, is een vraag voor de praktijk
+([ADR-0014](docs/adr/ADR-0014-samenvatting-is-regelgebaseerd.md)).
+
+**Media.** De documenten en foto's zijn metadata zonder bestanden: er is geen
+documentvoorziening, geen virusscan, geen versiebeheer en geen mapping naar
+`DocumentReference`. De koppeling naar het contact of het externe bericht is echt; de inhoud
+van een pdf openen kan niet ([`docs/20` §4](docs/20-dossierdiepte-en-rapportage.md)).
+
+**Rapportage-export.** De BI-export levert alleen geaggregeerde regels met leeftijdsklassen
+en groepen van minimaal vijf. Dat is een ontwerpkeuze en geen volledige
+anonimiseringsgarantie: bij een kleine praktijk of een zeldzame combinatie hoort vóór gebruik
+een herleidbaarheidstoets te worden gedaan
+([ADR-0015](docs/adr/ADR-0015-rapportage-op-dezelfde-gegevens.md)).
 
 **Externe bronnen.** De BgZ- en e-Overdracht-documenten in het journaal zijn synthetisch
 en volgen de sectiestructuur van die standaarden op hoofdlijnen. Er is geen LSP- of

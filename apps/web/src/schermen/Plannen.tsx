@@ -63,13 +63,21 @@ export function Plannen({ gebruiker, openPatient }: {
     } finally { setBezigMet(undefined); }
   };
 
+  // De assistent plant voor iedereen; voor haar is geen enkele agenda 'de eigen agenda'.
+  const eigenRol = gebruiker.rol === 'assistent' ? undefined : gebruiker.rol;
+  const kolommen = eigenRol
+    ? [...data.kolommen].sort((a, b) => Number(b.rol === eigenRol) - Number(a.rol === eigenRol))
+    : data.kolommen;
+
   return (
     <>
       <div className="paginakop">
         <div>
           <h1>Plannen</h1>
           <div className="onder">
-            {data.datum} · drie agenda's naast elkaar, met de vrije plekken ertussen
+            {data.datum} · {eigenRol
+              ? 'jouw agenda vooraan, die van je collega’s ernaast'
+              : 'drie agenda’s naast elkaar'}, met de vrije plekken ertussen
           </div>
         </div>
         <div className="acties">
@@ -152,9 +160,18 @@ export function Plannen({ gebruiker, openPatient }: {
           <Zoekenplannen gebruiker={gebruiker} opKies={setGekozen} />
         </div>
 
-        <div className="dagkolommen">
-          {data.kolommen.map((kolom) => (
-            <Dagkolom key={kolom.rol} kolom={kolom} gekozen={gekozen}
+        {/*
+          Wiens agenda dit is, bepaalt de verdeling.
+
+          Een assistent plant voor de hele praktijk: voor haar zijn de drie agenda's
+          gelijkwaardig en staan ze even breed. Een POH of huisarts kijkt hier vooral
+          naar zijn eigen dag en gebruikt de andere twee als context ("kan dit naar de
+          assistent?"). Dan hoort de eigen agenda vooraan en breder — anders zoek je elke
+          keer opnieuw welke van de drie kolommen van jou is.
+        */}
+        <div className="dagkolommen" data-nadruk={Boolean(eigenRol)}>
+          {kolommen.map((kolom) => (
+            <Dagkolom key={kolom.rol} kolom={kolom} gekozen={gekozen} eigen={kolom.rol === eigenRol}
               bezigMet={bezigMet} opPlan={plan} openPatient={openPatient} />
           ))}
         </div>
@@ -163,9 +180,11 @@ export function Plannen({ gebruiker, openPatient }: {
   );
 }
 
-function Dagkolom({ kolom, gekozen, bezigMet, opPlan, openPatient }: {
+function Dagkolom({ kolom, gekozen, eigen, bezigMet, opPlan, openPatient }: {
   kolom: Praktijkplanbord['kolommen'][number];
   gekozen?: Sleep;
+  /** Is dit de agenda van de ingelogde gebruiker? Die krijgt de ruimte. */
+  eigen?: boolean;
   bezigMet?: string;
   opPlan: (slot: Slot) => void;
   openPatient: (id: string) => void;
@@ -184,9 +203,10 @@ function Dagkolom({ kolom, gekozen, bezigMet, opPlan, openPatient }: {
       : true);
 
   return (
-    <div className="dagkolom">
+    <div className="dagkolom" data-eigen={eigen}>
       <header>
         <strong>{ROL_LABEL[kolom.rol] ?? kolom.rol}</strong>
+        {eigen && <span className="merkje" data-toon="informatief">jouw agenda</span>}
         <span className="mini">
           {kolom.agenda.filter((a) => a.patientId).length} afspraken · {kolom.slots.length} vrij
         </span>

@@ -12,8 +12,10 @@ import { Agenda, Fout, Kaart, Laden, Leeg } from '../onderdelen';
  * tot iemand het 's avonds wegklikt. Hier is dezelfde stapel gesorteerd op de enige vraag
  * die telt: welke hiervan vragen écht jouw oordeel?
  */
-export function HuisartsWerkplek({ scherm, openPatient }: {
+export function HuisartsWerkplek({ scherm, gaNaar, openPatient }: {
   scherm: 'overzicht' | 'autoriseren' | 'team';
+  /** De tegels op de dagstart zijn knoppen, net als bij de POH: ze brengen je erheen. */
+  gaNaar: (scherm: string) => void;
   openPatient: (id: string) => void;
 }) {
   const { data, fout, bezig, setData } = useData(() => api.huisarts());
@@ -51,7 +53,8 @@ export function HuisartsWerkplek({ scherm, openPatient }: {
         </div>
 
         <div className="stappen">
-          <div className="stap">
+          <button className="stap" onClick={() => gaNaar('spreekuur')}>
+            <span className="pijl"><Icoon naam="pijl" grootte={14} /></span>
             <div className="kop">
               <span className="ikoon"><Icoon naam="agenda" /></span>
               <h3>Spreekuur</h3>
@@ -61,8 +64,10 @@ export function HuisartsWerkplek({ scherm, openPatient }: {
               <span className="naast">consulten vandaag</span>
             </div>
             <div className="wat">Plus visites en overleg met POH en assistent.</div>
-          </div>
-          <div className="stap" data-aandacht={data.autorisatie.vraagtOordeel > 0}>
+          </button>
+          <button className="stap" data-aandacht={data.autorisatie.vraagtOordeel > 0}
+            onClick={() => gaNaar('ha-autoriseren')}>
+            <span className="pijl"><Icoon naam="pijl" grootte={14} /></span>
             <div className="kop">
               <span className="ikoon"><Icoon naam="klembord" /></span>
               <h3>Autoriseren</h3>
@@ -75,8 +80,9 @@ export function HuisartsWerkplek({ scherm, openPatient }: {
               Van {data.autorisatie.open} openstaande verzoeken is {data.autorisatie.routine} routine
               en veilig in bulk af te handelen.
             </div>
-          </div>
-          <div className="stap">
+          </button>
+          <button className="stap" onClick={() => gaNaar('ha-team')}>
+            <span className="pijl"><Icoon naam="pijl" grootte={14} /></span>
             <div className="kop">
               <span className="ikoon"><Icoon naam="persoon" /></span>
               <h3>Het team</h3>
@@ -86,7 +92,7 @@ export function HuisartsWerkplek({ scherm, openPatient }: {
               <span className="naast">registraties vandaag</span>
             </div>
             <div className="wat">Wat POH, assistent en ingebedde apps hebben vastgelegd, met herkomst.</div>
-          </div>
+          </button>
         </div>
 
         <div className="raster2">

@@ -101,7 +101,10 @@ export function Orderpaneel({ patientId, patientNaam, gebruiker, startSoort, opS
     verrichtingCode: t.verrichtingCode,
     bijRol: t.bijRol,
     duurMinuten: t.duurMinuten,
-    planroute: t.soort === 'afspraak' ? (planroute ?? 'assistent') : undefined,
+    groepModule: t.groepModule,
+    // Een groepsconsult kent geen planroute: er valt niets in te plannen, deze mens
+    // wordt op een blok gezet dat er al staat.
+    planroute: t.soort === 'afspraak' && !t.groepModule ? (planroute ?? 'assistent') : undefined,
     vereistRecht: t.vereistRecht,
     varianten: t.varianten,
   });
@@ -354,7 +357,16 @@ function Trefferregel({ treffer, mag, opKies }: {
             </div>
           )}
 
-          {treffer.soort === 'afspraak' && (
+          {treffer.groepModule && (
+            <div className="notitie" style={{ marginTop: 11 }}>
+              <strong>Dit is een groepsblok.</strong> Deze patiënt wordt uitgenodigd voor het
+              eerstvolgende groepsconsult met dit thema bij de {treffer.bijRol}. Staat er nog
+              geen blok gepland, dan blijft de order wachten tot er één is — hij wordt niet
+              stilletjes een individueel consult.
+            </div>
+          )}
+
+          {treffer.soort === 'afspraak' && !treffer.groepModule && (
             <div style={{ marginTop: 11 }}>
               <label className="veld">Wie plant deze afspraak in?</label>
               <div className="routekeuze">

@@ -7,14 +7,16 @@ import {
 import {
   agenda, assistentOverzicht, beheer, berichten, consultvoorbereiding, controleerTweefactor,
   dagafsluiting, dagstart, dossierHistorie, gebruikersoverzicht, huisartsOverzicht, instroom,
-  acuteInstroom, beantwoordPatientbericht, contactvormen, handelAcuutAf,
+  acuteInstroom, beantwoordPatientbericht, contactdossier, contactvormen, groepsconsulten, handelAcuutAf,
+  maakGroepsconsult, media, rapport, rapportExport, samenvatting,
   InMemoryRepository, intakes, legVerrichtingVast, meetreeksen, meldAan, monitoringCohort,
   orderOverzicht, orderVoorstellen, overleg, pakAcuutOp, patientOverzicht, plaatsLosseOrders,
   planbord, planbordPraktijk, praktijkrapportage, praktijkSamenvatting, registreerConsult,
   terminologie, verrichtingen, verwerkVragenlijst, vraagAfspraakAan, zetOpBespreeklijst,
   zoekOrders, zoekPatient,
   type Afspraakstatus, type Beoordelaar, type ConsultRegistratie, type Contactvorm,
-  type NieuweOrder, type NieuwAfspraakverzoek, type NieuwBespreekpunt,
+  type Criteria, type Groepsdeelnemer, type Mediasoort, type Mediabron,
+  type NieuweOrder, type NieuwAfspraakverzoek, type NieuwBespreekpunt, type NieuwGroepsconsult,
 } from '@zpe/praktijk';
 
 const repo = new InMemoryRepository();
@@ -148,6 +150,14 @@ app.post<{ Params: { id: string; documentId: string } }>(
   },
 );
 
+app.get<{ Params: { id: string; encounterId: string } }>(
+  '/api/patient/:id/contact/:encounterId',
+  async (req, reply) => {
+    const dossier = contactdossier(repo, req.params.id, req.params.encounterId);
+    return dossier ?? reply.code(404).send({ fout: 'contact niet gevonden' });
+  },
+);
+
 app.get<{ Params: { id: string } }>('/api/patient/:id/meetreeksen', async (req) =>
   meetreeksen(repo, req.params.id));
 
@@ -273,6 +283,72 @@ app.post<{ Body: {
     return uitkomst ?? reply.code(404).send({ fout: 'gesprek niet gevonden' });
   },
 );
+
+// ── Samenvatting, media, groepsconsulten en rapportages ─────────────────────
+
+app.get<{ Params: { id: string } }>('/api/patient/:id/samenvatting', async (req, reply) => {
+  const beeld = samenvatting(repo, req.params.id);
+  return beeld ?? reply.code(404).send({ fout: 'patiënt niet gevonden' });
+});
+
+app.get<{
+  Params: { id: string };
+  Querystring: { soort?: string; bron?: string; categorie?: string; q?: string; jaar?: string };
+}>('/api/patient/:id/media', async (req) => media(repo, req.params.id, {
+  soorten: req.query.soort ? (req.query.soort.split(',') as Mediasoort[]) : undefined,
+  bronnen: req.query.bron ? (req.query.bron.split(',') as Mediabron[]) : undefined,
+  categorie: req.query.categorie,
+  vraag: req.query.q,
+  jaar: req.query.jaar,
+}));
+
+app.post<{ Params: { id: string; mediaId: string } }>(
+  '/api/patient/:id/media/:mediaId/gelezen',
+  async (req) => {
+    repo.markeerMediaGelezen(req.params.id, req.params.mediaId);
+    return media(repo, req.params.id);
+  },
+);
+
+app.get('/api/groepsconsulten', async () => groepsconsulten(repo));
+
+app.post<{ Body: { gebruikerId: string; nieuw: NieuwGroepsconsult } }>(
+  '/api/groepsconsulten',
+  async (req, reply) => {
+    const beeld = maakGroepsconsult(repo, req.body.gebruikerId, req.body.nieuw);
+    return beeld ?? reply.code(400).send({ fout: 'kon het groepsconsult niet aanmaken' });
+  },
+);
+
+app.post<{ Params: { id: string }; Body: Omit<Groepsdeelnemer, 'toegevoegdOp'> }>(
+  '/api/groepsconsulten/:id/deelnemers',
+  async (req) => {
+    repo.voegDeelnemerToe(req.params.id, req.body);
+    return groepsconsulten(repo);
+  },
+);
+
+app.post<{ Params: { id: string; patientId: string } }>(
+  '/api/groepsconsulten/:id/deelnemers/:patientId/verwijderen',
+  async (req) => {
+    repo.verwijderDeelnemer(req.params.id, req.params.patientId);
+    return groepsconsulten(repo);
+  },
+);
+
+app.post<{ Params: { id: string; patientId: string }; Body: { status: string } }>(
+  '/api/groepsconsulten/:id/deelnemers/:patientId/status',
+  async (req) => {
+    repo.zetDeelnemerstatus(req.params.id, req.params.patientId,
+      req.body.status as Groepsdeelnemer['status']);
+    return groepsconsulten(repo);
+  },
+);
+
+app.post<{ Body: Criteria }>('/api/rapport', async (req) => rapport(repo, req.body ?? {}));
+
+app.post<{ Body: Criteria }>('/api/rapport/export', async (req) =>
+  rapportExport(repo, req.body ?? {}));
 
 // ── Overleg en bespreeklijst ────────────────────────────────────────────────
 

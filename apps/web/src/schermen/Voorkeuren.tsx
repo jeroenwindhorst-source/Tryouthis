@@ -6,10 +6,18 @@ export interface Persoonlijk {
   dichtheid: 'compact' | 'ruim';
   startscherm: string;
   toonUitleg: boolean;
+  /**
+   * Waarmee een dossier opent.
+   *
+   * Er zijn zorgverleners die eerst willen weten wie deze mens is, en zorgverleners die
+   * meteen willen registreren. Allebei hebben ze gelijk voor hun manier van werken, dus
+   * dit is een keuze en geen standaard die we voor iedereen maken.
+   */
+  dossierStart: 'overzicht' | 'consult';
 }
 
 export const STANDAARD_VOORKEUREN: Persoonlijk = {
-  dichtheid: 'compact', startscherm: 'dagstart', toonUitleg: true,
+  dichtheid: 'compact', startscherm: 'dagstart', toonUitleg: true, dossierStart: 'overzicht',
 };
 
 /**
@@ -41,6 +49,25 @@ export function Voorkeuren({ gebruiker, voorkeuren, opWijzig }: {
       </div>
 
       <div className="raster2">
+        <Kaart titel="Het dossier" icoon="klembord">
+          <label className="veld">Waarmee opent een dossier?</label>
+          <div className="segment" style={{ marginBottom: 9 }}>
+            <button data-actief={voorkeuren.dossierStart === 'overzicht'}
+              onClick={() => opWijzig({ ...voorkeuren, dossierStart: 'overzicht' })}>
+              <Icoon naam="boek" grootte={13} /> Overzicht
+            </button>
+            <button data-actief={voorkeuren.dossierStart === 'consult'}
+              onClick={() => opWijzig({ ...voorkeuren, dossierStart: 'consult' })}>
+              <Icoon naam="klembord" grootte={13} /> Consult
+            </button>
+          </div>
+          <p className="mini" style={{ marginTop: 0 }}>
+            {voorkeuren.dossierStart === 'overzicht'
+              ? 'Je begint met wie deze mens is en wat er speelt, en gaat daarna naar het consult.'
+              : 'Je begint direct in het registratiescherm. Het overzicht blijft één tab verderop.'}
+          </p>
+        </Kaart>
+
         <Kaart titel="Weergave" icoon="schakelaar">
           <label className="veld">Informatiedichtheid</label>
           <div className="segment" style={{ marginBottom: 16 }}>

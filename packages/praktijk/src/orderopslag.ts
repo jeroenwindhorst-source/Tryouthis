@@ -40,6 +40,10 @@ export interface Order {
   bijRol?: string;
   duurMinuten?: number;
   planroute?: string;
+  /** Bij een groepsconsult: het thema. De order zet de patiënt op een blok, niet op een slot. */
+  groepModule?: string;
+  /** Op welk groepsconsult deze order de patiënt heeft gezet. */
+  groepId?: string;
   /** Verwijzing naar het afspraakverzoek dat hieruit voortkwam. */
   verzoekId?: string;
   geplaatstOp: string;
@@ -68,6 +72,7 @@ export interface NieuweOrder {
   bijRol?: string;
   duurMinuten?: number;
   planroute?: string;
+  groepModule?: string;
   vereistRecht: string;
 }
 
@@ -101,6 +106,7 @@ export function maakOrder(
     bijRol: nieuw.bijRol,
     duurMinuten: nieuw.duurMinuten,
     planroute: nieuw.planroute,
+    groepModule: nieuw.groepModule,
     geplaatstOp: op.toISOString(),
     geplaatstDoor: { id: door.id, naam: door.naam, rol: door.rol },
     status: mag ? 'geplaatst' : 'ter-autorisatie',

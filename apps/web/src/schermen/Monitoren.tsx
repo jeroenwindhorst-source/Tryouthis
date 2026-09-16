@@ -57,8 +57,13 @@ export function Monitoren({ openPatient }: { openPatient: (id: string) => void }
               return (
                 <tr key={regel.patientId}>
                   <td>
-                    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                      <div style={{ minWidth: 190 }}>
+                    {/*
+                      Vaste kolommen in plaats van een flexrij die per patiënt anders uitvalt.
+                      Je leest deze lijst verticaal — naam onder naam, signaal onder signaal —
+                      en dat werkt alleen als elke regel op dezelfde plek begint.
+                    */}
+                    <div className="monitorregel">
+                      <div className="wie">
                         <button className="knop" data-toon="stil" onClick={() => openPatient(regel.patientId)}>
                           <strong>{regel.naam}</strong>
                         </button>
@@ -72,14 +77,25 @@ export function Monitoren({ openPatient }: { openPatient: (id: string) => void }
                         )}
                       </div>
 
-                      <div style={{ flex: 1, minWidth: 220 }}>
+                      <div className="waarom">
                         <Signalen signalen={regel.signalen} />
                       </div>
 
-                      <div style={{ display: 'flex', gap: 7, alignItems: 'flex-start' }}>
-                        <button className="knop" onClick={() => setOpen(uit ? undefined : regel.patientId)}>
+                      {/*
+                        De knop zegt met kleur wat er te halen valt: zijn er suggesties, dan
+                        vraagt hij erom; zijn er geen, dan blijft hij stil. Anders moet je hem
+                        openklappen om te ontdekken dat er niets staat.
+                      */}
+                      <div className="doen">
+                        <button className="knop"
+                          data-toon={uit ? undefined : regel.suggesties.length > 0 ? 'aandacht' : 'stil'}
+                          onClick={() => setOpen(uit ? undefined : regel.patientId)}>
                           <Icoon naam={uit ? 'kruis' : 'gesprek'} grootte={13} />
-                          {uit ? 'Sluiten' : `${regel.suggesties.length} suggestie${regel.suggesties.length === 1 ? '' : 's'}`}
+                          {uit
+                            ? 'Sluiten'
+                            : regel.suggesties.length === 0
+                              ? 'geen suggesties'
+                              : `${regel.suggesties.length} suggestie${regel.suggesties.length === 1 ? '' : 's'}`}
                         </button>
                         <button className="knop" data-toon="stil" onClick={() => openPatient(regel.patientId)}>
                           Dossier <Icoon naam="pijl" grootte={13} />

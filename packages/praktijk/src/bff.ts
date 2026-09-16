@@ -16,6 +16,12 @@ import {
   beoordeelDeclaratie, contactvormen, naarContactSoort, vindContactvorm, type Contactvorm,
 } from './contactsoorten.js';
 import { acuutVoor, BRON_LABEL, URGENTIE_UITLEG } from './acuut.js';
+import { bouwSamenvatting } from './samenvatting.js';
+import { MEDIABRON_LABEL, MEDIASOORT_LABEL, type Mediafilter } from './media.js';
+import type { NieuwGroepsconsult } from './groepsconsult.js';
+import {
+  draaiRapport, exporteerGeaggregeerd, filtervelden, type Criteria,
+} from './rapportage.js';
 import {
   buitenBandbreedte, verrichtingsoorten, vindVerrichting, type Beoordelaar,
   type Verrichtinguitslag,
@@ -650,10 +656,16 @@ export function registreerConsult(
     auteurRol: 'patient' as Rol,
   };
 
+  // Het contact-id staat vóór de metingen vast: elke meting die hier wordt vastgelegd
+  // verwijst ernaar, zodat het journaal later kan laten zien wát er op dat moment is
+  // gemeten in plaats van alleen dát er een contact was.
+  const encounterId = `${patientId}-enc-${Date.now()}`;
+
   const observaties = registratie.metingen.map((m, i) => ({
     resourceType: 'Observation' as const,
     id: `${patientId}-reg-${Date.now()}-${i}`,
     patientId,
+    encounterId,
     episodeId: registratie.episodeId,
     code: { coding: [{ system: 'http://loinc.org', code: m.code }] },
     effectief: nu,
@@ -678,7 +690,6 @@ export function registreerConsult(
     heeftEpisode: Boolean(registratie.episodeId),
   });
 
-  const encounterId = `${patientId}-enc-${Date.now()}`;
   const contact = {
     resourceType: 'Encounter' as const,
     id: encounterId,
@@ -716,7 +727,11 @@ export function registreerConsult(
       }
     : undefined;
 
-  if (deelcontact) repo.dossier(patientId)?.contacten.push(contact);
+  // Het contact zelf gaat altijd het dossier in, ook als er geen SOEP-tekst is getypt.
+  // Er ís iets gebeurd: iemand heeft deze mens gezien of gesproken en metingen vastgelegd.
+  // Dat alleen bewaren als er tekst bij staat, betekent dat een deel van de zorg uit het
+  // journaal verdwijnt — en precies dat maakt een dossier onbetrouwbaar.
+  repo.dossier(patientId)?.contacten.push(contact);
   repo.registreer(patientId, observaties, deelcontact);
 
   const na = planVoor(repo, repo.dossier(patientId)!);
@@ -1104,7 +1119,26 @@ export function meetreeksen(repo: DossierRepository, patientId: string): Meetree
 export type Tijdlijnitem =
   | { soort: 'contact'; datum: string; contact: JournaalRegel }
   | { soort: 'extern'; datum: string; document: ExternDocument }
-  | { soort: 'overleg'; datum: string; notitie: Overlegnotitie };
+  | { soort: 'overleg'; datum: string; notitie: Overlegnotitie }
+  | { soort: 'eigenmeting'; datum: string; meting: Eigenmetingdag }
+  | { soort: 'intake'; datum: string; intake: WachtkamerIntake };
+
+/**
+ * Wat de patiënt zelf heeft vastgelegd, op één dag.
+ *
+ * Dit hoort in het journaal — anders verdwijnt wat iemand zelf doorgeeft in een grafiek
+ * en is er in de tijdlijn niets van terug te zien. Maar het hoort er niet als consult: er
+ * is geen zorgverlener bij geweest, er is niets beoordeeld, en het vult geen
+ * ketenindicator (ADR-0012). Vandaar een eigen soort met een eigen vorm.
+ */
+export interface Eigenmetingdag {
+  id: string;
+  datum: string;
+  metingen: { code: string; naam: string; waarde: string; eenheid?: string }[];
+  /** Waar het vandaan kwam: de patiënt zelf, of een apparaat dat hij thuis gebruikt. */
+  via: string;
+  bevestigd: boolean;
+}
 
 export interface Bron {
   id: string;
@@ -1173,10 +1207,50 @@ export function dossierHistorie(
   // maken zou betekenen dat het besluit alleen in het hoofd van twee mensen bestaat.
   const notities = bronId && !isEpisode ? [] : repo.overlegnotities(patientId);
 
+  // Wat de patiënt zelf bewaarde, gegroepeerd per dag. Los per meting zou het journaal
+  // onleesbaar maken bij iemand die dagelijks zijn bloeddruk doorgeeft.
+  const eigenPerDag = new Map<string, Eigenmetingdag>();
+  for (const obs of dossier.observaties) {
+    const vanPatient = obs.herkomst.bron === 'patient' || obs.herkomst.auteurRol === 'patient';
+    if (!vanPatient) continue;
+    const datum = obs.effectief.slice(0, 10);
+    const bestaand = eigenPerDag.get(datum) ?? {
+      id: `eigen-${datum}`,
+      datum,
+      metingen: [],
+      via: obs.bronApparaat?.naam ?? 'door de patiënt zelf ingevoerd',
+      // Een meting die aan een contact hangt is tijdens dat contact besproken; los
+      // binnengekomen waarden zijn dat niet, en dat verschil moet je kunnen zien.
+      bevestigd: Boolean(obs.encounterId),
+    };
+    const waarde = obs.waarde && 'value' in obs.waarde
+      ? String(obs.waarde.value)
+      : obs.waarde && 'code' in obs.waarde
+        ? obs.waarde.code.display ?? obs.waarde.code.code
+        : obs.waarde && 'tekst' in obs.waarde ? obs.waarde.tekst : '—';
+    bestaand.metingen.push({
+      code: obs.code.coding?.[0]?.code ?? '',
+      naam: metingNaam(obs.code.coding?.[0]?.code ?? ''),
+      waarde,
+      eenheid: obs.waarde && 'value' in obs.waarde ? obs.waarde.unit : undefined,
+    });
+    eigenPerDag.set(datum, bestaand);
+  }
+  const eigenmetingen = bronId ? [] : [...eigenPerDag.values()];
+
+  // De voorbereiding uit de wachtkamer hoort ook in de tijdlijn. Hij is geen consult —
+  // een partnerapp heeft een gesprek omgezet naar tekst — maar hij is wél de aanleiding
+  // voor wat daarna is vastgelegd, en zonder hem mist dat verhaal zijn begin.
+  const intake = bronId ? undefined : repo.intakes().find((i) => i.patientId === patientId);
+
   const tijdlijn: Tijdlijnitem[] = [
     ...zichtbaarContacten.map((c): Tijdlijnitem => ({ soort: 'contact', datum: c.datum, contact: c })),
     ...zichtbaarExtern.map((d): Tijdlijnitem => ({ soort: 'extern', datum: d.datum, document: d })),
     ...notities.map((n): Tijdlijnitem => ({ soort: 'overleg', datum: n.op.slice(0, 10), notitie: n })),
+    ...eigenmetingen.map((m): Tijdlijnitem => ({ soort: 'eigenmeting', datum: m.datum, meting: m })),
+    ...(intake
+      ? [{ soort: 'intake' as const, datum: intake.opgenomenOp.slice(0, 10), intake }]
+      : []),
   ].sort((a, b) => b.datum.localeCompare(a.datum));
 
   return {
@@ -1184,10 +1258,167 @@ export function dossierHistorie(
     tijdlijn,
     bronnen,
     episodes,
-    aantalContacten: dossier.deelcontacten.length,
+    aantalContacten: dossier.contacten.length,
     aantalExtern: extern.length,
     ongelezenExtern: extern.filter((d) => !d.gelezen).length,
     aantalOverleg: repo.overlegnotities(patientId).length,
+  };
+}
+
+/**
+ * HET HELE CONTACT — alles wat op één moment is vastgelegd
+ *
+ * In een journaalregel staat de SOEP-tekst, en dat is maar een deel van wat er tijdens een
+ * consult gebeurde. Er zijn metingen gedaan, er zijn orders uitgezet, er is een verrichting
+ * verricht, er is een declaratieregel ontstaan. Dat staat nu allemaal op een andere plek in
+ * het systeem, terwijl het bij elkaar hoort: het is één gebeurtenis.
+ *
+ * Het gaat om reconstrueerbaarheid. Als je over een jaar wilt weten waarom je toen iets
+ * besloot, moet je kunnen zien wat je op dát moment voor je had — en niet wat er sindsdien
+ * bij is gekomen. Daarom worden de gegevens hier per contact bij elkaar gezocht en niet
+ * "de huidige stand van zaken" getoond.
+ */
+export interface Contactdossier {
+  encounterId: string;
+  datum: string;
+  tijd?: string;
+  soort: string;
+  duurMinuten?: number;
+  uitvoerder: { naam: string; rol: string };
+  herkomst: { bron: string; vastgelegdOp: string; auteurRol: string };
+  /** De patiënt zoals hij er op dát moment voor stond. */
+  patient: {
+    naam: string;
+    leeftijdToen: number;
+    geboortedatum: string;
+    episodesToen: { icpc?: string; titel: string }[];
+    behandelgrenzen: string[];
+  };
+  hulpvraag?: string;
+  /** Per deelcontact: één contact kan meerdere episodes raken (docs/03 §2). */
+  deelcontacten: {
+    id: string;
+    episodeTitel: string;
+    episodeIcpc?: string;
+    regels: { letter: string; tekst: string }[];
+  }[];
+  metingen: {
+    code: string; naam: string; waarde: string; eenheid?: string;
+    bron: string; eigenRegistratie: boolean;
+  }[];
+  orders: { id: string; soort: string; omschrijving: string; detail?: string; status: string; route?: string }[];
+  verrichtingen: {
+    naam: string; uitgevoerdDoor: string; beoordelaar: string;
+    waarden: { naam: string; waarde: string }[];
+    conclusie?: string;
+  }[];
+  declaratie?: { code: string; omschrijving: string; declarabel: boolean; ontbreekt?: string[] };
+}
+
+export function contactdossier(
+  repo: DossierRepository, patientId: string, encounterId: string,
+): Contactdossier | undefined {
+  const dossier = repo.dossier(patientId);
+  const contact = dossier?.contacten.find((c) => c.id === encounterId);
+  if (!dossier || !contact) return undefined;
+
+  const op = contact.herkomst.vastgelegdOp;
+  const deelcontacten = dossier.deelcontacten.filter((dc) => dc.encounterId === encounterId);
+  const orders = repo.orders(patientId).filter((o) =>
+    deelcontacten.some((dc) => dc.id === o.deelcontactId)
+    || o.geplaatstOp.slice(0, 10) === op.slice(0, 10));
+
+  const uitslagen = repo.verrichtinguitslagen(patientId)
+    .filter((u) => orders.some((o) => o.id === u.orderId));
+
+  // Leeftijd tóén, niet nu. Bij een contact van drie jaar geleden maakt dat uit, en het
+  // is precies het soort detail waardoor een oud dossier ineens klopt.
+  const geboren = new Date(dossier.patient.geboortedatum);
+  const toen = new Date(op);
+  let leeftijdToen = toen.getFullYear() - geboren.getFullYear();
+  const maand = toen.getMonth() - geboren.getMonth();
+  if (maand < 0 || (maand === 0 && toen.getDate() < geboren.getDate())) leeftijdToen -= 1;
+
+  return {
+    encounterId,
+    datum: op.slice(0, 10),
+    tijd: op.slice(11, 16) || undefined,
+    soort: contact.soort,
+    duurMinuten: contact.duurMinuten,
+    uitvoerder: { naam: contact.uitvoerder.naam, rol: contact.uitvoerder.rol },
+    herkomst: {
+      bron: contact.herkomst.bron,
+      vastgelegdOp: op,
+      auteurRol: contact.herkomst.auteurRol,
+    },
+    patient: {
+      naam: volledigeNaam(dossier),
+      leeftijdToen,
+      geboortedatum: dossier.patient.geboortedatum,
+      episodesToen: dossier.episodes
+        .filter((e) => !e.periode.start || e.periode.start <= op)
+        .map((e) => ({
+          icpc: e.code.coding?.find((c) => c.system.includes('icpc'))?.code,
+          titel: e.titel,
+        })),
+      // Alleen wat er tóén al vastlag. Een behandelgrens die later is afgesproken, hoort
+      // niet bij het beeld waarin dit besluit is genomen.
+      behandelgrenzen: repo.beleidsafspraken(patientId)
+        .filter((b) => b.vastgelegdOp <= op)
+        .map((b) => b.samenvatting),
+    },
+    hulpvraag: contact.hulpvraag,
+    deelcontacten: deelcontacten.map((dc) => {
+      const episode = dossier.episodes.find((e) => e.id === dc.episodeId);
+      return {
+        id: dc.id,
+        episodeTitel: episode?.titel ?? 'Geen episode',
+        episodeIcpc: episode?.code.coding?.find((c) => c.system.includes('icpc'))?.code,
+        regels: dc.regels.map((r) => ({ letter: r.letter, tekst: r.tekst })),
+      };
+    }),
+    metingen: dossier.observaties
+      .filter((o) => o.encounterId === encounterId)
+      .map((o) => {
+        const code = o.code.coding?.[0]?.code ?? '';
+        const waarde = o.waarde && 'value' in o.waarde
+          ? String(o.waarde.value)
+          : o.waarde && 'code' in o.waarde
+            ? o.waarde.code.display ?? o.waarde.code.code
+            : o.waarde && 'tekst' in o.waarde ? o.waarde.tekst : '—';
+        return {
+          code,
+          naam: metingNaam(code),
+          waarde,
+          eenheid: o.waarde && 'value' in o.waarde ? o.waarde.unit : undefined,
+          bron: o.herkomst.bron,
+          // Alleen wat een zorgverlener zelf vaststelde telt als eigen registratie en
+          // vult een ketenindicator. Wat de patiënt aanleverde is klinisch bruikbaar
+          // maar niet van jou (ADR-0012).
+          eigenRegistratie: o.herkomst.bron === 'zorgverlener',
+        };
+      }),
+    orders: orders.map((o) => ({
+      id: o.id, soort: o.soort, omschrijving: o.omschrijving,
+      detail: o.detail, status: o.status, route: o.route,
+    })),
+    verrichtingen: uitslagen.map((u) => {
+      const soort = vindVerrichting(u.soortCode);
+      return {
+        naam: soort?.naam ?? u.soortCode,
+        uitgevoerdDoor: u.uitgevoerdDoor.naam,
+        beoordelaar: u.beoordelaar,
+        waarden: (soort?.uitkomstvelden ?? []).map((veld) => ({
+          naam: veld.naam,
+          waarde: veld.soort === 'keuze'
+            ? (veld.opties?.find((o) => o.code === u.waarden[veld.code])?.label
+              ?? u.waarden[veld.code] ?? '—')
+            : `${u.waarden[veld.code] ?? '—'}${veld.eenheid ? ` ${veld.eenheid}` : ''}`,
+        })),
+        conclusie: u.conclusie,
+      };
+    }),
+    declaratie: contact.declaratie,
   };
 }
 
@@ -1489,6 +1720,117 @@ export function beantwoordPatientbericht(
 
 export { contactvormen, vindContactvorm, beoordeelDeclaratie };
 export type { Contactvorm };
+
+// ── 18d. Samenvatting, media en groepsconsulten ─────────────────────────────
+
+/**
+ * Het dossier in vijf alinea's.
+ *
+ * De eerste vraag bij een dossier dat je niet kent is niet "wat is de laatste HbA1c" maar
+ * "wie is dit en wat speelt er". Dat antwoord staat verspreid over acht kaarten en wordt
+ * nu door elke zorgverlener opnieuw samengesteld door te lezen.
+ */
+export function samenvatting(repo: DossierRepository, patientId: string) {
+  const dossier = repo.dossier(patientId);
+  if (!dossier) return undefined;
+  return bouwSamenvatting({
+    dossier,
+    plan: planVoor(repo, dossier),
+    peildatum: repo.peildatum(),
+    extern: repo.externeDocumenten(patientId),
+    beleid: repo.beleidsafspraken(patientId),
+    orders: repo.orders(patientId),
+    openAutorisaties: repo.autorisaties()
+      .filter((a) => a.patientId === patientId && a.status === 'open').length,
+    openBespreekpunten: repo.bespreekpunten()
+      .filter((p) => p.patientId === patientId && p.status === 'open').length,
+  });
+}
+
+export function media(repo: DossierRepository, patientId: string, filter?: Mediafilter) {
+  const alle = repo.media(patientId);
+  const gefilterd = repo.media(patientId, filter);
+  return {
+    bestanden: gefilterd,
+    totaal: alle.length,
+    ongelezen: alle.filter((m) => !m.gelezen).length,
+    /** Facetten uit wat er werkelijk is; een filter op een lege categorie helpt niemand. */
+    soorten: [...new Set(alle.map((m) => m.soort))]
+      .map((soort) => ({ soort, label: MEDIASOORT_LABEL[soort], aantal: alle.filter((m) => m.soort === soort).length })),
+    bronnen: [...new Set(alle.map((m) => m.bron))]
+      .map((bron) => ({ bron, label: MEDIABRON_LABEL[bron], aantal: alle.filter((m) => m.bron === bron).length })),
+    categorieen: [...new Set(alle.map((m) => m.categorie))].sort(),
+    jaren: [...new Set(alle.map((m) => m.datum.slice(0, 4)))].sort().reverse(),
+  };
+}
+
+/**
+ * Groepsconsulten, met per consult wie er nog bij zou passen.
+ *
+ * Dat laatste is het verschil tussen een agenda-item en een werkinstrument: wie een
+ * groepsconsult plant, wil niet zelf 48 dossiers doorzoeken op wie ervoor in aanmerking
+ * komt.
+ */
+export function groepsconsulten(repo: DossierRepository) {
+  const peildatum = repo.peildatum();
+  return repo.groepsconsulten().map((groep) => {
+    const alDeelnemer = new Set(groep.deelnemers.map((d) => d.patientId));
+    const voorgesteld = repo.alleDossiers()
+      .filter((d) => !alDeelnemer.has(d.patient.id))
+      .map((dossier) => ({ dossier, plan: planVoor(repo, dossier) }))
+      .filter(({ plan }) => plan.modules.some((m) => m.id === groep.module))
+      .slice(0, 12)
+      .map(({ dossier, plan }) => ({
+        patientId: dossier.patient.id,
+        naam: volledigeNaam(dossier),
+        leeftijd: leeftijd(dossier, peildatum),
+        onderbouwing: plan.modules.find((m) => m.id === groep.module)?.onderbouwing
+          ?? 'Aandachtsgebied is actief in het zorgplan',
+        zelfredzaamheid: plan.zelfredzaamheid?.gemiddelde,
+      }));
+    return {
+      ...groep,
+      tijd: groep.start.slice(11, 16),
+      datum: groep.start.slice(0, 10),
+      aangemeld: groep.deelnemers.filter((d) => d.status === 'aangemeld' || d.status === 'aanwezig').length,
+      voorgesteld,
+    };
+  });
+}
+
+export function maakGroepsconsult(
+  repo: DossierRepository, gebruikerId: string, nieuw: NieuwGroepsconsult,
+) {
+  const gebruiker = vindGebruiker(gebruikerId);
+  if (!gebruiker || gebruiker.rol === 'administrator') return undefined;
+  repo.maakGroepsconsult(nieuw, { id: gebruiker.id, naam: gebruiker.naam, rol: gebruiker.rol });
+  return groepsconsulten(repo);
+}
+
+// ── 18e. Rapportages ────────────────────────────────────────────────────────
+
+/**
+ * Een zoekvraag over de hele praktijk.
+ *
+ * Draait over dezelfde zorgplannen die het zorgproces gebruikt. Geen aparte
+ * datawarehouse-definitie die na een half jaar uit de pas loopt met het scherm van de POH.
+ */
+export function rapport(repo: DossierRepository, criteria: Criteria) {
+  const dossiers = repo.alleDossiers().map((dossier) => ({
+    dossier, plan: planVoor(repo, dossier),
+  }));
+  return {
+    ...draaiRapport(dossiers, criteria, repo.peildatum()),
+    velden: filtervelden,
+  };
+}
+
+export function rapportExport(repo: DossierRepository, criteria: Criteria) {
+  const dossiers = repo.alleDossiers().map((dossier) => ({
+    dossier, plan: planVoor(repo, dossier),
+  }));
+  return exporteerGeaggregeerd(draaiRapport(dossiers, criteria, repo.peildatum()));
+}
 
 // ── 19. Praktijkrapportage ──────────────────────────────────────────────────
 

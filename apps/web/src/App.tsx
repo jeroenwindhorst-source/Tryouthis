@@ -20,6 +20,8 @@ import { Overleg } from './schermen/Overleg';
 import { Plannen } from './schermen/Plannen';
 import { Rapportage } from './schermen/Rapportage';
 import { Acuut, Acuutmelding, useAcuut } from './schermen/Acuut';
+import { Groepsconsulten } from './schermen/Groepsconsulten';
+import { Rapporten } from './schermen/Rapporten';
 import { Gebruikers } from './schermen/Gebruikers';
 import { STANDAARD_VOORKEUREN, Voorkeuren, type Persoonlijk } from './schermen/Voorkeuren';
 
@@ -38,6 +40,7 @@ const WERKPROCES: Record<string, Ingang[]> = {
     { id: 'voorbereiden', label: 'Voorbereiden', icoon: 'klembord' },
     { id: 'spreekuur', label: 'Spreekuur', icoon: 'agenda' },
     { id: 'monitoren', label: 'Monitoren', icoon: 'radar' },
+    { id: 'groepen', label: 'Groepsconsulten', icoon: 'persoon' },
     { id: 'overleg', label: 'Overleg', icoon: 'persoon' },
     { id: 'afronden', label: 'Afronden', icoon: 'afvinken' },
   ],
@@ -59,6 +62,7 @@ const WERKPROCES: Record<string, Ingang[]> = {
   ],
   administrator: [
     { id: 'rapportage', label: 'Praktijk in cijfers', icoon: 'rapport' },
+    { id: 'rapporten', label: 'Rapporten', icoon: 'lijst' },
     { id: 'beheer', label: 'Configuratie', icoon: 'schakelaar' },
     { id: 'gebruikers', label: 'Gebruikers', icoon: 'persoon' },
     { id: 'protocol', label: 'Het protocol', icoon: 'boek' },
@@ -69,12 +73,19 @@ const PRAKTIJK: Record<string, Ingang[]> = {
   'poh-s': [
     { id: 'instroom', label: 'Instroom', icoon: 'instroom' },
     { id: 'plannen', label: 'Plannen', icoon: 'slot' },
+    { id: 'rapporten', label: 'Rapporten', icoon: 'rapport' },
     { id: 'protocol', label: 'Het protocol', icoon: 'boek' },
   ],
-  assistent: [{ id: 'protocol', label: 'Het protocol', icoon: 'boek' }],
+  assistent: [
+    { id: 'plannen', label: 'Plannen', icoon: 'slot' },
+    { id: 'rapporten', label: 'Rapporten', icoon: 'rapport' },
+    { id: 'protocol', label: 'Het protocol', icoon: 'boek' },
+  ],
   huisarts: [
     { id: 'instroom', label: 'Instroom', icoon: 'instroom' },
     { id: 'plannen', label: 'Plannen', icoon: 'slot' },
+    { id: 'groepen', label: 'Groepsconsulten', icoon: 'persoon' },
+    { id: 'rapporten', label: 'Rapporten', icoon: 'rapport' },
     { id: 'protocol', label: 'Het protocol', icoon: 'boek' },
   ],
   administrator: [],
@@ -199,7 +210,7 @@ function Werkplek({
         </div>
       </nav>
 
-      <div>
+      <div className="werkkolom">
         <header className="kopbalk">
           {zorgrol
             ? <Zoeken opOpen={opOpen} />
@@ -221,7 +232,8 @@ function Werkplek({
 
         <main className="werkblad" data-dichtheid={voorkeuren.dichtheid}>
           {scherm === 'spreekuur' && patientId && (
-            <Consult patientId={patientId} gebruiker={gebruiker} terug={opSluitPatient} />
+            <Consult patientId={patientId} gebruiker={gebruiker} terug={opSluitPatient}
+              startTab={voorkeuren.dossierStart} />
           )}
           {scherm === 'spreekuur' && !patientId && gebruiker.rol === 'poh-s' && (
             <Voorbereiden openPatient={opOpen} toonUitleg={voorkeuren.toonUitleg} />
@@ -230,7 +242,7 @@ function Werkplek({
             <Dossierzoeker opOpen={opOpen} />
           )}
           {scherm === 'spreekuur' && !patientId && gebruiker.rol === 'huisarts' && (
-            <HuisartsWerkplek scherm="overzicht" openPatient={opOpen} />
+            <HuisartsWerkplek scherm="overzicht" gaNaar={opGa} openPatient={opOpen} />
           )}
 
           {scherm === 'dagstart' && <Dagstart gaNaar={opGa} openPatient={opOpen} />}
@@ -238,12 +250,12 @@ function Werkplek({
           {scherm === 'monitoren' && <Monitoren openPatient={opOpen} />}
           {scherm === 'afronden' && <Afronden />}
 
-          {scherm === 'as-overzicht' && <AssistentWerkplek scherm="overzicht" openPatient={opOpen} />}
-          {scherm === 'as-triage' && <AssistentWerkplek scherm="triage" openPatient={opOpen} />}
+          {scherm === 'as-overzicht' && <AssistentWerkplek scherm="overzicht" gaNaar={opGa} openPatient={opOpen} />}
+          {scherm === 'as-triage' && <AssistentWerkplek scherm="triage" gaNaar={opGa} openPatient={opOpen} />}
 
-          {scherm === 'ha-overzicht' && <HuisartsWerkplek scherm="overzicht" openPatient={opOpen} />}
-          {scherm === 'ha-autoriseren' && <HuisartsWerkplek scherm="autoriseren" openPatient={opOpen} />}
-          {scherm === 'ha-team' && <HuisartsWerkplek scherm="team" openPatient={opOpen} />}
+          {scherm === 'ha-overzicht' && <HuisartsWerkplek scherm="overzicht" gaNaar={opGa} openPatient={opOpen} />}
+          {scherm === 'ha-autoriseren' && <HuisartsWerkplek scherm="autoriseren" gaNaar={opGa} openPatient={opOpen} />}
+          {scherm === 'ha-team' && <HuisartsWerkplek scherm="team" gaNaar={opGa} openPatient={opOpen} />}
 
           {scherm === 'instroom' && <Instroom openPatient={opOpen} />}
           {scherm === 'protocol' && <Protocol />}
@@ -254,6 +266,9 @@ function Werkplek({
           {scherm === 'plannen' && <Plannen gebruiker={gebruiker} openPatient={opOpen} />}
           {scherm === 'acuut' && <Acuut gebruiker={gebruiker} openPatient={opOpen} />}
           {scherm === 'rapportage' && <Rapportage />}
+          {scherm === 'groepen' && <Groepsconsulten gebruiker={gebruiker} openPatient={opOpen} />}
+          {/* De beheerrol heeft geen dossiertoegang, dus geen doorklikknop naar de patiënt. */}
+          {scherm === 'rapporten' && <Rapporten openPatient={zorgrol ? opOpen : undefined} />}
           {scherm === 'voorkeuren' && (
             <Voorkeuren gebruiker={gebruiker} voorkeuren={voorkeuren} opWijzig={opVoorkeuren} />
           )}

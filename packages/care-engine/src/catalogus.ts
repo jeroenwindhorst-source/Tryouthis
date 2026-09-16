@@ -253,7 +253,16 @@ export interface Afspraaksoort {
   duurMinuten: number;
   /** Waarvoor je dit gebruikt; ook het zoekwoord. */
   redenen: string[];
-  vorm: 'op de praktijk' | 'telefonisch' | 'videoconsult' | 'visite';
+  vorm: 'op de praktijk' | 'telefonisch' | 'videoconsult' | 'visite' | 'groepsconsult';
+  /**
+   * Bij een groepsconsult: welk aandachtsgebied het thema is.
+   *
+   * Zo'n order plant geen los tijdslot maar zet deze mens op het eerstvolgende blok met
+   * dat thema. Zonder deze verwijzing zou een groepsconsult een afspraak van tachtig
+   * minuten in een lege agenda worden, en dat is precies het misverstand dat bestaande
+   * systemen maken.
+   */
+  groepModule?: string;
 }
 
 /**
@@ -293,6 +302,26 @@ export const AFSPRAKEN: Afspraaksoort[] = [
     vorm: 'op de praktijk',
     redenen: ['Bloeddrukmeting', 'Bloedafname', 'Injectie', 'Wondcontrole', 'Uitstrijkje',
       'Oren uitspuiten'] },
+
+  // Groepsconsulten. Ze staan in dezelfde catalogus als de rest, want vanuit het consult
+  // is "ik zet je op de leefstijlgroep" dezelfde handeling als "ik plan een controle".
+  { code: 'afs-groep-leefstijl', naam: 'Groepsconsult leefstijl bij diabetes',
+    bijRol: 'poh-s', duurMinuten: 90, vorm: 'groepsconsult', groepModule: 'glucose',
+    redenen: ['Leren omgaan met koolhydraten', 'Leefstijl als aangrijpingspunt',
+      'Meer halen uit een uur dan uit tien minuten'] },
+  { code: 'afs-groep-ademhaling', naam: 'Groepsconsult ademhaling bij COPD',
+    bijRol: 'poh-s', duurMinuten: 75, vorm: 'groepsconsult', groepModule: 'ademhaling',
+    redenen: ['Ademhalingsoefeningen', 'Inhalatietechniek in groepsvorm',
+      'Omgaan met benauwdheid'] },
+  { code: 'afs-groep-roken', naam: 'Groepsconsult stoppen met roken',
+    bijRol: 'poh-s', duurMinuten: 60, vorm: 'groepsconsult', groepModule: 'leefstijl',
+    redenen: ['Stoppen met roken in groepsvorm', 'Gezamenlijke stopdatum'] },
+  { code: 'afs-groep-hartvaat', naam: 'Groepsconsult hart en vaten',
+    bijRol: 'poh-s', duurMinuten: 75, vorm: 'groepsconsult', groepModule: 'vaatrisico',
+    redenen: ['Uitleg over risico en medicatie', 'Bewegen bij verhoogd vaatrisico'] },
+  { code: 'afs-groep-ouderen', naam: 'Groepsbijeenkomst kwetsbare ouderen',
+    bijRol: 'huisarts', duurMinuten: 90, vorm: 'groepsconsult', groepModule: 'kwetsbaarheid',
+    redenen: ['Valpreventie', 'Gesprek over wat belangrijk is', 'Zelfstandig blijven'] },
 ];
 
 // ── Zoeken ───────────────────────────────────────────────────────────────────
@@ -318,6 +347,8 @@ export interface Catalogustreffer {
   bijRol?: string;
   duurMinuten?: number;
   vorm?: string;
+  /** Bij een groepsconsult: het aandachtsgebied waarvan het blok het thema is. */
+  groepModule?: string;
   vereistRecht: 'medicatie-voorschrijven' | 'verwijzen' | 'lab-aanvragen' | 'dossier-registreren';
 }
 
@@ -379,7 +410,10 @@ export function zoekCatalogus(vraag: string, soorten?: CatalogusSoort[]): Catalo
       treffers.push({
         id: `afs-${a.code}`, soort: 'afspraak', naam: a.naam, detail: a.redenen[0],
         varianten: a.redenen, bijRol: a.bijRol, duurMinuten: a.duurMinuten, vorm: a.vorm,
-        route: `${a.duurMinuten} minuten · ${a.vorm}`,
+        groepModule: a.groepModule,
+        route: a.groepModule
+          ? `${a.duurMinuten} minuten · groepsblok bij de ${a.bijRol}`
+          : `${a.duurMinuten} minuten · ${a.vorm}`,
         vereistRecht: 'dossier-registreren',
       });
     }

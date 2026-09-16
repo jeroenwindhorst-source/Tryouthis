@@ -177,27 +177,39 @@ export function Berichten({ gebruiker, openPatient }: {
             {data.ongelezen > 0 && ` · ${data.ongelezen} ongelezen`}
           </div>
         </div>
-        <div className="acties">
-          {/*
-            Twee bakjes, want het zijn twee soorten gesprek. Met een collega overleg je;
-            een patiënt stelt een vraag waar een antwoord op hoort — en soms is dat antwoord
-            zorg en hoort het in het dossier. Eén lange lijst dwingt je bij elk bericht
-            opnieuw te kijken wie er aan de andere kant zit.
-          */}
-          <div className="segment">
-            <button data-actief={bak === 'collega'}
-              onClick={() => { setBak('collega'); setActiefId(undefined); }}>
-              <Icoon naam="persoon" grootte={13} /> Collega's ({data.collega.length})
-            </button>
-            <button data-actief={bak === 'patient'}
-              onClick={() => { setBak('patient'); setActiefId(undefined); }}>
-              <Icoon naam="gesprek" grootte={13} /> Patiënten ({data.patient.length})
-              {data.ongelezenPatient > 0 && (
-                <span className="badge" data-toon="urgent">{data.ongelezenPatient}</span>
-              )}
-            </button>
-          </div>
-        </div>
+      </div>
+
+      {/*
+        Twee bakjes, want het zijn twee soorten gesprek. Met een collega overleg je;
+        een patiënt stelt een vraag waar een antwoord op hoort — en soms is dat antwoord
+        zorg en hoort het in het dossier, met een eigen contactvorm en declaratieregel.
+        Dat verschil verdient meer dan een schakelaartje in de hoek: het bepaalt wat je
+        met het bericht mág doen. Daarom staat het groot, boven de lijst.
+      */}
+      <div className="bakken">
+        <button data-actief={bak === 'collega'}
+          onClick={() => { setBak('collega'); setActiefId(undefined); }}>
+          <span className="ikoon"><Icoon naam="persoon" grootte={17} /></span>
+          <span className="tekst">
+            <strong>Collega's</strong>
+            <span className="mini">Intern overleg. Blijft binnen de praktijk.</span>
+          </span>
+          <span className="telling">{data.collega.length}</span>
+        </button>
+        <button data-actief={bak === 'patient'}
+          onClick={() => { setBak('patient'); setActiefId(undefined); }}>
+          <span className="ikoon"><Icoon naam="gesprek" grootte={17} /></span>
+          <span className="tekst">
+            <strong>Patiënten</strong>
+            <span className="mini">Vragen uit het portaal. Kan zorg worden.</span>
+          </span>
+          <span className="telling">
+            {data.patient.length}
+            {data.ongelezenPatient > 0 && (
+              <span className="merkje" data-toon="urgent">{data.ongelezenPatient} nieuw</span>
+            )}
+          </span>
+        </button>
       </div>
 
       {lijst.length === 0 && (

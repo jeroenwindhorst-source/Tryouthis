@@ -63,6 +63,7 @@ Daarom staat naast de sets een **catalogus** met één zoekveld over vier soorte
 | onderzoek | ECG, spirometrie, 24-uursmeting, enkel-armindex, beeldvorming | praktijk of diagnostisch centrum |
 | verwijzing | 22 bestemmingen in eerste en tweede lijn, met vraagstellingen | ZorgDomein of directe verwijsbrief |
 | afspraak | 8 afspraaksoorten binnen de eigen praktijk, inclusief video en visite | agenda, via een van vier planroutes (docs/18) |
+| afspraak (groep) | 5 groepsconsulten per thema | een plek op een bestaand groepsblok (docs/20) |
 
 Eén zoekveld voor alle vier, want de zorgverlener denkt in "wat moet er gebeuren" en
 niet in "welke van de vier ordersoorten is dit". Die indeling is een systeemindeling en
@@ -78,6 +79,13 @@ moment van verwijzen, niet pas als de brief terugkomt.
 Een afspraak-order krijgt er één veld bij: **wie plant hem in**. Vier routes — zelf, de
 assistent, de patiënt via het portaal, of automatisch — en die keuze hoort bij deze
 afspraak en niet bij de gebruiker. Zie [ADR-0011](adr/ADR-0011-vier-planroutes.md).
+
+**Een groepsconsult is óók een afspraak-order, maar dan zonder planroute.** Er valt niets
+in te plannen: er staat al een blok, en deze mens wordt daarop gezet. De order zoekt het
+eerstvolgende groepsconsult met dat thema waar nog plek is en voegt de patiënt toe als
+*uitgenodigd*. Is er geen blok gepland, dan blijft de order wachten tot er één is — hij
+wordt níet stilletjes een individueel consult, want dat verandert het besluit. Zie
+[`docs/20` §5](20-dossierdiepte-en-rapportage.md).
 
 Gekozen orders gaan in een **mandje** en worden in één handeling geplaatst. Een consult
 levert zelden één order op: je bestelt de pijnstiller én de controle én de verwijzing,

@@ -111,6 +111,14 @@ export interface Deelcontact extends KlinischeResource {
 export interface Observation extends KlinischeResource {
   resourceType: 'Observation';
   patientId: string;
+  /**
+   * Bij welk contact deze meting is vastgelegd (FHIR: Observation.encounter).
+   *
+   * Zonder die verwijzing is een meting een los getal met een datum en moet je achteraf
+   * raden bij welk consult hij hoorde. Metingen die de patiënt zelf thuis doet hebben
+   * hem niet — die horen juist bij géén contact, en dat is informatie.
+   */
+  encounterId?: string;
   code: CodeableConcept;
   effectief: FhirDateTime;
   waarde?: Quantity | { code: Coding } | { tekst: string } | { booleaans: boolean };

@@ -1,13 +1,15 @@
 import {
   agenda, assistentOverzicht, beheer, berichten, consultvoorbereiding, controleerTweefactor,
   dagafsluiting, dagstart, dossierHistorie, gebruikersoverzicht, huisartsOverzicht, instroom,
-  acuteInstroom, beantwoordPatientbericht, contactvormen, handelAcuutAf,
+  acuteInstroom, beantwoordPatientbericht, contactdossier, contactvormen, groepsconsulten, handelAcuutAf,
+  maakGroepsconsult, media, rapport, rapportExport, samenvatting,
   InMemoryRepository, intakes, legVerrichtingVast, meetreeksen, meldAan, monitoringCohort,
   orderOverzicht, orderVoorstellen, overleg, pakAcuutOp, patientOverzicht, plaatsLosseOrders,
   planbord, planbordPraktijk, praktijkrapportage, praktijkSamenvatting, registreerConsult,
   terminologie, verrichtingen, vraagAfspraakAan, zetOpBespreeklijst, zoekOrders, zoekPatient,
   type Afspraakstatus, type Beoordelaar, type ConsultRegistratie, type Contactvorm,
-  type NieuweOrder, type NieuwAfspraakverzoek, type NieuwBespreekpunt,
+  type Criteria, type Groepsdeelnemer, type Mediafilter, type NieuweOrder,
+  type NieuwAfspraakverzoek, type NieuwBespreekpunt, type NieuwGroepsconsult,
 } from '@zpe/praktijk';
 import {
   ketens, modules, REGELSET_VERSIE, type CatalogusSoort, type PersoonlijkPlan,
@@ -62,6 +64,8 @@ export const lokaleApi = {
   },
   historie: (patientId: string, bronId?: string) =>
     traag(dossierHistorie(repo, patientId, bronId)!),
+  contactdossier: (patientId: string, encounterId: string) =>
+    traag(contactdossier(repo, patientId, encounterId)!),
   meetreeksen: (patientId: string) => traag(meetreeksen(repo, patientId)),
   orders: (patientId: string) => traag(orderVoorstellen(repo, patientId)),
   orderOverzicht: (patientId: string) => traag(orderOverzicht(repo, patientId)!),
@@ -106,6 +110,32 @@ export const lokaleApi = {
     traag(handelAcuutAf(repo, id, uitkomst, rol as 'poh-s' | 'assistent' | 'huisarts')),
 
   contactvormen: () => traag(contactvormen),
+
+  samenvatting: (patientId: string) => traag(samenvatting(repo, patientId)!),
+  media: (patientId: string, filter?: Mediafilter) => traag(media(repo, patientId, filter)),
+  markeerMediaGelezen: (patientId: string, mediaId: string) => {
+    repo.markeerMediaGelezen(patientId, mediaId);
+    return traag(media(repo, patientId));
+  },
+
+  groepsconsulten: () => traag(groepsconsulten(repo)),
+  maakGroepsconsult: (gebruikerId: string, nieuw: NieuwGroepsconsult) =>
+    traag(maakGroepsconsult(repo, gebruikerId, nieuw)!),
+  voegDeelnemerToe: (groepId: string, deelnemer: Omit<Groepsdeelnemer, 'toegevoegdOp'>) => {
+    repo.voegDeelnemerToe(groepId, deelnemer);
+    return traag(groepsconsulten(repo));
+  },
+  verwijderDeelnemer: (groepId: string, patientId: string) => {
+    repo.verwijderDeelnemer(groepId, patientId);
+    return traag(groepsconsulten(repo));
+  },
+  zetDeelnemerstatus: (groepId: string, patientId: string, status: string) => {
+    repo.zetDeelnemerstatus(groepId, patientId, status as Groepsdeelnemer['status']);
+    return traag(groepsconsulten(repo));
+  },
+
+  rapport: (criteria: Criteria) => traag(rapport(repo, criteria)),
+  rapportExport: (criteria: Criteria) => traag(rapportExport(repo, criteria)),
   verrichtingen: (patientId: string) => traag(verrichtingen(repo, patientId)!),
   legVerrichtingVast: (gebruikerId: string, gegevens: {
     patientId: string; orderId: string; soortCode: string; waarden: Record<string, string>;

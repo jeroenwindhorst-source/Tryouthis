@@ -168,6 +168,32 @@ export function bouwHistorie(dossier: Dossier, peildatum: Date, zaad: number): U
       afgerond: true,
       herkomst: herkomstVan(op, rol, auteur),
     });
+
+    // Bij een contact hoort wat er op dat moment gemeten is, gekoppeld aan dat contact.
+    // De losse meetreeksen hieronder lopen daar dwars doorheen (thuismetingen, lab dat
+    // los binnenkwam); die horen juist bij géén contact. Het verschil is zichtbaar in
+    // het journaal en dat is de bedoeling.
+    const bijContact: { code: string; waarde: number; eenheid: string }[] = [
+      { code: CODE.gewicht, waarde: Math.round((72 + willekeurig() * 28) * 10) / 10, eenheid: 'kg' },
+      { code: CODE.rrSys, waarde: Math.round(124 + willekeurig() * 30), eenheid: 'mmHg' },
+    ];
+    if (heeft('T90')) {
+      bijContact.push({ code: CODE.hba1c, waarde: Math.round(48 + willekeurig() * 18), eenheid: 'mmol/mol' });
+    }
+    for (const meting of bijContact) {
+      observaties.push({
+        resourceType: 'Observation',
+        id: `${dossier.patient.id}-obs-c${i}-${meting.code}`,
+        patientId: dossier.patient.id,
+        encounterId,
+        episodeId: episode.id,
+        code: { coding: [{ system: 'http://loinc.org', code: meting.code }] },
+        effectief: op,
+        waarde: { value: meting.waarde, unit: meting.eenheid },
+        status: 'final',
+        herkomst: herkomstVan(op, rol, auteur),
+      });
+    }
   }
 
   // Meetreeksen over dezelfde periode, zodat een beloop zichtbaar wordt.
@@ -202,6 +228,8 @@ export function bouwHistorie(dossier: Dossier, peildatum: Date, zaad: number): U
 
 export interface JournaalRegel {
   datum: string;
+  /** Tijdstip van het contact, als het bekend is. Historie kent alleen de dag. */
+  tijd?: string;
   encounterId: string;
   episodeId: string;
   episodeTitel: string;
@@ -212,27 +240,54 @@ export interface JournaalRegel {
   /** Herkomst van de registratie — mens, extern systeem of AI-suggestie. */
   bron: string;
   regels: { letter: string; tekst: string }[];
+  /** Is er tekst vastgelegd, of bestaat dit contact alleen uit metingen? */
+  heeftSoep: boolean;
+  /** Hoeveel metingen aan dit contact hangen — de aanleiding om het open te klappen. */
+  aantalMetingen: number;
+  /** Hoeveel orders er tijdens dit contact zijn uitgezet. */
+  aantalOrders?: number;
 }
 
-/** Het journaal als omgekeerd-chronologische stroom, zoals elke zorgverlener het kent. */
+/**
+ * Het journaal als omgekeerd-chronologische stroom, zoals elke zorgverlener het kent.
+ *
+ * Opgebouwd uit de contacten en niet uit de deelcontacten. Dat verschil is wezenlijk: een
+ * contact waarbij alleen metingen zijn vastgelegd — een bloeddrukcontrole bij de assistent,
+ * een uitslag die is ingevoerd — heeft geen SOEP-tekst en zou anders uit het journaal
+ * verdwijnen. Er ís dan wel degelijk zorg geleverd, en een dossier waarin een deel van de
+ * zorg onzichtbaar is, is geen dossier.
+ */
 export function journaal(dossier: Dossier, filterEpisodeId?: string): JournaalRegel[] {
-  return dossier.deelcontacten
-    .filter((dc) => !filterEpisodeId || dc.episodeId === filterEpisodeId)
-    .map((dc): JournaalRegel => {
-      const episode = dossier.episodes.find((e) => e.id === dc.episodeId);
-      const contact = dossier.contacten.find((c) => c.id === dc.encounterId);
-      return {
-        datum: dc.herkomst.vastgelegdOp.slice(0, 10),
-        encounterId: dc.encounterId,
-        episodeId: dc.episodeId,
-        episodeTitel: episode?.titel ?? 'Onbekende episode',
-        episodeIcpc: episode?.code.coding?.find((c) => c.system.includes('icpc'))?.code,
-        soort: contact?.soort ?? 'consult',
-        auteur: contact?.uitvoerder.naam ?? dc.herkomst.auteurId,
-        auteurRol: dc.herkomst.auteurRol,
-        bron: dc.herkomst.bron,
-        regels: dc.regels.map((r) => ({ letter: r.letter, tekst: r.tekst })),
-      };
-    })
-    .sort((a, b) => b.datum.localeCompare(a.datum));
+  const metingenBij = (encounterId: string) =>
+    dossier.observaties.filter((o) => o.encounterId === encounterId).length;
+
+  const regels = dossier.contacten.map((contact): JournaalRegel => {
+    const deelcontacten = dossier.deelcontacten.filter((dc) => dc.encounterId === contact.id);
+    // Eén contact kan meerdere episodes raken (docs/03 §2). In het journaal tonen we de
+    // episode van het eerste deelcontact; de rest staat in het contactdossier.
+    const episodeId = deelcontacten[0]?.episodeId ?? contact.episodeId ?? '';
+    const episode = dossier.episodes.find((e) => e.id === episodeId);
+    const soep = deelcontacten.flatMap((dc) => dc.regels);
+    const herkomst = deelcontacten[0]?.herkomst ?? contact.herkomst;
+
+    return {
+      datum: herkomst.vastgelegdOp.slice(0, 10),
+      tijd: herkomst.vastgelegdOp.slice(11, 16) || undefined,
+      encounterId: contact.id,
+      episodeId,
+      episodeTitel: episode?.titel ?? 'Geen episode',
+      episodeIcpc: episode?.code.coding?.find((c) => c.system.includes('icpc'))?.code,
+      soort: contact.soort,
+      auteur: contact.uitvoerder.naam,
+      auteurRol: herkomst.auteurRol,
+      bron: herkomst.bron,
+      regels: soep.map((r) => ({ letter: r.letter, tekst: r.tekst })),
+      heeftSoep: soep.length > 0,
+      aantalMetingen: metingenBij(contact.id),
+    };
+  });
+
+  return regels
+    .filter((r) => !filterEpisodeId || r.episodeId === filterEpisodeId)
+    .sort((a, b) => `${b.datum}${b.tijd ?? ''}`.localeCompare(`${a.datum}${a.tijd ?? ''}`));
 }

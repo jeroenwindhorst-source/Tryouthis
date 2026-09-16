@@ -60,7 +60,7 @@ export interface AgendaRegel {
 export interface WachtkamerIntake {
   id: string; patientId: string; naam: string;
   app: { id: string; naam: string; leverancier: string };
-  opgenomenOp: string; duurSeconden: number;
+  opgenomenOp: string; duurSeconden: number; waar: 'wachtkamer' | 'thuis';
   hulpvraag: string; anamnese: string;
   codesuggesties: { icpc: string; display: string; vertrouwen: number }[];
   metingen: { code: string; naam: string; waarde: number; eenheid: string }[];
@@ -115,10 +115,47 @@ export interface Zoektreffer {
 }
 
 export interface JournaalRegel {
-  datum: string; encounterId: string; episodeId: string;
+  datum: string; tijd?: string; encounterId: string; episodeId: string;
   episodeTitel: string; episodeIcpc?: string;
   soort: string; auteur: string; auteurRol: string; bron: string;
   regels: { letter: string; tekst: string }[];
+  heeftSoep: boolean;
+  aantalMetingen: number;
+  aantalOrders?: number;
+}
+
+export interface Eigenmetingdag {
+  id: string; datum: string; via: string; bevestigd: boolean;
+  metingen: { code: string; naam: string; waarde: string; eenheid?: string }[];
+}
+
+/** Alles wat op één contactmoment is vastgelegd, bij elkaar. */
+export interface Contactdossier {
+  encounterId: string;
+  datum: string; tijd?: string; soort: string; duurMinuten?: number;
+  uitvoerder: { naam: string; rol: string };
+  herkomst: { bron: string; vastgelegdOp: string; auteurRol: string };
+  patient: {
+    naam: string; leeftijdToen: number; geboortedatum: string;
+    episodesToen: { icpc?: string; titel: string }[];
+    behandelgrenzen: string[];
+  };
+  hulpvraag?: string;
+  deelcontacten: {
+    id: string; episodeTitel: string; episodeIcpc?: string;
+    regels: { letter: string; tekst: string }[];
+  }[];
+  metingen: {
+    code: string; naam: string; waarde: string; eenheid?: string;
+    bron: string; eigenRegistratie: boolean;
+  }[];
+  orders: { id: string; soort: string; omschrijving: string; detail?: string; status: string; route?: string }[];
+  verrichtingen: {
+    naam: string; uitgevoerdDoor: string; beoordelaar: string;
+    waarden: { naam: string; waarde: string }[];
+    conclusie?: string;
+  }[];
+  declaratie?: { code: string; omschrijving: string; declarabel: boolean; ontbreekt?: string[] };
 }
 
 export interface ExterneSectie { naam: string; regels: { label: string; waarde: string }[] }
@@ -136,7 +173,9 @@ export interface ExternDocument {
 export type Tijdlijnitem =
   | { soort: 'contact'; datum: string; contact: JournaalRegel }
   | { soort: 'extern'; datum: string; document: ExternDocument }
-  | { soort: 'overleg'; datum: string; notitie: Overlegnotitie };
+  | { soort: 'overleg'; datum: string; notitie: Overlegnotitie }
+  | { soort: 'eigenmeting'; datum: string; meting: Eigenmetingdag }
+  | { soort: 'intake'; datum: string; intake: WachtkamerIntake };
 
 export interface Bron {
   id: string; aard: string; titel: string; toelichting: string; aantal: number;
@@ -186,6 +225,7 @@ export interface Catalogustreffer {
   atc?: string; levert?: string[]; route?: string;
   instellingen?: string[]; portaal?: { naam: string; url: string };
   verrichtingCode?: string; bijRol?: string; duurMinuten?: number; vorm?: string;
+  groepModule?: string;
   vereistRecht: string;
   waarschuwingen: Waarschuwing[];
 }
@@ -194,6 +234,7 @@ export interface NieuweOrder {
   patientId: string; soort: string; omschrijving: string; detail?: string;
   atc?: string; route?: string; bestemming?: string;
   verrichtingCode?: string; bijRol?: string; duurMinuten?: number; planroute?: string;
+  groepModule?: string;
   uitSet?: { id: string; naam: string };
   richtlijn?: { naam: string; versie?: string; paragraaf?: string; url?: string; uitgever?: string };
   waarschuwingen?: Waarschuwing[]; levert?: string[]; vereistRecht: string;
@@ -350,6 +391,74 @@ export interface Verrichtingbeeld {
     velden: { naam: string; waarde: string }[];
   }[];
   soorten: Verrichtingsoort[];
+}
+
+export interface Alinea {
+  id: string; titel: string; tekst: string; bron: string;
+  nadruk?: 'aandacht' | 'urgent';
+}
+
+export interface Kerngetal {
+  label: string; waarde: string; onder?: string; toon?: 'ok' | 'aandacht' | 'urgent';
+}
+
+export interface Samenvatting {
+  kop: string; alineas: Alinea[]; kerngetallen: Kerngetal[];
+  herkomst: { soort: string; versie: string; toelichting: string };
+}
+
+export interface Mediabestand {
+  id: string; patientId: string; soort: string; bron: string;
+  titel: string; categorie: string; datum: string; ontvangenOp: string;
+  bestandsnaam: string; groottekB: number;
+  gekoppeldAan?: { soort: string; id: string; bronId?: string; omschrijving: string };
+  omschrijving: string; gelezen: boolean;
+}
+
+export interface Mediabeeld {
+  bestanden: Mediabestand[]; totaal: number; ongelezen: number;
+  soorten: { soort: string; label: string; aantal: number }[];
+  bronnen: { bron: string; label: string; aantal: number }[];
+  categorieen: string[];
+  jaren: string[];
+}
+
+export interface Groepsdeelnemer {
+  patientId: string; naam: string; status: string;
+  onderbouwing: string; toegevoegdOp: string; geregistreerd?: boolean;
+}
+
+export interface Groepsconsult {
+  id: string; titel: string; thema: string; module: string;
+  begeleider: { id: string; naam: string; rol: string };
+  start: string; datum: string; tijd: string; duurMinuten: number;
+  plaats: string; maxDeelnemers: number; status: string;
+  programma: string[]; deelnemers: Groepsdeelnemer[];
+  aangemeld: number;
+  voorgesteld: {
+    patientId: string; naam: string; leeftijd: number;
+    onderbouwing: string; zelfredzaamheid?: number;
+  }[];
+}
+
+export interface Filterveld {
+  id: string; naam: string; uitleg: string; soort: 'keuze' | 'getal' | 'jaartal';
+  opties?: { code: string; label: string }[]; eenheid?: string;
+}
+
+export interface Rapportregel {
+  patientId: string; naam: string; leeftijd: number;
+  modules: string[]; ketens: string[];
+  kolommen: { naam: string; waarde: string; toon?: 'aandacht' | 'urgent' }[];
+}
+
+export interface Rapport {
+  criteria: Record<string, string>;
+  omschrijving: string; totaal: number; vanTotaal: number;
+  regels: Rapportregel[];
+  verdeling: { label: string; aantal: number }[];
+  kolomnamen: string[];
+  velden: Filterveld[];
 }
 
 export interface Gesprek {
@@ -616,6 +725,8 @@ const httpApi = {
     stuur<{ episodeId: string; overzicht: PatientOverzicht }>(`/api/patient/${patientId}/episode`, code),
   historie: (patientId: string, bronId?: string) =>
     haal<DossierHistorie>(`/api/patient/${patientId}/historie${bronId ? `?bron=${encodeURIComponent(bronId)}` : ''}`),
+  contactdossier: (patientId: string, encounterId: string) =>
+    haal<Contactdossier>(`/api/patient/${patientId}/contact/${encounterId}`),
   meetreeksen: (patientId: string) => haal<Meetreeks[]>(`/api/patient/${patientId}/meetreeksen`),
   orders: (patientId: string) => haal<VoorgesteldeOrderSet[]>(`/api/patient/${patientId}/orders`),
   orderOverzicht: (patientId: string) => haal<Orderoverzicht>(`/api/patient/${patientId}/orderoverzicht`),
@@ -651,6 +762,41 @@ const httpApi = {
     stuur<Acuutbeeld>(`/api/acuut/${id}/afhandelen`, { uitkomst, rol }),
 
   contactvormen: () => haal<Contactvormdefinitie[]>('/api/contactvormen'),
+
+  samenvatting: (patientId: string) => haal<Samenvatting>(`/api/patient/${patientId}/samenvatting`),
+  media: (patientId: string, filter?: {
+    soorten?: string[]; bronnen?: string[]; categorie?: string; vraag?: string; jaar?: string;
+  }) => {
+    const vragen = new URLSearchParams();
+    if (filter?.soorten?.length) vragen.set('soort', filter.soorten.join(','));
+    if (filter?.bronnen?.length) vragen.set('bron', filter.bronnen.join(','));
+    if (filter?.categorie) vragen.set('categorie', filter.categorie);
+    if (filter?.vraag) vragen.set('q', filter.vraag);
+    if (filter?.jaar) vragen.set('jaar', filter.jaar);
+    const staart = vragen.toString();
+    return haal<Mediabeeld>(`/api/patient/${patientId}/media${staart ? `?${staart}` : ''}`);
+  },
+  markeerMediaGelezen: (patientId: string, mediaId: string) =>
+    stuur<Mediabeeld>(`/api/patient/${patientId}/media/${mediaId}/gelezen`, {}),
+
+  groepsconsulten: () => haal<Groepsconsult[]>('/api/groepsconsulten'),
+  maakGroepsconsult: (gebruikerId: string, nieuw: {
+    titel: string; thema: string; module: string; start: string;
+    duurMinuten: number; plaats: string; maxDeelnemers: number; programma: string[];
+  }) => stuur<Groepsconsult[]>('/api/groepsconsulten', { gebruikerId, nieuw }),
+  voegDeelnemerToe: (groepId: string, deelnemer: {
+    patientId: string; naam: string; status: string; onderbouwing: string;
+  }) => stuur<Groepsconsult[]>(`/api/groepsconsulten/${groepId}/deelnemers`, deelnemer),
+  verwijderDeelnemer: (groepId: string, patientId: string) =>
+    stuur<Groepsconsult[]>(`/api/groepsconsulten/${groepId}/deelnemers/${patientId}/verwijderen`, {}),
+  zetDeelnemerstatus: (groepId: string, patientId: string, status: string) =>
+    stuur<Groepsconsult[]>(`/api/groepsconsulten/${groepId}/deelnemers/${patientId}/status`, { status }),
+
+  rapport: (criteria: Record<string, string>) =>
+    stuur<Rapport>('/api/rapport', criteria),
+  rapportExport: (criteria: Record<string, string>) =>
+    stuur<{ regels: Record<string, string | number>[]; toelichting: string }>(
+      '/api/rapport/export', criteria),
   verrichtingen: (patientId: string) =>
     haal<Verrichtingbeeld>(`/api/patient/${patientId}/verrichtingen`),
   legVerrichtingVast: (gebruikerId: string, gegevens: {

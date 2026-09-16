@@ -2,7 +2,8 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import {
   api, MODULE_NAAM,
   type ExternDocument, type GeplandContact, type GeplandItem, type Gebruiker,
-  type Contactvorm, type Declaratiebeeld, type JournaalRegel, type Meetreeks,
+  type Contactvorm, type Declaratiebeeld, type Eigenmetingdag, type JournaalRegel,
+  type Meetreeks, type WachtkamerIntake,
   type NieuweOrder, type Overlegnotitie, type PatientOverzicht, type RegistratieUitkomst,
   type Treffer,
 } from '../api';
@@ -18,6 +19,8 @@ import {
 import { Orders } from './Orders';
 import { Orderpaneel } from './Orderpaneel';
 import { Verrichtingen } from './Verrichtingen';
+import { Overzicht } from './Overzicht';
+import { Media } from './Media';
 import { Bespreekknop } from './Overleg';
 
 /**
@@ -43,7 +46,7 @@ const INTENSITEITEN = [
   { id: 'palliatief', label: 'palliatief', uitleg: 'streefwaarden vervallen, comfort leidend' },
 ];
 
-type Tab = 'consult' | 'journaal' | 'metingen' | 'orders' | 'verrichtingen';
+type Tab = 'overzicht' | 'consult' | 'journaal' | 'metingen' | 'media' | 'orders' | 'verrichtingen';
 type OrderSoort = 'medicatie' | 'lab' | 'onderzoek' | 'verwijzing' | 'afspraak';
 
 /**
@@ -155,13 +158,15 @@ export interface Registratie {
   suggestieCodes: { icpc: string; display: string }[];
 }
 
-export function Consult({ patientId, gebruiker, terug }: {
+export function Consult({ patientId, gebruiker, terug, startTab = 'consult' }: {
   patientId: string;
   gebruiker: Gebruiker;
   terug: () => void;
+  /** Waarmee het dossier opent. Persoonlijke voorkeur — zie Voorkeuren. */
+  startTab?: Tab;
 }) {
   const { data, fout, bezig, setData } = useData(() => api.patient(patientId), [patientId]);
-  const [tab, setTab] = useState<Tab>('consult');
+  const [tab, setTab] = useState<Tab>(startTab);
   const [bezigMet, setBezigMet] = useState<string | undefined>();
   const [toonNietActief, setToonNietActief] = useState(false);
   const [uitkomst, setUitkomst] = useState<RegistratieUitkomst | undefined>();
@@ -170,6 +175,7 @@ export function Consult({ patientId, gebruiker, terug }: {
   const [ordersVandaag, setOrdersVandaag] = useState<NieuweOrder[]>([]);
   const [video, setVideo] = useState(false);
   const [toonDetails, setToonDetails] = useState(false);
+  const [journaalBron, setJournaalBron] = useState<string | undefined>();
   const [registratie, setRegistratie] = useState<Registratie>({
     waarden: {}, bronnen: {}, soep: {}, episodeId: '', suggestieCodes: [],
   });
@@ -253,9 +259,8 @@ export function Consult({ patientId, gebruiker, terug }: {
           {data.patient.portaalActief
             ? <span className="merkje" data-toon="ok">portaal actief</span>
             : (
-              <button className="knop" style={{ padding: '3px 10px', fontSize: 11.5 }}
-                title="Nodig de patiënt uit voor het portaal">
-                <Icoon naam="huis" grootte={12} /> Geen portaal — uitnodigen
+              <button className="knop" title="Nodig de patiënt uit voor het portaal">
+                <Icoon naam="huis" grootte={13} /> Uitnodigen voor het portaal
               </button>
             )}
         </span>
@@ -269,6 +274,9 @@ export function Consult({ patientId, gebruiker, terug }: {
       )}
 
       <div className="dossiertabs">
+        <button data-actief={tab === 'overzicht'} onClick={() => setTab('overzicht')}>
+          <Icoon naam="boek" grootte={14} /> Overzicht
+        </button>
         <button data-actief={tab === 'consult'} onClick={() => setTab('consult')}>
           <Icoon naam="klembord" grootte={14} /> Consult
         </button>
@@ -278,6 +286,9 @@ export function Consult({ patientId, gebruiker, terug }: {
         <button data-actief={tab === 'metingen'} onClick={() => setTab('metingen')}>
           <Icoon naam="buisje" grootte={14} /> Meetwaarden
         </button>
+        <button data-actief={tab === 'media'} onClick={() => setTab('media')}>
+          <Icoon naam="document" grootte={14} /> Media
+        </button>
         <button data-actief={tab === 'orders'} onClick={() => setTab('orders')}>
           <Icoon naam="pil" grootte={14} /> Orders
         </button>
@@ -286,7 +297,15 @@ export function Consult({ patientId, gebruiker, terug }: {
         </button>
       </div>
 
-      {tab === 'journaal' && <Journaal patientId={patientId} />}
+      {tab === 'overzicht' && (
+        <Overzicht patientId={patientId} gebruiker={gebruiker}
+          opTab={(t) => setTab(t as Tab)} />
+      )}
+      {tab === 'journaal' && <Journaal patientId={patientId} bron={journaalBron} />}
+      {tab === 'media' && (
+        <Media patientId={patientId} patientNaam={data.patient.naam}
+          opTijdlijn={(bronId) => { setJournaalBron(bronId); setTab('journaal'); }} />
+      )}
       {tab === 'metingen' && (
         <Metingen patientId={patientId} gekozen={gekozenMeting} opKies={setGekozenMeting} />
       )}
@@ -308,8 +327,26 @@ export function Consult({ patientId, gebruiker, terug }: {
 
       {tab === 'consult' && (
         <div className="dossier">
-          {/* ── Links: wie is dit ──────────────────────────────────────── */}
+          {/*
+            ── Links: wie is dit, in de volgorde waarin je het wilt weten ──
+
+            De blokken staan in de volgorde van het gesprek zelf en niet in de volgorde
+            waarin het systeem ze toevallig kan opleveren:
+
+              1. wat nú aandacht vraagt (daar begin je mee),
+              2. wie deze mens is — zelfredzaamheid en wat hij zelf wil,
+              3. wat hij gebruikt,
+              4. wat je kunt uitzetten,
+              5. wat er daarna gepland of opgeroepen staat.
+
+            Wie dat door elkaar zet, laat de zorgverlener elke keer opnieuw zoeken waar
+            het stukje staat dat hij op dat moment nodig heeft.
+          */}
           <div>
+            <Kaart titel="Signalen" icoon="waarschuwing">
+              <Signalen signalen={data.signalen} />
+            </Kaart>
+
             {plan.zelfredzaamheid && plan.zelfredzaamheid.gemiddelde > 0 && (
               <Kaart titel="Zelfredzaamheid" icoon="schild"
                 telling={plan.zelfredzaamheid.trend
@@ -375,10 +412,6 @@ export function Consult({ patientId, gebruiker, terug }: {
               </Kaart>
             )}
 
-            <Kaart titel="Signalen" icoon="waarschuwing">
-              <Signalen signalen={data.signalen} />
-            </Kaart>
-
             <Kaart titel="Medicatie" icoon="pil" telling={data.medicatie.length}>
               {data.medicatie.length === 0 && <span className="mini">Geen chronische medicatie.</span>}
               {data.medicatie.map((m) => (
@@ -408,6 +441,14 @@ export function Consult({ patientId, gebruiker, terug }: {
                 </button>
                 <button className="knop" onClick={() => setOrderpaneel('onderzoek')}>
                   <Icoon naam="radar" grootte={13} /> Onderzoek
+                </button>
+                {/*
+                  Een afspraak is een order als elke andere (ADR-0009), en dat geldt ook
+                  voor een groepsconsult: "ik zet je op de leefstijlgroep" is vanuit het
+                  consult dezelfde handeling als "ik plan een controle".
+                */}
+                <button className="knop" data-breed="true" onClick={() => setOrderpaneel('afspraak')}>
+                  <Icoon naam="agenda" grootte={13} /> Afspraak of groepsconsult
                 </button>
               </div>
               <button className="knop" data-toon="stil" style={{ marginTop: 8 }}
@@ -518,7 +559,13 @@ export function Consult({ patientId, gebruiker, terug }: {
             </Kaart>
           </div>
 
-          {/* ── Midden: beslissen, registreren, plannen ─────────────────── */}
+          {/*
+            ── Midden: de loop van het consult ──────────────────────────
+
+            Voorbereiding uit de wachtkamer, dan wat het systeem opmerkt, dan wat je
+            vastlegt, dan wat daaruit volgt. Precies de volgorde waarin een consult
+            verloopt, zodat je van boven naar beneden werkt in plaats van heen en weer.
+          */}
           <div>
             {data.intake && (
               <IntakeKaart intake={data.intake} bezig={bezigMet === 'intake'}
@@ -613,7 +660,7 @@ export function Consult({ patientId, gebruiker, terug }: {
                     <Icoon naam="pijl-links" grootte={13} /> Terug naar het spreekuur
                   </button>
                   <button className="knop" data-toon="stil" onClick={() => setUitkomst(undefined)}>
-                    Nog iets vastleggen
+                    <Icoon naam="plus" grootte={13} /> Nieuw contact starten
                   </button>
                 </div>
               </Kaart>
@@ -1066,8 +1113,8 @@ function ContactKaart({ contact, opMetingKlik }: {
  * wegpoetsen, en juist die moet zichtbaar blijven — het is niet van ons en het telt niet
  * automatisch mee in de beslisregels.
  */
-function Journaal({ patientId }: { patientId: string }) {
-  const [bron, setBron] = useState<string | undefined>();
+function Journaal({ patientId, bron: startBron }: { patientId: string; bron?: string }) {
+  const [bron, setBron] = useState<string | undefined>(startBron);
   const [open, setOpen] = useState<string | undefined>();
   const { data, fout, bezig, setData } = useData(
     () => api.historie(patientId, bron), [patientId, bron]);
@@ -1144,6 +1191,7 @@ function Journaal({ patientId }: { patientId: string }) {
             if (item.soort === 'contact') {
               return (
                 <Contactregel key={item.contact.encounterId + item.datum} regel={item.contact}
+                  patientId={patientId}
                   open={open === item.contact.encounterId}
                   opKlik={() => setOpen(open === item.contact.encounterId ? undefined : item.contact.encounterId)}
                   opEpisode={() => setBron(item.contact.episodeId)} />
@@ -1151,6 +1199,12 @@ function Journaal({ patientId }: { patientId: string }) {
             }
             if (item.soort === 'overleg') {
               return <Overlegregel key={item.notitie.id} notitie={item.notitie} />;
+            }
+            if (item.soort === 'eigenmeting') {
+              return <Eigenmetingregel key={item.meting.id} meting={item.meting} />;
+            }
+            if (item.soort === 'intake') {
+              return <Intakeregel key={item.intake.id} intake={item.intake} />;
             }
             return (
               <Externregel key={item.document.id} document={item.document}
@@ -1163,54 +1217,337 @@ function Journaal({ patientId }: { patientId: string }) {
   );
 }
 
-/** Eén eigen contact: SOEP, met de rest van de registratie één klik verderop. */
-function Contactregel({ regel, open, opKlik, opEpisode }: {
-  regel: JournaalRegel; open: boolean; opKlik: () => void; opEpisode: () => void;
+/**
+ * Eén eigen contact in het journaal.
+ *
+ * De SOEP-tekst staat er direct; "het hele consult" haalt op wat er verder op dat moment
+ * is vastgelegd. Dat is bewust een aparte ophaalactie: het journaal blijft licht, en wie
+ * de reconstructie wil, vraagt erom.
+ */
+function Contactregel({ regel, patientId, open, opKlik, opEpisode }: {
+  regel: JournaalRegel; patientId: string; open: boolean; opKlik: () => void; opEpisode: () => void;
 }) {
   return (
     <div className="journaalregel" data-open={open}>
       <div>
         <div className="wanneer">{regel.datum}</div>
-        <div className="mini">{regel.soort}</div>
+        <div className="mini">{regel.tijd ? `${regel.tijd} · ` : ''}{regel.soort}</div>
       </div>
       <div>
-        <button className="regelknop" onClick={opKlik}>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span className="merkje" data-toon="neutraal">{regel.episodeIcpc} {regel.episodeTitel}</span>
-            <span className="mini">{regel.auteur} · {regel.auteurRol}</span>
-            {regel.bron !== 'zorgverlener' && (
-              <span className="merkje" data-toon="aandacht">{regel.bron}</span>
-            )}
-            <span className="mini" style={{ marginLeft: 'auto' }}>
-              {open ? 'minder' : 'het hele consult'}
+        <div className="contactkop">
+          <span className="merkje" data-toon="neutraal">{regel.episodeIcpc} {regel.episodeTitel}</span>
+          <span className="mini">{regel.auteur} · {regel.auteurRol}</span>
+          {regel.bron !== 'zorgverlener' && (
+            <span className="merkje" data-toon="aandacht">{regel.bron}</span>
+          )}
+          {/*
+            Een echte knop, geen tekstje rechts. Wat erachter zit is niet "meer van
+            hetzelfde" maar een ander soort informatie: de reconstructie van het moment.
+          */}
+          <button className="knop" data-toon={open ? undefined : 'primair'} onClick={opKlik}>
+            <Icoon naam={open ? 'kruis' : 'boek'} grootte={13} />
+            {open ? 'Sluiten' : 'Het hele consult'}
+          </button>
+        </div>
+
+        {!regel.heeftSoep && (
+          <div className="mini" style={{ margin: '6px 0' }}>
+            Geen verslagtekst bij dit contact — er zijn alleen gegevens vastgelegd.
+          </div>
+        )}
+        {/* Open staat de SOEP in het contactdossier hieronder, op zijn chronologische plek. */}
+        {!open && (
+          <div className="soep">
+            {regel.regels.map((r, i) => (
+              <div key={i} className="soepregel">
+                <span className="soepletter" data-letter={r.letter}>{r.letter}</span>
+                <span>{r.tekst}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {regel.aantalMetingen > 0 && !open && (
+          <div className="mini" style={{ marginTop: 5 }}>
+            {regel.aantalMetingen} meting{regel.aantalMetingen === 1 ? '' : 'en'} vastgelegd bij dit contact.
+          </div>
+        )}
+
+        {open && (
+          <HeleConsult patientId={patientId} encounterId={regel.encounterId} opEpisode={opEpisode} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Alles wat op dit moment is vastgelegd, in de volgorde waarin het gebeurde.
+ *
+ * Eerst wie er tegenover je zat en wat er toen al bekend was, dan de hulpvraag, dan wat je
+ * hebt opgeschreven, dan wat je hebt gemeten, dan wat je hebt uitgezet, en pas als laatste
+ * de administratie. Dat is de volgorde van het consult zelf; een dossier dat begint bij het
+ * contact-id is geschreven voor het systeem in plaats van voor de mens die het naleest.
+ */
+function HeleConsult({ patientId, encounterId, opEpisode }: {
+  patientId: string; encounterId: string; opEpisode: () => void;
+}) {
+  const { data, fout, bezig } = useData(
+    () => api.contactdossier(patientId, encounterId), [patientId, encounterId]);
+
+  if (fout) return <Fout boodschap={fout} />;
+  if (bezig || !data) return <Laden wat="Het consult" />;
+
+  return (
+    <div className="contactdetail">
+      <div className="contactblok">
+        <h4><Icoon naam="persoon" grootte={13} /> Wie, en wat er toen bekend was</h4>
+        <div className="regel">
+          <span className="sleutel">Patiënt</span>
+          <span className="waarde">
+            {data.patient.naam} · {data.patient.leeftijdToen} jaar toen
+            <div className="mini">geboren {data.patient.geboortedatum}</div>
+          </span>
+        </div>
+        <div className="regel">
+          <span className="sleutel">Episodes op dat moment</span>
+          <span className="waarde">
+            <span className="chips">
+              {data.patient.episodesToen.length === 0 && <span className="mini">geen</span>}
+              {data.patient.episodesToen.map((e) => (
+                <span key={e.titel} className="merkje" data-toon="neutraal">
+                  {e.icpc} {e.titel}
+                </span>
+              ))}
+            </span>
+          </span>
+        </div>
+        {data.patient.behandelgrenzen.length > 0 && (
+          <div className="regel">
+            <span className="sleutel">Beleidsafspraken</span>
+            <span className="waarde">
+              {data.patient.behandelgrenzen.map((b) => (
+                <div key={b} className="mini" style={{ color: 'var(--urgent)' }}>{b}</div>
+              ))}
             </span>
           </div>
-        </button>
-        <div className="soep">
-          {regel.regels.map((r, i) => (
-            <div key={i} className="soepregel">
-              <span className="soepletter" data-letter={r.letter}>{r.letter}</span>
-              <span>{r.tekst}</span>
+        )}
+        <div className="regel">
+          <span className="sleutel">Contact</span>
+          <span className="waarde" style={{ fontWeight: 400 }}>
+            {data.soort}{data.duurMinuten ? ` · ${data.duurMinuten} min` : ''}
+            {' · '}{data.uitvoerder.naam} ({data.uitvoerder.rol})
+          </span>
+        </div>
+      </div>
+
+      {data.hulpvraag && (
+        <div className="contactblok">
+          <h4><Icoon naam="gesprek" grootte={13} /> De hulpvraag</h4>
+          <p className="reden">{data.hulpvraag}</p>
+        </div>
+      )}
+
+      {data.deelcontacten.length > 0 && (
+        <div className="contactblok">
+          <h4><Icoon naam="klembord" grootte={13} /> Wat er is opgeschreven</h4>
+          {data.deelcontacten.map((dc) => (
+            <div key={dc.id} style={{ marginBottom: 8 }}>
+              <span className="merkje" data-toon="neutraal">{dc.episodeIcpc} {dc.episodeTitel}</span>
+              <div className="soep" style={{ marginTop: 5 }}>
+                {dc.regels.map((r, i) => (
+                  <div key={i} className="soepregel">
+                    <span className="soepletter" data-letter={r.letter}>{r.letter}</span>
+                    <span>{r.tekst}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
         </div>
-        {open && (
-          <div className="contactdetail">
-            <div className="regel">
-              <span className="sleutel">Contact-id<div className="mini">verwijzing naar de registratie</div></span>
-              <span className="waarde" style={{ fontWeight: 400, fontSize: 12 }}>{regel.encounterId}</span>
-            </div>
-            <div className="regel">
-              <span className="sleutel">Herkomst</span>
-              <span className="waarde" style={{ fontWeight: 400, fontSize: 12 }}>
-                {regel.bron} · vastgelegd door {regel.auteur}
+      )}
+
+      <div className="contactblok">
+        <h4><Icoon naam="meter" grootte={13} /> Wat er is gemeten</h4>
+        {data.metingen.length === 0
+          ? <span className="mini">Geen metingen bij dit contact.</span>
+          : (
+            <table className="waardetabel">
+              <tbody>
+                {data.metingen.map((m) => (
+                  <tr key={m.code + m.waarde}>
+                    <td>{m.naam}</td>
+                    <td className="getal">{m.waarde} {m.eenheid}</td>
+                    <td>
+                      {/* Eigen registratie of niet: dat bepaalt of de waarde meetelt (ADR-0012). */}
+                      <span className="merkje" data-toon={m.eigenRegistratie ? 'ok' : 'aandacht'}>
+                        {m.eigenRegistratie ? 'eigen registratie' : m.bron}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+      </div>
+
+      <div className="contactblok">
+        <h4><Icoon naam="lijst" grootte={13} /> Wat er is uitgezet</h4>
+        {data.orders.length === 0
+          ? <span className="mini">Geen orders bij dit contact.</span>
+          : data.orders.map((o) => (
+            <div key={o.id} className="regel">
+              <span className="sleutel">
+                {o.omschrijving}
+                {o.detail && <div className="mini">{o.detail}</div>}
+              </span>
+              <span className="waarde">
+                <span className="merkje" data-toon="neutraal">{o.soort}</span>{' '}
+                <span className="merkje" data-toon={o.status === 'uitgevoerd' ? 'ok' : 'informatief'}>
+                  {o.status}
+                </span>
               </span>
             </div>
-            <button className="knop" style={{ marginTop: 8 }} onClick={opEpisode}>
-              <Icoon naam="lijst" grootte={13} /> Alleen deze episode tonen
-            </button>
+          ))}
+      </div>
+
+      {data.verrichtingen.length > 0 && (
+        <div className="contactblok">
+          <h4><Icoon naam="hart" grootte={13} /> Verrichtingen</h4>
+          {data.verrichtingen.map((v) => (
+            <div key={v.naam} style={{ marginBottom: 8 }}>
+              <strong style={{ fontSize: 13 }}>{v.naam}</strong>
+              <div className="mini">
+                uitgevoerd door {v.uitgevoerdDoor} · beoordeeld: {v.beoordelaar}
+              </div>
+              {v.waarden.map((w) => (
+                <div key={w.naam} className="regel">
+                  <span className="sleutel">{w.naam}</span>
+                  <span className="waarde">{w.waarde}</span>
+                </div>
+              ))}
+              {v.conclusie && <p className="reden">{v.conclusie}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="contactblok">
+        <h4><Icoon naam="schild" grootte={13} /> Administratie en herkomst</h4>
+        {data.declaratie ? (
+          <div className="regel">
+            <span className="sleutel">Declaratie</span>
+            <span className="waarde">
+              {data.declaratie.code} — {data.declaratie.omschrijving}
+              <span className="merkje" data-toon={data.declaratie.declarabel ? 'ok' : 'aandacht'}
+                style={{ marginLeft: 6 }}>
+                {data.declaratie.declarabel ? 'declarabel' : 'niet declarabel'}
+              </span>
+              {data.declaratie.ontbreekt && data.declaratie.ontbreekt.length > 0 && (
+                <div className="mini">ontbreekt: {data.declaratie.ontbreekt.join(', ')}</div>
+              )}
+            </span>
+          </div>
+        ) : <span className="mini">Geen declaratieregel bij dit contact.</span>}
+        <div className="regel">
+          <span className="sleutel">Herkomst</span>
+          <span className="waarde" style={{ fontWeight: 400, fontSize: 12 }}>
+            {data.herkomst.bron} · {data.herkomst.auteurRol} · {data.herkomst.vastgelegdOp.slice(0, 16).replace('T', ' ')}
+          </span>
+        </div>
+        <div className="regel">
+          <span className="sleutel">Contact-id<div className="mini">verwijzing naar de registratie</div></span>
+          <span className="waarde" style={{ fontWeight: 400, fontSize: 12 }}>{data.encounterId}</span>
+        </div>
+      </div>
+
+      <button className="knop" onClick={opEpisode}>
+        <Icoon naam="lijst" grootte={13} /> Alleen deze episode tonen
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Wat de patiënt zelf heeft vastgelegd.
+ *
+ * Geen SOEP en geen contact: er is niemand bij geweest. Het staat er omdat het gebeurd is
+ * en omdat je het bij de volgende controle wilt kunnen terugzien — met de herkomst erbij,
+ * want deze waarden vullen geen ketenindicator (ADR-0012).
+ */
+function Eigenmetingregel({ meting }: { meting: Eigenmetingdag }) {
+  return (
+    <div className="journaalregel eigen">
+      <div>
+        <div className="wanneer">{meting.datum}</div>
+        <div className="mini">eigen meting</div>
+      </div>
+      <div>
+        <div className="contactkop">
+          <span className="merkje" data-toon="aandacht">door de patiënt</span>
+          <span className="mini">{meting.via}</span>
+          {meting.bevestigd && <span className="merkje" data-toon="ok">besproken in een contact</span>}
+        </div>
+        <table className="waardetabel" style={{ marginTop: 6 }}>
+          <tbody>
+            {meting.metingen.map((m) => (
+              <tr key={m.code + m.waarde}>
+                <td>{m.naam}</td>
+                <td className="getal">{m.waarde} {m.eenheid}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="mini" style={{ marginTop: 5 }}>
+          Klinisch bruikbaar, maar geen eigen registratie: deze waarden vullen geen
+          ketenindicator tot een zorgverlener ze heeft overgenomen.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * De voorbereiding uit de wachtkamer.
+ *
+ * Een partnerapp heeft een gesprek omgezet naar gestructureerde tekst. Dat is geen consult
+ * en geen registratie van ons — het is een suggestie van een externe partij, en zo staat
+ * het er ook: zichtbaar in de tijdlijn, met de leverancier erbij, en met de status of een
+ * mens het heeft bevestigd.
+ */
+function Intakeregel({ intake }: { intake: WachtkamerIntake }) {
+  return (
+    <div className="journaalregel extern">
+      <div>
+        <div className="wanneer">{intake.opgenomenOp.slice(0, 10)}</div>
+        <div className="mini">voorbereiding</div>
+      </div>
+      <div>
+        <div className="contactkop">
+          <span className="merkje" data-toon="extern">{intake.app.naam}</span>
+          <span className="mini">
+            {intake.waar === 'wachtkamer' ? 'in de wachtkamer' : 'thuis voorbereid'}
+            {' · '}{Math.round(intake.duurSeconden / 60)} min
+          </span>
+          <span className="merkje" data-toon={intake.bevestigd ? 'ok' : 'aandacht'}>
+            {intake.bevestigd ? 'bevestigd' : 'nog niet bevestigd'}
+          </span>
+        </div>
+        <p className="reden" style={{ fontStyle: 'italic' }}>&bdquo;{intake.hulpvraag}&rdquo;</p>
+        <p className="reden">{intake.anamnese}</p>
+        {intake.codesuggesties.length > 0 && (
+          <div className="chips" style={{ marginTop: 6 }}>
+            {intake.codesuggesties.map((c) => (
+              <span key={c.icpc} className="merkje" data-toon="informatief">
+                {c.icpc} {c.display} · {Math.round(c.vertrouwen * 100)}%
+              </span>
+            ))}
           </div>
         )}
+        <div className="mini" style={{ marginTop: 5 }}>
+          Voorbereiding door een ingebedde app. Telt nergens in mee zolang een zorgverlener
+          het niet heeft overgenomen.
+        </div>
       </div>
     </div>
   );
@@ -1565,6 +1902,9 @@ function Registreren({
   opWijzig: (nieuw: Registratie) => void;
   opKlaar: (nieuw: PatientOverzicht, uitkomst: RegistratieUitkomst) => void;
 }) {
+  // Géén gepland contact betekent niet: geen contact mogelijk. Dat was precies de reden
+  // dat je bij een patiënt zonder zorgplan niets kon vastleggen — terwijl dat juist de
+  // patiënt is die zomaar binnenloopt.
   const contact = overzicht.zorgplan.contacten[0];
   const [bezig, setBezig] = useState(false);
   const [nieuweEpisode, setNieuweEpisode] = useState(false);
@@ -1573,12 +1913,14 @@ function Registreren({
   const [zoek, setZoek] = useState('');
   const [treffers, setTreffers] = useState<Treffer[]>([]);
 
-  if (!contact) return null;
-
-  const alles: GeplandItem[] = contact.metingen;
+  const alles: GeplandItem[] = contact?.metingen ?? [];
   const handmatig = alles.filter((m) => m.invoer.soort !== 'vragenlijst');
   const viaVragenlijst = alles.filter((m) => m.invoer.soort === 'vragenlijst');
   const ingevuld = handmatig.filter((m) => (registratie.waarden[m.code] ?? '').trim() !== '');
+  const soepGevuld = Object.values(registratie.soep).some((t) => (t ?? '').trim() !== '');
+  // Een contact zonder meting is een echt contact. Een telefoontje over de uitslag heeft
+  // geen enkele meetwaarde en hoort wel in het dossier te staan.
+  const ietsIngevuld = ingevuld.length > 0 || soepGevuld;
   const episodeId = registratie.episodeId || overzicht.episodes[0]?.id || '';
 
   const zet = (deel: Partial<Registratie>) => opWijzig({ ...registratie, ...deel });
@@ -1633,8 +1975,11 @@ function Registreren({
   return (
     <Kaart titel="Vastleggen" icoon="klembord" telling={`${ingevuld.length}/${handmatig.length} ingevuld`}>
       <p className="reden" style={{ marginTop: 0 }}>
-        Deze metingen horen bij het contact van vandaag. Je registreert één keer; de
-        ketenverantwoording en de planning volgen er automatisch uit.
+        {handmatig.length > 0
+          ? 'Deze metingen horen bij het contact van vandaag. Je registreert één keer; de '
+            + 'ketenverantwoording en de planning volgen er automatisch uit.'
+          : 'Het protocol vraagt op dit moment geen metingen bij deze patiënt. Je legt hier '
+            + 'gewoon een contact vast: kies de vorm, hang het aan een episode en schrijf de SOEP.'}
       </p>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 11, marginBottom: 14 }}>
@@ -1736,6 +2081,11 @@ function Registreren({
       <label className="veld">Episode</label>
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
         <select value={episodeId} onChange={(e) => zet({ episodeId: e.target.value })}>
+          {/* Zonder episodes is er niets te kiezen, en dan moet dat er staan in plaats van
+              een leeg keuzemenu dat lijkt alsof het laadt. */}
+          {overzicht.episodes.length === 0 && (
+            <option value="">— nog geen episode; maak er een aan —</option>
+          )}
           {overzicht.episodes.map((e) => (
             <option key={e.id} value={e.id}>{e.icpc} — {e.titel}</option>
           ))}
@@ -1871,12 +2221,14 @@ function Registreren({
         heeftEpisode={Boolean(episodeId)} />
 
       <div className="knop-rij" style={{ marginTop: 14 }}>
-        <button className="knop" data-toon="primair" disabled={bezig || ingevuld.length === 0}
+        <button className="knop" data-toon="primair" disabled={bezig || !ietsIngevuld}
           onClick={afronden}>
-          <Icoon naam="vink" grootte={13} /> Consult afronden
+          <Icoon naam="vink" grootte={13} /> Contact vastleggen
         </button>
         <span className="mini" style={{ alignSelf: 'center' }}>
-          {ingevuld.length === 0 ? 'Vul minstens één meting in.' : 'Indicatoren volgen automatisch.'}
+          {ietsIngevuld
+            ? 'Indicatoren en planning volgen automatisch.'
+            : 'Vul een meting in of schrijf minstens één SOEP-regel.'}
         </span>
       </div>
     </Kaart>

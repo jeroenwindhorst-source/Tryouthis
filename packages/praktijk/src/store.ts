@@ -14,6 +14,10 @@ import { genereerOrderhistorie, maakOrder, type NieuweOrder, type Order, type Or
 import { genereerBespreekpunten, type Bespreekpunt, type NieuwBespreekpunt } from './bespreeklijst.js';
 import { genereerBeleidsafspraken, type Beleidsafspraak } from './beleidsafspraken.js';
 import { genereerAcuteSignalen, type AcuutSignaal } from './acuut.js';
+import { filterMedia, genereerMedia, type Mediabestand, type Mediafilter } from './media.js';
+import {
+  genereerGroepsconsulten, type Groepsconsult, type Groepsdeelnemer, type NieuwGroepsconsult,
+} from './groepsconsult.js';
 import type { Contactvorm } from './contactsoorten.js';
 import { vindVerrichting, type Verrichtinguitslag } from './verrichtingen.js';
 import {
@@ -97,6 +101,17 @@ export interface DossierRepository {
   legVerrichtingVast(uitslag: Verrichtinguitslag): void;
   verrichtinguitslagen(patientId: string): Verrichtinguitslag[];
 
+  /** Documenten, foto's en stroken, gekoppeld aan hun aanleiding. */
+  media(patientId: string, filter?: Mediafilter): Mediabestand[];
+  markeerMediaGelezen(patientId: string, mediaId: string): void;
+
+  /** Groepsconsulten: één blok, meerdere patiënten. */
+  groepsconsulten(): Groepsconsult[];
+  maakGroepsconsult(nieuw: NieuwGroepsconsult, door: { id: string; naam: string; rol: Rol }): Groepsconsult;
+  voegDeelnemerToe(groepId: string, deelnemer: Omit<Groepsdeelnemer, 'toegevoegdOp'>): void;
+  verwijderDeelnemer(groepId: string, patientId: string): void;
+  zetDeelnemerstatus(groepId: string, patientId: string, status: Groepsdeelnemer['status']): void;
+
   /** Behandelgrenzen en wilsafspraken; zichtbaar vóór je handelt, niet erna. */
   beleidsafspraken(patientId: string): Beleidsafspraak[];
 
@@ -159,6 +174,8 @@ export class InMemoryRepository implements DossierRepository {
   private acuut: AcuutSignaal[] = [];
   private uitslagen = new Map<string, Verrichtinguitslag[]>();
   private gestartOp = Date.now();
+  private mediaLijst = new Map<string, Mediabestand[]>();
+  private groepen: Groepsconsult[] = [];
   private bekend = new Map<string, Set<string>>();
   private afgehandeld = new Map<string, Map<string, { besluit: string; reden?: string }>>();
 
@@ -188,6 +205,8 @@ export class InMemoryRepository implements DossierRepository {
     this.acuut = [];
     this.uitslagen = new Map();
     this.gestartOp = Date.now();
+    this.mediaLijst = new Map();
+    this.groepen = [];
 
     // Drie jaar dossierhistorie: contacten met SOEP en de bijbehorende meetreeksen.
     // Zonder historie is er niets om in terug te kijken, en dan lijkt elk dossier nieuw.
@@ -204,6 +223,10 @@ export class InMemoryRepository implements DossierRepository {
         genereerOrderhistorie(dossier, this.praktijk.peildatum, 7000 + i));
       const beleid = genereerBeleidsafspraken(dossier, this.praktijk.peildatum, 11000 + i);
       if (beleid.length > 0) this.beleidLijst.set(dossier.patient.id, beleid);
+
+      this.mediaLijst.set(dossier.patient.id, genereerMedia(
+        dossier, this.externLijst.get(dossier.patient.id) ?? [], this.praktijk.peildatum, 13000 + i,
+      ));
     });
 
     this.gesprekken = [
@@ -277,6 +300,15 @@ export class InMemoryRepository implements DossierRepository {
         patientId: d.patient.id,
         naam: this.naamVan(d.patient.id),
         leeftijd: leeftijd(d, this.praktijk.peildatum),
+      })),
+      this.praktijk.peildatum,
+    );
+
+    this.groepen = genereerGroepsconsulten(
+      this.praktijk.dossiers.map((d) => ({
+        patientId: d.patient.id,
+        naam: this.naamVan(d.patient.id),
+        modules: [...(this.bekend.get(d.patient.id) ?? [])],
       })),
       this.praktijk.peildatum,
     );
@@ -524,7 +556,31 @@ export class InMemoryRepository implements DossierRepository {
       // Een afspraak-order is geen regel in een lijst maar een plek in een agenda. Hij
       // wordt daarom meteen een afspraakverzoek, met de route die de zorgverlener koos:
       // zelf inplannen, de assistent laten bellen, of de patiënt via het portaal.
-      if (order.soort === 'afspraak' && order.bijRol) {
+      // Een groepsconsult plant geen slot maar zet deze mens op een blok dat er al is.
+      // Zonder deze route zou "leefstijlgroep" een afspraak van negentig minuten in een
+      // lege agenda worden — en dan is het geen groep meer.
+      if (order.soort === 'afspraak' && order.groepModule) {
+        const blok = this.groepen
+          .filter((g) => g.module === order.groepModule && g.status === 'gepland')
+          .filter((g) => g.deelnemers.length < g.maxDeelnemers)
+          .sort((a, b) => a.start.localeCompare(b.start))[0];
+        if (blok) {
+          this.voegDeelnemerToe(blok.id, {
+            patientId: order.patientId,
+            naam: this.naamVan(order.patientId),
+            status: 'uitgenodigd',
+            onderbouwing: order.detail ?? `Aangemeld vanuit het consult door ${door.naam}`,
+          });
+          order.groepId = blok.id;
+          order.route = `${blok.titel} · ${blok.start.slice(0, 10)} ${blok.start.slice(11, 16)}`;
+          order.status = 'geplaatst';
+        } else {
+          // Geen blok? Dan is de order niet mislukt maar wacht hij op een blok. Stilletjes
+          // omzetten naar een individueel consult zou het besluit veranderen.
+          order.route = 'wacht op een volgend groepsblok met dit thema';
+          order.status = 'geplaatst';
+        }
+      } else if (order.soort === 'afspraak' && order.bijRol) {
         const verzoek = this.maakAfspraakverzoek({
           patientId: order.patientId,
           naam: this.naamVan(order.patientId),
@@ -722,6 +778,72 @@ export class InMemoryRepository implements DossierRepository {
 
   verrichtinguitslagen(patientId: string): Verrichtinguitslag[] {
     return this.uitslagen.get(patientId) ?? [];
+  }
+
+  // ── Media ────────────────────────────────────────────────────────────────
+
+  media(patientId: string, filter?: Mediafilter): Mediabestand[] {
+    const eigen = this.mediaLijst.get(patientId) ?? [];
+    return filter ? filterMedia(eigen, filter) : eigen;
+  }
+
+  markeerMediaGelezen(patientId: string, mediaId: string): void {
+    const bestand = (this.mediaLijst.get(patientId) ?? []).find((m) => m.id === mediaId);
+    if (bestand) bestand.gelezen = true;
+  }
+
+  // ── Groepsconsulten ──────────────────────────────────────────────────────
+
+  groepsconsulten(): Groepsconsult[] { return this.groepen; }
+
+  maakGroepsconsult(
+    nieuw: NieuwGroepsconsult, door: { id: string; naam: string; rol: Rol },
+  ): Groepsconsult {
+    const consult: Groepsconsult = {
+      ...nieuw,
+      id: `groep-${this.groepen.length + 1}-${Date.now()}`,
+      begeleider: door,
+      status: 'gepland',
+      deelnemers: [],
+    };
+    this.groepen.unshift(consult);
+
+    // Een groepsconsult is ook een blok in de agenda van de begeleider. Zonder dat staat
+    // de tijd nergens gereserveerd en plant iemand er doodleuk een spreekuur overheen.
+    this.agendaItems.push({
+      id: `ag-${consult.id}`,
+      start: consult.start,
+      duurMinuten: consult.duurMinuten,
+      rol: door.rol,
+      soort: 'groepsconsult',
+      titel: consult.titel,
+      reden: consult.thema,
+      status: 'gepland',
+    });
+    this.agendaItems.sort((a, b) => a.start.localeCompare(b.start));
+    return consult;
+  }
+
+  voegDeelnemerToe(groepId: string, deelnemer: Omit<Groepsdeelnemer, 'toegevoegdOp'>): void {
+    const groep = this.groepen.find((g) => g.id === groepId);
+    if (!groep) return;
+    if (groep.deelnemers.some((d) => d.patientId === deelnemer.patientId)) return;
+    if (groep.deelnemers.length >= groep.maxDeelnemers) return;
+    groep.deelnemers.push({ ...deelnemer, toegevoegdOp: new Date().toISOString() });
+  }
+
+  verwijderDeelnemer(groepId: string, patientId: string): void {
+    const groep = this.groepen.find((g) => g.id === groepId);
+    if (!groep) return;
+    groep.deelnemers = groep.deelnemers.filter((d) => d.patientId !== patientId);
+  }
+
+  zetDeelnemerstatus(
+    groepId: string, patientId: string, status: Groepsdeelnemer['status'],
+  ): void {
+    const deelnemer = this.groepen.find((g) => g.id === groepId)?.deelnemers
+      .find((d) => d.patientId === patientId);
+    if (deelnemer) deelnemer.status = status;
   }
 
   afgehandeldeSuggesties(patientId: string): string[] {
