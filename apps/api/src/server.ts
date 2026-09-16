@@ -4,10 +4,11 @@ import {
   modules, ketens, vindVragenlijst, vragenlijsten, REGELSET_VERSIE, type PersoonlijkPlan,
 } from '@zpe/care-engine';
 import {
-  agenda, assistentOverzicht, beheer, consultvoorbereiding, dagafsluiting, dagstart,
-  huisartsOverzicht, instroom, InMemoryRepository, intakes, monitoringCohort,
+  agenda, assistentOverzicht, beheer, berichten, consultvoorbereiding, controleerTweefactor,
+  dagafsluiting, dagstart, dossierHistorie, gebruikersoverzicht, huisartsOverzicht, instroom,
+  InMemoryRepository, intakes, meetreeksen, meldAan, monitoringCohort, orderVoorstellen,
   patientOverzicht, praktijkSamenvatting, registreerConsult, terminologie,
-  verwerkVragenlijst, type ConsultRegistratie,
+  verwerkVragenlijst, zoekPatient, type ConsultRegistratie,
 } from '@zpe/praktijk';
 
 const repo = new InMemoryRepository();
@@ -55,6 +56,16 @@ app.post<{ Params: { id: string }; Body: { regelId: string; actieId: string; red
   },
 );
 
+/** Nieuwe episode openen tijdens het consult. */
+app.post<{ Params: { id: string }; Body: { icpc: string; snomed?: string; display: string } }>(
+  '/api/patient/:id/episode',
+  async (req, reply) => {
+    const id = repo.maakEpisode(req.params.id, req.body, 'zv-poh-1');
+    if (!id) return reply.code(404).send({ fout: 'patiënt niet gevonden' });
+    return { episodeId: id, overzicht: patientOverzicht(repo, req.params.id) };
+  },
+);
+
 /** Registratie vanuit het consult: metingen en SOEP in één handeling. */
 app.post<{ Params: { id: string }; Body: ConsultRegistratie }>(
   '/api/patient/:id/consult',
@@ -83,6 +94,69 @@ app.post<{ Body: { patientId: string; moduleId: string } }>(
     if (!repo.dossier(patientId)) return reply.code(404).send({ fout: 'patiënt niet gevonden' });
     repo.markeerModuleBekend(patientId, moduleId);
     return patientOverzicht(repo, patientId);
+  },
+);
+
+// ── Aanmelden (demo — géén echte authenticatie, zie docs/07 §2) ─────────────
+
+app.post<{ Body: { gebruikersnaam: string; wachtwoord: string } }>(
+  '/api/aanmelden',
+  async (req, reply) => {
+    const uitkomst = meldAan(req.body ?? { gebruikersnaam: '', wachtwoord: '' });
+    if (uitkomst.stap === 'mislukt') return reply.code(401).send(uitkomst);
+    const { wachtwoord, ...gebruiker } = uitkomst.gebruiker;
+    return { stap: 'tweefactor', gebruiker };
+  },
+);
+
+app.post<{ Body: { code: string } }>('/api/tweefactor', async (req, reply) => {
+  if (!controleerTweefactor(req.body?.code ?? '')) {
+    return reply.code(401).send({ fout: 'De code klopt niet.' });
+  }
+  return { geldig: true };
+});
+
+app.get('/api/gebruikers', async () => gebruikersoverzicht());
+
+// ── Patiënt zoeken ──────────────────────────────────────────────────────────
+
+app.get<{ Querystring: { q?: string } }>('/api/zoek', async (req) =>
+  zoekPatient(repo, req.query.q ?? ''));
+
+// ── Dossierdiepte ───────────────────────────────────────────────────────────
+
+app.get<{ Params: { id: string }; Querystring: { episode?: string } }>(
+  '/api/patient/:id/historie',
+  async (req, reply) => {
+    const historie = dossierHistorie(repo, req.params.id, req.query.episode);
+    return historie ?? reply.code(404).send({ fout: 'patiënt niet gevonden' });
+  },
+);
+
+app.get<{ Params: { id: string } }>('/api/patient/:id/meetreeksen', async (req) =>
+  meetreeksen(repo, req.params.id));
+
+app.get<{ Params: { id: string } }>('/api/patient/:id/orders', async (req) =>
+  orderVoorstellen(repo, req.params.id));
+
+// ── Interne communicatie ────────────────────────────────────────────────────
+
+app.get<{ Params: { gebruikerId: string } }>('/api/berichten/:gebruikerId', async (req) =>
+  berichten(repo, req.params.gebruikerId));
+
+app.post<{ Params: { gesprekId: string }; Body: { vanId: string; tekst: string } }>(
+  '/api/berichten/:gesprekId',
+  async (req) => {
+    repo.stuurBericht(req.params.gesprekId, req.body.vanId, req.body.tekst);
+    return berichten(repo, req.body.vanId);
+  },
+);
+
+app.post<{ Params: { gesprekId: string }; Body: { gebruikerId: string } }>(
+  '/api/berichten/:gesprekId/gelezen',
+  async (req) => {
+    repo.markeerGelezen(req.params.gesprekId, req.body.gebruikerId);
+    return berichten(repo, req.body.gebruikerId);
   },
 );
 

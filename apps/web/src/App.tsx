@@ -1,7 +1,9 @@
-import { useState } from 'react';
-import { Icoon } from './iconen';
-import { api } from './api';
+import { useEffect, useRef, useState } from 'react';
+import { api, type Gebruiker, type Zoektreffer } from './api';
 import { useData } from './gebruik';
+import { Icoon } from './iconen';
+import { Woordmerk } from './logo';
+import { Inloggen } from './schermen/Inloggen';
 import { Dagstart } from './schermen/Dagstart';
 import { Voorbereiden } from './schermen/Voorbereiden';
 import { Monitoren } from './schermen/Monitoren';
@@ -13,25 +15,19 @@ import { Terminologie } from './schermen/Terminologie';
 import { AssistentWerkplek } from './schermen/Assistent';
 import { HuisartsWerkplek } from './schermen/Huisarts';
 import { Beheer } from './schermen/Beheer';
+import { Berichten } from './schermen/Berichten';
+import { Gebruikers } from './schermen/Gebruikers';
+import { STANDAARD_VOORKEUREN, Voorkeuren, type Persoonlijk } from './schermen/Voorkeuren';
 
-type Rol = 'poh-s' | 'assistent' | 'huisarts';
-
-interface Ingang { id: string; label: string; icoon: string }
-
-const ROLLEN: { id: Rol; naam: string; functie: string; icoon: string }[] = [
-  { id: 'poh-s', naam: 'Sanne Bakker', functie: 'POH-Somatiek', icoon: 'schild' },
-  { id: 'assistent', naam: 'Ilse Hendriks', functie: 'Doktersassistent', icoon: 'gesprek' },
-  { id: 'huisarts', naam: 'Daan Verhoeven', functie: 'Huisarts', icoon: 'persoon' },
-];
+interface Ingang { id: string; label: string; icoon: string; recht?: string }
 
 /**
- * Eén dossier, drie ingangen.
+ * De werkplek wordt opgebouwd uit wat deze rol mag en doet.
  *
- * De navigatie volgt per rol het eigen werkproces: de POH werkt van dagstart naar
- * afronden, de assistent werkt een stroom af, en de huisarts wisselt tussen spreekuur
- * en autoriseren. Wat ze delen — protocol, terminologie, configuratie — staat eronder.
+ * Niet één menu met grijze knoppen voor wat je niet mag — dat leert mensen alleen af om
+ * te kijken. Wat niet bij jouw werk hoort, staat er niet.
  */
-const WERKPROCES: Record<Rol, Ingang[]> = {
+const WERKPROCES: Record<string, Ingang[]> = {
   'poh-s': [
     { id: 'dagstart', label: 'Dagstart', icoon: 'zon' },
     { id: 'voorbereiden', label: 'Voorbereiden', icoon: 'klembord' },
@@ -50,56 +46,88 @@ const WERKPROCES: Record<Rol, Ingang[]> = {
     { id: 'spreekuur', label: 'Spreekuur', icoon: 'agenda' },
     { id: 'ha-team', label: 'Het team', icoon: 'persoon' },
   ],
+  administrator: [
+    { id: 'beheer', label: 'Configuratie', icoon: 'schakelaar' },
+    { id: 'gebruikers', label: 'Gebruikers', icoon: 'persoon' },
+    { id: 'protocol', label: 'Het protocol', icoon: 'boek' },
+  ],
 };
 
-const PRAKTIJK: Ingang[] = [
-  { id: 'instroom', label: 'Instroom', icoon: 'instroom' },
-  { id: 'protocol', label: 'Het protocol', icoon: 'boek' },
-  { id: 'terminologie', label: 'Terminologie', icoon: 'tag' },
-  { id: 'beheer', label: 'Configuratie', icoon: 'schakelaar' },
-];
+const PRAKTIJK: Record<string, Ingang[]> = {
+  'poh-s': [
+    { id: 'instroom', label: 'Instroom', icoon: 'instroom' },
+    { id: 'protocol', label: 'Het protocol', icoon: 'boek' },
+  ],
+  assistent: [{ id: 'protocol', label: 'Het protocol', icoon: 'boek' }],
+  huisarts: [
+    { id: 'instroom', label: 'Instroom', icoon: 'instroom' },
+    { id: 'protocol', label: 'Het protocol', icoon: 'boek' },
+  ],
+  administrator: [],
+};
 
-const START: Record<Rol, string> = {
-  'poh-s': 'dagstart', assistent: 'as-overzicht', huisarts: 'ha-overzicht',
+const START: Record<string, string> = {
+  'poh-s': 'dagstart', assistent: 'as-overzicht',
+  huisarts: 'ha-overzicht', administrator: 'beheer',
 };
 
 export function App() {
-  const [rol, setRol] = useState<Rol>('poh-s');
-  const [scherm, setScherm] = useState<string>('dagstart');
+  const [gebruiker, setGebruiker] = useState<Gebruiker | undefined>();
+  const [scherm, setScherm] = useState('dagstart');
   const [patientId, setPatientId] = useState<string | undefined>();
+  const [voorkeuren, setVoorkeuren] = useState<Persoonlijk>(STANDAARD_VOORKEUREN);
 
-  const dagstart = useData(() => api.dagstart());
-  const huisarts = useData(() => api.huisarts());
-  const assistent = useData(() => api.assistent());
-
-  const tellingen: Record<string, { n: number; urgent?: boolean }> = {};
-  if (rol === 'poh-s') {
-    for (const stap of dagstart.data?.stappen ?? []) {
-      tellingen[stap.id] = { n: stap.aandacht || stap.aantal, urgent: stap.aandacht > 0 };
-    }
-  }
-  if (rol === 'assistent' && assistent.data) {
-    tellingen['as-triage'] = { n: assistent.data.stroom.triageNieuw, urgent: true };
-  }
-  if (rol === 'huisarts' && huisarts.data) {
-    tellingen['ha-autoriseren'] = {
-      n: huisarts.data.autorisatie.vraagtOordeel,
-      urgent: huisarts.data.autorisatie.vraagtOordeel > 0,
-    };
+  if (!gebruiker) {
+    return (
+      <Inloggen opAangemeld={(g) => { setGebruiker(g); setScherm(START[g.rol] ?? 'dagstart'); }} />
+    );
   }
 
   const open = (id: string) => { setPatientId(id); setScherm('spreekuur'); };
   const ga = (id: string) => { setPatientId(undefined); setScherm(id); };
-  const wisselRol = (nieuw: Rol) => { setRol(nieuw); setPatientId(undefined); setScherm(START[nieuw]); };
 
-  const huidigeRol = ROLLEN.find((r) => r.id === rol)!;
+  return (
+    <Werkplek
+      gebruiker={gebruiker} scherm={scherm} patientId={patientId}
+      voorkeuren={voorkeuren} opVoorkeuren={setVoorkeuren}
+      opOpen={open} opGa={ga}
+      opAfmelden={() => { setGebruiker(undefined); setPatientId(undefined); }}
+      opSluitPatient={() => setPatientId(undefined)} />
+  );
+}
+
+function Werkplek({
+  gebruiker, scherm, patientId, voorkeuren, opVoorkeuren, opOpen, opGa, opAfmelden, opSluitPatient,
+}: {
+  gebruiker: Gebruiker; scherm: string; patientId?: string;
+  voorkeuren: Persoonlijk; opVoorkeuren: (p: Persoonlijk) => void;
+  opOpen: (id: string) => void; opGa: (id: string) => void;
+  opAfmelden: () => void; opSluitPatient: () => void;
+}) {
+  const zorgrol = gebruiker.rol !== 'administrator';
+  const dagstart = useData(() => (gebruiker.rol === 'poh-s' ? api.dagstart() : Promise.resolve(undefined)), [gebruiker.id]);
+  const huisarts = useData(() => (gebruiker.rol === 'huisarts' ? api.huisarts() : Promise.resolve(undefined)), [gebruiker.id]);
+  const assistent = useData(() => (gebruiker.rol === 'assistent' ? api.assistent() : Promise.resolve(undefined)), [gebruiker.id]);
+  const berichten = useData(() => api.berichten(gebruiker.id), [gebruiker.id]);
+
+  const tellingen: Record<string, { n: number; urgent?: boolean }> = {};
+  for (const stap of dagstart.data?.stappen ?? []) {
+    tellingen[stap.id] = { n: stap.aandacht || stap.aantal, urgent: stap.aandacht > 0 };
+  }
+  if (assistent.data) tellingen['as-triage'] = { n: assistent.data.stroom.triageNieuw, urgent: true };
+  if (huisarts.data) {
+    tellingen['ha-autoriseren'] = {
+      n: huisarts.data.autorisatie.vraagtOordeel, urgent: huisarts.data.autorisatie.vraagtOordeel > 0,
+    };
+  }
+  if (berichten.data?.ongelezen) tellingen.berichten = { n: berichten.data.ongelezen, urgent: true };
 
   const Ingangen = ({ lijst }: { lijst: Ingang[] }) => (
     <>
       {lijst.map((i) => {
         const telling = tellingen[i.id];
         return (
-          <button key={i.id} data-actief={scherm === i.id} onClick={() => ga(i.id)}>
+          <button key={i.id} data-actief={scherm === i.id} onClick={() => opGa(i.id)}>
             <Icoon naam={i.icoon} />
             {i.label}
             {telling && telling.n > 0 && (
@@ -114,71 +142,188 @@ export function App() {
   return (
     <div className="app">
       <nav className="zijbalk">
-        <div className="merk">
-          <Icoon naam="klok" grootte={20} />
-          <span>
-            Cadans
-            <small>Huisartsenpraktijk De Linde</small>
-          </span>
-        </div>
+        <div className="merk"><Woordmerk grootte={26} subtitel="Huisartsenpraktijk De Linde" /></div>
 
-        <div className="groep">Ik werk als</div>
-        <div className="rolkiezer">
-          {ROLLEN.map((r) => (
-            <button key={r.id} data-actief={rol === r.id} onClick={() => wisselRol(r.id)}>
-              <Icoon naam={r.icoon} grootte={15} />
-              <span>
-                {r.naam}
-                <small>{r.functie}</small>
-              </span>
-            </button>
-          ))}
-        </div>
+        <div className="groep">Mijn werk</div>
+        <Ingangen lijst={WERKPROCES[gebruiker.rol] ?? []} />
+        <Ingangen lijst={[{ id: 'berichten', label: 'Berichten', icoon: 'gesprek' }]} />
 
-        <div className="groep">Mijn werkproces</div>
-        <Ingangen lijst={WERKPROCES[rol]} />
+        {(PRAKTIJK[gebruiker.rol] ?? []).length > 0 && (
+          <>
+            <div className="groep">Praktijk</div>
+            <Ingangen lijst={PRAKTIJK[gebruiker.rol]} />
+          </>
+        )}
 
-        <div className="groep">Praktijk</div>
-        <Ingangen lijst={PRAKTIJK} />
+        <div className="groep">Instellingen</div>
+        <Ingangen lijst={
+          gebruiker.rechten.includes('configuratie-praktijk')
+            ? [{ id: 'voorkeuren', label: 'Mijn voorkeuren', icoon: 'persoon' }]
+            : [{ id: 'voorkeuren', label: 'Mijn voorkeuren', icoon: 'persoon' }]
+        } />
 
         <div className="voet">
-          {huidigeRol.naam} · {huidigeRol.functie}
-          <div style={{ marginTop: 8, opacity: .8 }}>
-            Demo · 48 synthetische patiënten
-          </div>
+          {gebruiker.naam} · {gebruiker.functie}
+          <div style={{ marginTop: 8, opacity: .8 }}>Demo · 48 synthetische patiënten</div>
         </div>
       </nav>
 
-      <main className="werkblad">
-        {scherm === 'spreekuur' && patientId && (
-          <Consult patientId={patientId} terug={() => setPatientId(undefined)} />
-        )}
+      <div>
+        <header className="kopbalk">
+          {zorgrol
+            ? <Zoeken opOpen={opOpen} />
+            : <span className="mini">Beheeromgeving — geen toegang tot dossiers</span>}
 
-        {scherm === 'spreekuur' && !patientId && rol === 'poh-s' && <Voorbereiden openPatient={open} />}
-        {scherm === 'spreekuur' && !patientId && rol === 'assistent' && (
-          <AssistentWerkplek scherm="overzicht" openPatient={open} />
-        )}
-        {scherm === 'spreekuur' && !patientId && rol === 'huisarts' && (
-          <HuisartsWerkplek scherm="overzicht" openPatient={open} />
-        )}
+          <div className="gebruikerchip">
+            <span className="bol">{gebruiker.initialen}</span>
+            <span style={{ fontSize: 12.5 }}>
+              <strong>{gebruiker.naam}</strong>
+              <div className="mini">{gebruiker.functie}</div>
+            </span>
+            <button className="knop" data-toon="stil" onClick={opAfmelden} title="Afmelden">
+              <Icoon naam="kruis" grootte={14} />
+            </button>
+          </div>
+        </header>
 
-        {scherm === 'dagstart' && <Dagstart gaNaar={ga} openPatient={open} />}
-        {scherm === 'voorbereiden' && <Voorbereiden openPatient={open} />}
-        {scherm === 'monitoren' && <Monitoren openPatient={open} />}
-        {scherm === 'afronden' && <Afronden />}
+        <main className="werkblad" data-dichtheid={voorkeuren.dichtheid}>
+          {scherm === 'spreekuur' && patientId && (
+            <Consult patientId={patientId} gebruiker={gebruiker} terug={opSluitPatient} />
+          )}
+          {scherm === 'spreekuur' && !patientId && gebruiker.rol === 'poh-s' && (
+            <Voorbereiden openPatient={opOpen} toonUitleg={voorkeuren.toonUitleg} />
+          )}
+          {scherm === 'spreekuur' && !patientId && gebruiker.rol === 'assistent' && (
+            <Dossierzoeker opOpen={opOpen} />
+          )}
+          {scherm === 'spreekuur' && !patientId && gebruiker.rol === 'huisarts' && (
+            <HuisartsWerkplek scherm="overzicht" openPatient={opOpen} />
+          )}
 
-        {scherm === 'as-overzicht' && <AssistentWerkplek scherm="overzicht" openPatient={open} />}
-        {scherm === 'as-triage' && <AssistentWerkplek scherm="triage" openPatient={open} />}
+          {scherm === 'dagstart' && <Dagstart gaNaar={opGa} openPatient={opOpen} />}
+          {scherm === 'voorbereiden' && <Voorbereiden openPatient={opOpen} toonUitleg={voorkeuren.toonUitleg} />}
+          {scherm === 'monitoren' && <Monitoren openPatient={opOpen} />}
+          {scherm === 'afronden' && <Afronden />}
 
-        {scherm === 'ha-overzicht' && <HuisartsWerkplek scherm="overzicht" openPatient={open} />}
-        {scherm === 'ha-autoriseren' && <HuisartsWerkplek scherm="autoriseren" openPatient={open} />}
-        {scherm === 'ha-team' && <HuisartsWerkplek scherm="team" openPatient={open} />}
+          {scherm === 'as-overzicht' && <AssistentWerkplek scherm="overzicht" openPatient={opOpen} />}
+          {scherm === 'as-triage' && <AssistentWerkplek scherm="triage" openPatient={opOpen} />}
 
-        {scherm === 'instroom' && <Instroom openPatient={open} />}
-        {scherm === 'protocol' && <Protocol />}
-        {scherm === 'terminologie' && <Terminologie />}
-        {scherm === 'beheer' && <Beheer />}
-      </main>
+          {scherm === 'ha-overzicht' && <HuisartsWerkplek scherm="overzicht" openPatient={opOpen} />}
+          {scherm === 'ha-autoriseren' && <HuisartsWerkplek scherm="autoriseren" openPatient={opOpen} />}
+          {scherm === 'ha-team' && <HuisartsWerkplek scherm="team" openPatient={opOpen} />}
+
+          {scherm === 'instroom' && <Instroom openPatient={opOpen} />}
+          {scherm === 'protocol' && <Protocol />}
+          {scherm === 'beheer' && <Beheer />}
+          {scherm === 'gebruikers' && <Gebruikers />}
+          {scherm === 'berichten' && <Berichten gebruiker={gebruiker} openPatient={opOpen} />}
+          {scherm === 'voorkeuren' && (
+            <Voorkeuren gebruiker={gebruiker} voorkeuren={voorkeuren} opWijzig={opVoorkeuren} />
+          )}
+          {scherm === 'terminologie' && <Terminologie />}
+        </main>
+      </div>
     </div>
+  );
+}
+
+/** Patiënt zoeken op naam, geboortedatum of BSN — vanuit elk scherm. */
+function Zoeken({ opOpen }: { opOpen: (id: string) => void }) {
+  const [vraag, setVraag] = useState('');
+  const [treffers, setTreffers] = useState<Zoektreffer[]>([]);
+  const [open, setOpen] = useState(false);
+  const doos = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const buiten = (e: MouseEvent) => {
+      if (doos.current && !doos.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', buiten);
+    return () => document.removeEventListener('mousedown', buiten);
+  }, []);
+
+  const zoek = async (q: string) => {
+    setVraag(q);
+    if (q.trim().length < 2) { setTreffers([]); setOpen(false); return; }
+    setTreffers(await api.zoek(q));
+    setOpen(true);
+  };
+
+  return (
+    <div className="zoekdoos" ref={doos}>
+      <span className="icoon"><Icoon naam="radar" grootte={15} /></span>
+      <input type="search" value={vraag} placeholder="Zoek patiënt op naam, geboortedatum of BSN"
+        onChange={(e) => zoek(e.target.value)} onFocus={() => treffers.length && setOpen(true)} />
+      {open && (
+        <div className="zoekresultaten">
+          {treffers.length === 0 && <div className="leeg">Geen patiënt gevonden.</div>}
+          {treffers.map((t) => (
+            <button key={t.patientId} onClick={() => { opOpen(t.patientId); setOpen(false); setVraag(''); }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+                <strong style={{ fontSize: 13 }}>{t.naam}</strong>
+                <span className="mini">{t.geboortedatum} · {t.leeftijd} jaar</span>
+                <span className="mini" style={{ marginLeft: 'auto' }}>op {t.reden}</span>
+              </div>
+              <div className="mini">BSN {t.bsn}</div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Voor de assistent: dossiers zijn er om op te zoeken, niet om door te bladeren. */
+function Dossierzoeker({ opOpen }: { opOpen: (id: string) => void }) {
+  const [vraag, setVraag] = useState('');
+  const [treffers, setTreffers] = useState<Zoektreffer[]>([]);
+
+  const zoek = async (q: string) => {
+    setVraag(q);
+    setTreffers(q.trim().length >= 2 ? await api.zoek(q) : []);
+  };
+
+  return (
+    <>
+      <div className="paginakop">
+        <div>
+          <h1>Dossiers</h1>
+          <div className="onder">Zoek op naam, geboortedatum of BSN</div>
+        </div>
+      </div>
+
+      <div className="notitie">
+        <strong>Zoeken, niet bladeren.</strong> Aan de balie en aan de telefoon begin je met een
+        naam of een geboortedatum. Een lijst met alle patiënten van de praktijk helpt daar niet bij.
+      </div>
+
+      <div className="kaart">
+        <div className="body">
+          <input type="search" value={vraag} autoFocus
+            placeholder="Bijvoorbeeld 'de Vries' of '1955'"
+            onChange={(e) => zoek(e.target.value)} />
+        </div>
+        {treffers.length > 0 && (
+          <table>
+            <tbody>
+              {treffers.map((t) => (
+                <tr key={t.patientId}>
+                  <td>
+                    <button className="knop" data-toon="stil" style={{ padding: 0, fontWeight: 600 }}
+                      onClick={() => opOpen(t.patientId)}>{t.naam}</button>
+                    <div className="mini">{t.geboortedatum} · {t.leeftijd} jaar · BSN {t.bsn}</div>
+                  </td>
+                  <td className="rechts">
+                    <button className="knop" onClick={() => opOpen(t.patientId)}>
+                      Openen <Icoon naam="pijl" grootte={13} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </>
   );
 }

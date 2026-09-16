@@ -99,6 +99,64 @@ export interface HuisartsOverzicht {
   team: { rol: string; naam: string; registraties: number; toelichting: string }[];
 }
 
+export interface Gebruiker {
+  id: string; gebruikersnaam: string; naam: string; initialen: string;
+  rol: string; functie: string; identificatie: string;
+  tweefactorActief: boolean; laatsteAanmelding?: string; actief: boolean; rechten: string[];
+}
+
+export interface Zoektreffer {
+  patientId: string; naam: string; geboortedatum: string; leeftijd: number;
+  bsn?: string; modules: ModuleChip[]; reden: string;
+}
+
+export interface JournaalRegel {
+  datum: string; encounterId: string; episodeId: string;
+  episodeTitel: string; episodeIcpc?: string;
+  soort: string; auteur: string; auteurRol: string; bron: string;
+  regels: { letter: string; tekst: string }[];
+}
+
+export interface DossierHistorie {
+  journaal: JournaalRegel[];
+  episodes: { id: string; titel: string; status: string; icpc?: string; start?: string; aantalContacten: number }[];
+  aantalContacten: number;
+}
+
+export interface Meetreeks {
+  code: string; naam: string; eenheid?: string; relevantNu: boolean;
+  laatste?: number; laatsteOp?: string; verschil?: number;
+  punten: { op: string; waarde: number }[];
+  streef?: { onder?: number; boven?: number; label: string };
+}
+
+export interface OrderRegel {
+  id: string; soort: string; omschrijving: string; detail?: string; atc?: string;
+  levert?: string[]; vereistRecht: string; standaardAan: boolean; toelichting?: string;
+}
+
+export interface Waarschuwing { ernst: string; tekst: string; bron?: string }
+
+export interface VoorgesteldeOrderSet {
+  set: {
+    id: string; naam: string; waarvoor: string; module?: string;
+    richtlijn?: { naam: string; versie?: string; paragraaf?: string; url?: string; uitgever?: string };
+    regels: OrderRegel[];
+  };
+  onderbouwing: string;
+  waarschuwingen: Waarschuwing[];
+}
+
+export interface Gesprek {
+  id: string; onderwerp: string; deelnemers: string[];
+  patientId?: string; patientNaam?: string;
+  aanleiding?: { soort: string; tekst: string };
+  urgent: boolean;
+  berichten: { id: string; vanId: string; van: string; tekst: string; op: string; gelezen: boolean }[];
+}
+
+export interface Berichtenbox { gesprekken: Gesprek[]; ongelezen: number }
+
 export interface Beheer {
   lagen: { niveau: string; naam: string; beheerder: string; gewijzigdOp: string; uitleg: string; instellingen: string[] }[];
   instellingen: { sleutel: string; waarde: unknown; niveau: string; bron: string; overschreven: { niveau: string; bron: string }[] }[];
@@ -251,9 +309,17 @@ export interface Protocol {
   ketens: { id: string; naam: string; modules: string[]; declaratie: { prestatiecode: string; omschrijving: string } }[];
 }
 
+export interface Afsluititem {
+  id: string; patientId?: string; naam: string; actie: string; detail: string;
+}
+
 export interface Afsluiting {
   datum: string;
-  punten: { categorie: string; omschrijving: string; aantal: number; blokkerend: boolean; bulkVeilig: boolean; toelichting: string }[];
+  punten: {
+    categorie: string; omschrijving: string; aantal: number;
+    blokkerend: boolean; bulkVeilig: boolean; toelichting: string;
+    items: Afsluititem[];
+  }[];
   afgerond: boolean;
 }
 
@@ -303,8 +369,27 @@ const httpApi = {
     `/api/patient/${patientId}/consult`, registratie),
   accepteerModule: (patientId: string, moduleId: string) =>
     stuur<PatientOverzicht>('/api/poh/instroom/accepteer', { patientId, moduleId }),
-  zoek: (q: string, breed: boolean) =>
+  zoekTerm: (q: string, breed: boolean) =>
     haal<{ waarschuwing: string; treffers: Treffer[] }>(`/api/terminologie/zoek?q=${encodeURIComponent(q)}&breed=${breed}`),
+
+  aanmelden: (gebruikersnaam: string, wachtwoord: string) =>
+    stuur<{ stap: 'tweefactor'; gebruiker: Gebruiker }>('/api/aanmelden', { gebruikersnaam, wachtwoord }),
+  tweefactor: (code: string) => stuur<{ geldig: boolean }>('/api/tweefactor', { code }),
+  gebruikers: () => haal<Gebruiker[]>('/api/gebruikers'),
+
+  zoek: (q: string) => haal<Zoektreffer[]>(`/api/zoek?q=${encodeURIComponent(q)}`),
+  maakEpisode: (patientId: string, code: { icpc: string; snomed?: string; display: string }) =>
+    stuur<{ episodeId: string; overzicht: PatientOverzicht }>(`/api/patient/${patientId}/episode`, code),
+  historie: (patientId: string, episodeId?: string) =>
+    haal<DossierHistorie>(`/api/patient/${patientId}/historie${episodeId ? `?episode=${episodeId}` : ''}`),
+  meetreeksen: (patientId: string) => haal<Meetreeks[]>(`/api/patient/${patientId}/meetreeksen`),
+  orders: (patientId: string) => haal<VoorgesteldeOrderSet[]>(`/api/patient/${patientId}/orders`),
+
+  berichten: (gebruikerId: string) => haal<Berichtenbox>(`/api/berichten/${gebruikerId}`),
+  stuurBericht: (gesprekId: string, vanId: string, tekst: string) =>
+    stuur<Berichtenbox>(`/api/berichten/${gesprekId}`, { vanId, tekst }),
+  markeerGelezen: (gesprekId: string, gebruikerId: string) =>
+    stuur<Berichtenbox>(`/api/berichten/${gesprekId}/gelezen`, { gebruikerId }),
   ontvang: (code: string, display: string) =>
     stuur<Ontvangst>('/api/terminologie/ontvang', {
       codings: [{ system: 'http://snomed.info/sct', code, display }], bron: 'Ziekenhuis (demo)',

@@ -15,6 +15,8 @@ export function Instroom({ openPatient }: { openPatient: (id: string) => void })
   const { data, fout, bezig, herlaad } = useData(() => api.instroom());
   const praktijk = useData(() => api.praktijk());
   const [bezigMet, setBezigMet] = useState<string | undefined>();
+  const [gekozen, setGekozen] = useState<Record<string, boolean>>({});
+  const [filter, setFilter] = useState<string | undefined>();
 
   if (fout) return <Fout boodschap={fout} />;
   if (bezig || !data) return <Laden wat="Instroom" />;
@@ -23,6 +25,37 @@ export function Instroom({ openPatient }: { openPatient: (id: string) => void })
     setBezigMet(patientId + moduleId);
     try {
       await api.accepteerModule(patientId, moduleId);
+      herlaad();
+      praktijk.herlaad();
+    } finally { setBezigMet(undefined); }
+  };
+
+  // Alle voorstellen als losse regels: één patiënt kan meerdere gebieden tegelijk krijgen.
+  const regels = data.flatMap((r) =>
+    r.nieuweModules.map((m) => ({ patientId: r.patientId, naam: r.naam, leeftijd: r.leeftijd, module: m })));
+  const zichtbaar = filter ? regels.filter((r) => r.module.moduleId === filter) : regels;
+  const sleutel = (patientId: string, moduleId: string) => `${patientId}:${moduleId}`;
+  const selectie = zichtbaar.filter((r) => gekozen[sleutel(r.patientId, r.module.moduleId)]);
+
+  const perModule = new Map<string, { naam: string; icoon: string; aantal: number }>();
+  for (const r of regels) {
+    const bestaand = perModule.get(r.module.moduleId);
+    perModule.set(r.module.moduleId, {
+      naam: r.module.naam, icoon: r.module.icoon, aantal: (bestaand?.aantal ?? 0) + 1,
+    });
+  }
+
+  const kiesAlles = (aan: boolean) => {
+    const nieuw = { ...gekozen };
+    for (const r of zichtbaar) nieuw[sleutel(r.patientId, r.module.moduleId)] = aan;
+    setGekozen(nieuw);
+  };
+
+  const verwerkSelectie = async () => {
+    setBezigMet('batch');
+    try {
+      for (const r of selectie) await api.accepteerModule(r.patientId, r.module.moduleId);
+      setGekozen({});
       herlaad();
       praktijk.herlaad();
     } finally { setBezigMet(undefined); }
@@ -76,63 +109,100 @@ export function Instroom({ openPatient }: { openPatient: (id: string) => void })
 
       {data.length === 0 && <Leeg tekst="Geen nieuwe aandachtsgebieden — de praktijk is bij." />}
 
-      <div style={{ display: 'grid', gap: 12 }}>
-        {data.map((regel) => (
-          <section key={regel.patientId} className="kaart">
-            <header>
-              <h2 style={{ fontSize: 15 }}>{regel.naam}</h2>
-              <span className="mini">{regel.leeftijd} jaar</span>
-              <button className="knop" data-toon="stil" style={{ marginLeft: 'auto' }}
-                onClick={() => openPatient(regel.patientId)}>
-                Dossier <Icoon naam="pijl" grootte={13} />
+      {regels.length > 0 && (
+        <>
+          <Kaart titel="In één keer verwerken" icoon="bliksem">
+            <p className="reden" style={{ marginTop: 0 }}>
+              Instroom komt zelden één patiënt tegelijk. Kies een aandachtsgebied, controleer de
+              onderbouwing per regel, en verwerk de hele groep in één handeling — zonder dat er
+              ooit een uitdraai aan te pas komt.
+            </p>
+            <div className="chips" style={{ marginBottom: 12 }}>
+              <button className="knop" data-toon={!filter ? 'primair' : undefined}
+                style={{ padding: '3px 11px', fontSize: 12 }} onClick={() => setFilter(undefined)}>
+                Alles ({regels.length})
               </button>
-            </header>
-            <div className="body">
-              <div style={{ display: 'grid', gap: 10 }}>
-                {regel.nieuweModules.map((m) => (
-                  <div key={m.moduleId} className={`modulekaart mod-${m.moduleId}`}>
-                    <div className="kop">
-                      <span style={{ color: 'var(--tint)' }}>
-                        <Icoon naam={icoonVanModule(m.moduleId, m.icoon)} />
-                      </span>
-                      <h3>{m.naam}</h3>
-                      <button className="knop" data-toon="primair" style={{ marginLeft: 'auto' }}
-                        disabled={bezigMet === regel.patientId + m.moduleId}
-                        onClick={() => accepteer(regel.patientId, m.moduleId)}>
-                        <Icoon naam="plus" grootte={13} /> Toevoegen aan plan
-                      </button>
-                    </div>
-                    <div className="reden">{m.onderbouwing}</div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="raster2" style={{ marginTop: 12 }}>
-                <div>
-                  <h3 style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '.07em', color: 'var(--ink-3)', marginBottom: 6 }}>
-                    Wat er gebeurt als je akkoord gaat
-                  </h3>
-                  <ul className="uitleg">{regel.gevolgen.map((g, i) => <li key={i}>{g}</li>)}</ul>
-                </div>
-                <div>
-                  <h3 style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '.07em', color: 'var(--ink-3)', marginBottom: 6 }}>
-                    Achtergrond: declaratie
-                  </h3>
-                  {regel.ketens.length > 0 ? (
-                    <ul className="uitleg">
-                      {regel.ketens.map((k) => <li key={k.naam}>{k.naam} ({k.prestatiecode})</li>)}
-                    </ul>
-                  ) : (
-                    <span className="mini">
-                      Valt onder geen landelijke keten. De zorg is er niet minder nodig om.
-                    </span>
-                  )}
-                </div>
-              </div>
+              {[...perModule.entries()].map(([id, m]) => (
+                <button key={id} className="knop" data-toon={filter === id ? 'primair' : undefined}
+                  style={{ padding: '3px 11px', fontSize: 12 }} onClick={() => setFilter(id)}>
+                  <Icoon naam={icoonVanModule(id, m.icoon)} grootte={13} /> {m.naam} ({m.aantal})
+                </button>
+              ))}
             </div>
-          </section>
-        ))}
-      </div>
+
+            <div className="knop-rij">
+              <button className="knop" onClick={() => kiesAlles(true)}>
+                <Icoon naam="vink" grootte={13} /> Alle {zichtbaar.length} selecteren
+              </button>
+              <button className="knop" data-toon="stil" onClick={() => kiesAlles(false)}>
+                Selectie wissen
+              </button>
+            </div>
+          </Kaart>
+
+          {selectie.length > 0 && (
+            <div className="selectiebalk">
+              <Icoon naam="vink" grootte={15} />
+              <strong>{selectie.length} geselecteerd</strong>
+              <span className="mini">
+                {[...new Set(selectie.map((r) => r.patientId))].length} patiënten ·
+                {' '}{[...new Set(selectie.map((r) => r.module.naam))].join(', ')}
+              </span>
+              <button className="knop" data-toon="primair" style={{ marginLeft: 'auto' }}
+                disabled={bezigMet === 'batch'} onClick={verwerkSelectie}>
+                <Icoon naam="bliksem" grootte={13} />
+                {bezigMet === 'batch' ? 'Bezig…' : 'Toevoegen aan hun plan'}
+              </button>
+            </div>
+          )}
+
+          <Kaart titel="Voorstellen" icoon="instroom" telling={zichtbaar.length} strak>
+            <table>
+              <thead>
+                <tr>
+                  <th style={{ width: 34 }} />
+                  <th style={{ width: 200 }}>Patiënt</th>
+                  <th style={{ width: 190 }}>Aandachtsgebied</th>
+                  <th>Waarom nu</th>
+                  <th style={{ width: 120 }} />
+                </tr>
+              </thead>
+              <tbody>
+                {zichtbaar.map((r) => (
+                  <tr key={sleutel(r.patientId, r.module.moduleId)}>
+                    <td>
+                      <input type="checkbox"
+                        checked={Boolean(gekozen[sleutel(r.patientId, r.module.moduleId)])}
+                        onChange={(e) => setGekozen((g) => ({
+                          ...g, [sleutel(r.patientId, r.module.moduleId)]: e.target.checked,
+                        }))} />
+                    </td>
+                    <td className="nadruk">
+                      <button className="knop" data-toon="stil" style={{ padding: 0, fontWeight: 600 }}
+                        onClick={() => openPatient(r.patientId)}>{r.naam}</button>
+                      <div className="mini">{r.leeftijd} jaar</div>
+                    </td>
+                    <td>
+                      <span className={`chip mod-${r.module.moduleId}`}>
+                        <Icoon naam={icoonVanModule(r.module.moduleId, r.module.icoon)} grootte={13} />
+                        {r.module.naam}
+                      </span>
+                    </td>
+                    <td className="reden">{r.module.onderbouwing}</td>
+                    <td className="rechts">
+                      <button className="knop" disabled={bezigMet === r.patientId + r.module.moduleId}
+                        onClick={() => accepteer(r.patientId, r.module.moduleId)}>
+                        <Icoon naam="plus" grootte={13} /> Toevoegen
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Kaart>
+        </>
+      )}
+
     </>
   );
 }

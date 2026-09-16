@@ -6,6 +6,8 @@ import {
   genereerPraktijk, genereerSpreekuur, genereerZelfredzaamheid, type Praktijk,
 } from './populatie.js';
 import { appsVoor } from './configuratie-demo.js';
+import { bouwHistorie } from './historie.js';
+import { genereerGesprekken, type Gesprek } from './berichten.js';
 import {
   genereerAgenda, genereerAutorisaties, genereerIntakes, genereerTriage,
   type AgendaItem, type Autorisatieverzoek, type Triageverzoek, type WachtkamerIntake,
@@ -47,6 +49,12 @@ export interface DossierRepository {
   /** Wat ingebedde partnerapps in de wachtkamer hebben opgeleverd. */
   intakes(): WachtkamerIntake[];
   bevestigIntake(id: string): void;
+  /** Nieuwe episode openen vanuit het consult. */
+  maakEpisode(patientId: string, code: { icpc: string; snomed?: string; display: string }, door: string): string | undefined;
+  /** Interne communicatie tussen teamleden. */
+  alleGesprekken(): Gesprek[];
+  stuurBericht(gesprekId: string, vanId: string, tekst: string): void;
+  markeerGelezen(gesprekId: string, gebruikerId: string): void;
 }
 
 export class InMemoryRepository implements DossierRepository {
@@ -58,11 +66,23 @@ export class InMemoryRepository implements DossierRepository {
   private triageLijst: Triageverzoek[];
   private autorisatieLijst: Autorisatieverzoek[];
   private intakeLijst: WachtkamerIntake[];
+  private gesprekken: Gesprek[];
   private bekend = new Map<string, Set<string>>();
   private afgehandeld = new Map<string, Map<string, { besluit: string; reden?: string }>>();
 
   constructor(praktijk?: Praktijk) {
     this.praktijk = praktijk ?? genereerPraktijk();
+
+    // Drie jaar dossierhistorie: contacten met SOEP en de bijbehorende meetreeksen.
+    // Zonder historie is er niets om in terug te kijken, en dan lijkt elk dossier nieuw.
+    this.praktijk.dossiers.forEach((dossier, i) => {
+      const extra = bouwHistorie(dossier, this.praktijk.peildatum, 3000 + i);
+      dossier.contacten.push(...extra.contacten);
+      dossier.deelcontacten.push(...extra.deelcontacten);
+      dossier.observaties.push(...extra.observaties);
+    });
+
+    this.gesprekken = genereerGesprekken(this.praktijk);
     this.afspraken = genereerSpreekuur(this.praktijk);
     this.agendaItems = [
       ...genereerAgenda(this.praktijk),
@@ -147,6 +167,51 @@ export class InMemoryRepository implements DossierRepository {
     const verzoek = this.autorisatieLijst.find((v) => v.id === id);
     if (verzoek) { verzoek.status = 'afgewezen'; verzoek.aanleiding = `${verzoek.aanleiding} — afgewezen: ${reden}`; }
   }
+  maakEpisode(
+    patientId: string, code: { icpc: string; snomed?: string; display: string }, door: string,
+  ): string | undefined {
+    const dossier = this.dossier(patientId);
+    if (!dossier) return undefined;
+    const nu = new Date().toISOString();
+    const id = `${patientId}-ep-${dossier.episodes.length + 1}`;
+    dossier.episodes.push({
+      resourceType: 'EpisodeOfCare',
+      id,
+      patientId,
+      status: 'active',
+      titel: code.display,
+      code: {
+        coding: [
+          { system: 'http://hl7.org/fhir/sid/icpc-1-nl', code: code.icpc, display: code.display },
+          ...(code.snomed
+            ? [{ system: 'http://snomed.info/sct', code: code.snomed, display: code.display }]
+            : []),
+        ],
+        text: code.display,
+      },
+      periode: { start: nu.slice(0, 10) },
+      herkomst: { bron: 'zorgverlener', vastgelegdOp: nu, auteurId: door, auteurRol: 'poh-s' },
+    });
+    return id;
+  }
+
+  alleGesprekken(): Gesprek[] { return this.gesprekken; }
+  stuurBericht(gesprekId: string, vanId: string, tekst: string): void {
+    const gesprek = this.gesprekken.find((g) => g.id === gesprekId);
+    if (!gesprek) return;
+    gesprek.berichten.push({
+      id: `bericht-${gesprekId}-${gesprek.berichten.length + 1}`,
+      vanId, tekst, op: new Date().toISOString(), gelezen: true,
+    });
+  }
+  markeerGelezen(gesprekId: string, gebruikerId: string): void {
+    const gesprek = this.gesprekken.find((g) => g.id === gesprekId);
+    if (!gesprek) return;
+    for (const bericht of gesprek.berichten) {
+      if (bericht.vanId !== gebruikerId) bericht.gelezen = true;
+    }
+  }
+
   intakes(): WachtkamerIntake[] { return this.intakeLijst; }
   bevestigIntake(id: string): void {
     const intake = this.intakeLijst.find((i) => i.id === id);

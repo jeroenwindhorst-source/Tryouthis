@@ -52,8 +52,9 @@ mogelijk, een afhandeling in bulk. Doel: de dag is aantoonbaar af, in minuten.
 
 ## 2. Doktersassistent
 
-> Geïmplementeerd in de werkplek: dagstart met eigen agenda, en een triagescherm waarin
-> digitale en telefonische instroom door hetzelfde model lopen.
+> Geïmplementeerd in de werkplek: dagstart met eigen agenda, een triagescherm waarin
+> digitale en telefonische instroom door hetzelfde model lopen, en een dossierzoeker.
+> De triage volgt nog niet de Nederlandse Triage Standaard — zie `docs/09` §risico's.
 
 Startscherm is de **stroom**, niet de agenda: binnenkomende triages (digitaal én
 telefonisch), terugbelverzoeken, herhaalrecepten, post en uitslagen die gerouteerd
@@ -80,7 +81,26 @@ Portaal/app conform MedMij. Ingang is niet het dossier maar **de volgende stap**
 wat moet ik doen, wanneer zie ik wie, wat waren mijn waarden, wat zijn mijn doelen.
 Vragenlijsten, thuismetingen, herhaalmedicatie, berichten, zelfzorgadvies.
 
-## 5. Gedeelde ontwerpprincipes
+## 5. Dossierdiepte
+
+Een startscherm dat met werk opent, mag niet betekenen dat je er niet doorheen kunt.
+Het dossier heeft daarom drie ingangen naast het consult zelf:
+
+- **Journaal** — alle deelcontacten omgekeerd chronologisch, filterbaar op episode.
+  De demo bouwt per patiënt vijf tot tien contacten over ongeveer drie jaar op, met
+  SOEP-tekst, zodat er iets ís om op terug te kijken.
+- **Metingen** — elke reeks met een trendgrafiek en de streefwaarde als stippellijn.
+  Dit lost "was 84 — wanneer dan?" op: de waarde in het consultscherm is een ingang,
+  niet een eindpunt. Doorklikken toont de reeks, de datum en wie hem vastlegde.
+- **Episodes** — de vier losse trajecten in de kop zijn aanklikbaar en filteren het
+  journaal. Tijdens het consult kan een nieuwe episode worden aangemaakt (met
+  terminologiezoeker) en kan het deelcontact daaraan worden gehangen.
+
+En, ondanks principe 1: **een patiëntzoekveld staat in de kopbalk, altijd.** Het
+systeem opent met werk, maar iemand die belt terwijl je iets anders doet, moet in twee
+toetsaanslagen gevonden worden.
+
+## 6. Gedeelde ontwerpprincipes
 
 1. **Het systeem opent met werk, niet met een zoekveld.**
 2. **Elke lijst heeft een reden per regel.** Nooit een teller zonder context.

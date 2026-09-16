@@ -30,7 +30,7 @@ export function Terminologie() {
   const zoek = async (q: string, b: boolean) => {
     setVraag(q); setBreed(b);
     if (!q.trim()) { setTreffers([]); return; }
-    const resultaat = await api.zoek(q, b);
+    const resultaat = await api.zoekTerm(q, b);
     setTreffers(resultaat.treffers);
     setWaarschuwing(resultaat.waarschuwing);
   };

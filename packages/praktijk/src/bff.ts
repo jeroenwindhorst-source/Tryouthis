@@ -2,12 +2,14 @@ import type { Dossier, Rol, Task } from '@zpe/fhir-model';
 import { laatsteMeting, leeftijd, metingReeks, numeriekeWaarde } from '@zpe/fhir-model';
 import {
   automatisering, bouwZorgplan, beoordeelInstroom, CODE, instroomOverzicht,
-  planOproepen, suggesties, verwerk, vindVragenlijst,
+  planOproepen, suggesties, verwerk, vindVragenlijst, voorgesteldeOrdersets,
   type Suggestie, type Zorgplan,
 } from '@zpe/care-engine';
 import { NIVEAU_UITLEG } from '@zpe/configuratie';
 import { metingNaam } from './terminologie.js';
 import { configuratie, configuratieLagen } from './configuratie-demo.js';
+import { journaal } from './historie.js';
+import { gesprekkenVoor, naamVanGebruiker, ongelezenVoor } from './berichten.js';
 import {
   groepeerAutorisaties, type Autorisatiegroep, type Triageverzoek, type WachtkamerIntake,
 } from './werkvoorraad.js';
@@ -324,6 +326,15 @@ export function instroom(repo: DossierRepository) {
 
 // ── 5. Dagafsluiting ────────────────────────────────────────────────────────
 
+export interface Afsluititem {
+  id: string;
+  patientId?: string;
+  naam: string;
+  /** Wat er precies gebeurt als je dit afhandelt. Nooit impliciet. */
+  actie: string;
+  detail: string;
+}
+
 export interface Afsluitpunt {
   categorie: string;
   omschrijving: string;
@@ -331,6 +342,8 @@ export interface Afsluitpunt {
   blokkerend: boolean;
   bulkVeilig: boolean;
   toelichting: string;
+  /** De regels zelf, zodat "alles afhandelen" niet in het duister gebeurt. */
+  items: Afsluititem[];
 }
 
 export function dagafsluiting(repo: DossierRepository) {
@@ -338,41 +351,60 @@ export function dagafsluiting(repo: DossierRepository) {
   const datum = peildatum.toISOString().slice(0, 10);
   const afspraken = repo.spreekuur(datum);
 
-  let indicatorenOnvolledig = 0;
-  let zonderVragenlijst = 0;
+  const verantwoording: Afsluititem[] = [];
+  const vragenlijsten: Afsluititem[] = [];
   const ketenGaten = new Map<string, number>();
 
   for (const afspraak of afspraken) {
     const dossier = repo.dossier(afspraak.patientId);
     if (!dossier) continue;
     const plan = planVoor(repo, dossier);
+    const naam = volledigeNaam(dossier);
+
     for (const keten of plan.ketens) {
-      const gaten = keten.indicatoren.filter((i) => !i.voldaan).length;
-      if (gaten > 0) {
-        indicatorenOnvolledig++;
-        ketenGaten.set(keten.naam, (ketenGaten.get(keten.naam) ?? 0) + gaten);
-      }
+      const gaten = keten.indicatoren.filter((i) => !i.voldaan);
+      if (gaten.length === 0) continue;
+      ketenGaten.set(keten.naam, (ketenGaten.get(keten.naam) ?? 0) + gaten.length);
+      verantwoording.push({
+        id: `${dossier.patient.id}-${keten.ketenId}`,
+        patientId: dossier.patient.id,
+        naam,
+        actie: `Labaanvraag klaarzetten voor ${gaten.map((g) => g.naam).join(', ')}`,
+        detail: `${keten.naam}: ${gaten.map((g) => `${g.naam} — ${g.toelichting}`).join(' · ')}`,
+      });
     }
-    if ((plan.contacten[0]?.vragenlijsten.length ?? 0) > 0) zonderVragenlijst++;
+
+    const lijsten = plan.contacten[0]?.vragenlijsten ?? [];
+    if (lijsten.length > 0) {
+      vragenlijsten.push({
+        id: `${dossier.patient.id}-vl`,
+        patientId: dossier.patient.id,
+        naam,
+        actie: `${lijsten.join(', ')} via het portaal uitzetten`,
+        detail: `Voor het contact op ${plan.contacten[0].datum}. Met automatische herinnering na 5 dagen.`,
+      });
+    }
   }
 
   const punten: Afsluitpunt[] = [
     {
       categorie: 'Verantwoording',
       omschrijving: 'Patiënten met ontbrekende ketenindicatoren',
-      aantal: indicatorenOnvolledig,
+      aantal: verantwoording.length,
       blokkerend: false,
       bulkVeilig: true,
       toelichting: [...ketenGaten.entries()].map(([naam, n]) => `${naam}: ${n} gaten`).join(' · ') ||
         'Alle indicatoren zijn op orde.',
+      items: verantwoording,
     },
     {
       categorie: 'Voorbereiding volgende keer',
       omschrijving: 'Vragenlijsten die klaargezet kunnen worden',
-      aantal: zonderVragenlijst,
+      aantal: vragenlijsten.length,
       blokkerend: false,
       bulkVeilig: true,
       toelichting: 'Logistiek werk zonder klinische beslissing — kan in één handeling.',
+      items: vragenlijsten,
     },
     {
       categorie: 'Openstaande taken',
@@ -381,6 +413,10 @@ export function dagafsluiting(repo: DossierRepository) {
       blokkerend: repo.taken().some((t) => t.status === 'requested' && t.prioriteit === 'asap'),
       bulkVeilig: false,
       toelichting: 'Alles met een reden en een voorgestelde afhandeling.',
+      items: repo.taken().filter((t) => t.status === 'requested').map((t) => ({
+        id: t.id, patientId: t.patientId, naam: t.omschrijving,
+        actie: t.voorstel?.omschrijving ?? 'Beoordelen', detail: t.aanleiding,
+      })),
     },
   ];
 
@@ -793,5 +829,158 @@ export function beheer() {
       bron: item.bron,
       overschreven: item.overschreven,
     })),
+  };
+}
+
+// ── 14. Patiënt zoeken ──────────────────────────────────────────────────────
+
+export interface Zoektreffer {
+  patientId: string;
+  naam: string;
+  geboortedatum: string;
+  leeftijd: number;
+  bsn?: string;
+  modules: { id: string; naam: string; icoon: string }[];
+  /** Waarom deze treffer matchte — bij een naamzoekactie zelden nodig, bij BSN wel. */
+  reden: string;
+}
+
+/**
+ * Zoeken op naam, geboortedatum of BSN.
+ *
+ * Bewust ook op geboortedatum: aan de balie en aan de telefoon is dat de tweede vraag
+ * die elke assistent stelt, en met drie mensen die "de Vries" heten is een naam alleen
+ * niet genoeg.
+ */
+export function zoekPatient(repo: DossierRepository, vraag: string, limiet = 8): Zoektreffer[] {
+  const q = vraag.trim().toLowerCase();
+  if (q.length < 2) return [];
+  const peildatum = repo.peildatum();
+  const cijfers = q.replace(/\D/g, '');
+
+  const treffers = repo.alleDossiers().flatMap((dossier): (Zoektreffer & { score: number })[] => {
+    const naam = volledigeNaam(dossier).toLowerCase();
+    const bsn = dossier.patient.identifier[0]?.value ?? '';
+    const geboren = dossier.patient.geboortedatum;
+
+    let score = 0;
+    let reden = '';
+    if (naam.startsWith(q)) { score = 100; reden = 'naam'; }
+    else if (naam.includes(q)) { score = 60; reden = 'naam'; }
+    else if (cijfers.length >= 4 && bsn.includes(cijfers)) { score = 90; reden = 'BSN'; }
+    else if (cijfers.length >= 4 && geboren.replace(/\D/g, '').includes(cijfers)) {
+      score = 70; reden = 'geboortedatum';
+    }
+    if (score === 0) return [];
+
+    return [{
+      score,
+      patientId: dossier.patient.id,
+      naam: volledigeNaam(dossier),
+      geboortedatum: geboren,
+      leeftijd: leeftijd(dossier, peildatum),
+      bsn,
+      modules: planVoor(repo, dossier).modules.map((m) => ({ id: m.id, naam: m.naam, icoon: m.icoon })),
+      reden,
+    }];
+  });
+
+  return treffers
+    .sort((a, b) => b.score - a.score || a.naam.localeCompare(b.naam))
+    .slice(0, limiet)
+    .map(({ score, ...rest }) => rest);
+}
+
+// ── 15. Dossierhistorie en meetreeksen ──────────────────────────────────────
+
+export interface Meetreeks {
+  code: string;
+  naam: string;
+  eenheid?: string;
+  /** Hoort deze meting bij het eerstvolgende contact? Bepaalt of hij standaard zichtbaar is. */
+  relevantNu: boolean;
+  laatste?: number;
+  laatsteOp?: string;
+  /** Verschil met de meting daarvoor; null als er maar één meting is. */
+  verschil?: number;
+  punten: { op: string; waarde: number }[];
+  /** Referentie- of streefwaarden om tegen af te zetten in de grafiek. */
+  streef?: { onder?: number; boven?: number; label: string };
+}
+
+const STREEFWAARDEN: Record<string, { onder?: number; boven?: number; label: string }> = {
+  [CODE.hba1c]: { boven: 53, label: 'streefwaarde ≤ 53 mmol/mol' },
+  [CODE.rrSys]: { boven: 140, label: 'streefwaarde < 140 mmHg' },
+  [CODE.ldl]: { boven: 2.6, label: 'streefwaarde < 2,6 mmol/l' },
+  [CODE.egfr]: { onder: 60, label: 'aandacht onder 60 ml/min' },
+  [CODE.ccq]: { boven: 1.0, label: 'stabiel onder 1,0' },
+};
+
+/** Alle meetreeksen van een patiënt, met de reeks erbij zodat een beloop te tekenen is. */
+export function meetreeksen(repo: DossierRepository, patientId: string): Meetreeks[] {
+  const dossier = repo.dossier(patientId);
+  if (!dossier) return [];
+  const plan = planVoor(repo, dossier);
+  const nuRelevant = new Set((plan.contacten[0]?.metingen ?? []).map((m) => m.code));
+
+  const codes = [...new Set(dossier.observaties.map((o) => o.code.coding?.[0]?.code))]
+    .filter((c): c is string => Boolean(c));
+
+  return codes
+    .map((code): Meetreeks => {
+      const reeks = metingReeks(dossier, code);
+      const punten = reeks
+        .map((o) => ({ op: o.effectief.slice(0, 10), waarde: numeriekeWaarde(o) }))
+        .filter((p): p is { op: string; waarde: number } => typeof p.waarde === 'number');
+      const laatste = punten.at(-1);
+      const vorige = punten.at(-2);
+      return {
+        code,
+        naam: metingNaam(code),
+        eenheid: (reeks.at(-1)?.waarde as { unit?: string })?.unit || undefined,
+        relevantNu: nuRelevant.has(code),
+        laatste: laatste?.waarde,
+        laatsteOp: laatste?.op,
+        verschil: laatste && vorige ? Math.round((laatste.waarde - vorige.waarde) * 10) / 10 : undefined,
+        punten,
+        streef: STREEFWAARDEN[code],
+      };
+    })
+    .sort((a, b) => Number(b.relevantNu) - Number(a.relevantNu) || b.punten.length - a.punten.length);
+}
+
+export function dossierHistorie(repo: DossierRepository, patientId: string, episodeId?: string) {
+  const dossier = repo.dossier(patientId);
+  if (!dossier) return undefined;
+  return {
+    journaal: journaal(dossier, episodeId),
+    episodes: dossier.episodes.map((e) => ({
+      id: e.id, titel: e.titel, status: e.status,
+      icpc: e.code.coding?.find((c) => c.system.includes('icpc'))?.code,
+      start: e.periode.start,
+      aantalContacten: dossier.deelcontacten.filter((dc) => dc.episodeId === e.id).length,
+    })),
+    aantalContacten: dossier.deelcontacten.length,
+  };
+}
+
+// ── 16. Orders ──────────────────────────────────────────────────────────────
+
+export function orderVoorstellen(repo: DossierRepository, patientId: string) {
+  const dossier = repo.dossier(patientId);
+  if (!dossier) return [];
+  return voorgesteldeOrdersets(dossier, planVoor(repo, dossier), repo.peildatum());
+}
+
+// ── 17. Berichten ───────────────────────────────────────────────────────────
+
+export function berichten(repo: DossierRepository, gebruikerId: string) {
+  const eigen = gesprekkenVoor(repo.alleGesprekken(), gebruikerId);
+  return {
+    gesprekken: eigen.map((g) => ({
+      ...g,
+      berichten: g.berichten.map((b) => ({ ...b, van: naamVanGebruiker(b.vanId) })),
+    })),
+    ongelezen: ongelezenVoor(repo.alleGesprekken(), gebruikerId),
   };
 }

@@ -1,7 +1,8 @@
 import {
-  agenda, assistentOverzicht, beheer, consultvoorbereiding, dagafsluiting, dagstart,
-  huisartsOverzicht, instroom, InMemoryRepository, intakes, monitoringCohort,
-  patientOverzicht, praktijkSamenvatting, registreerConsult, terminologie,
+  agenda, assistentOverzicht, beheer, berichten, consultvoorbereiding, controleerTweefactor,
+  dagafsluiting, dagstart, dossierHistorie, gebruikersoverzicht, huisartsOverzicht, instroom,
+  InMemoryRepository, intakes, meetreeksen, meldAan, monitoringCohort, orderVoorstellen,
+  patientOverzicht, praktijkSamenvatting, registreerConsult, terminologie, zoekPatient,
   type ConsultRegistratie,
 } from '@zpe/praktijk';
 import { ketens, modules, REGELSET_VERSIE, type PersoonlijkPlan } from '@zpe/care-engine';
@@ -35,6 +36,38 @@ export const lokaleApi = {
   agenda: (rol: string) => traag(agenda(repo, rol as 'poh-s' | 'assistent' | 'huisarts')),
   beheer: () => traag(beheer()),
   intakes: () => traag(intakes(repo)),
+
+  aanmelden: (gebruikersnaam: string, wachtwoord: string) => {
+    const uitkomst = meldAan({ gebruikersnaam, wachtwoord });
+    if (uitkomst.stap === 'mislukt') return Promise.reject(new Error(uitkomst.reden));
+    const { wachtwoord: _, ...gebruiker } = uitkomst.gebruiker;
+    return traag({ stap: 'tweefactor' as const, gebruiker });
+  },
+  tweefactor: (code: string) => controleerTweefactor(code)
+    ? traag({ geldig: true })
+    : Promise.reject(new Error('De code klopt niet.')),
+  gebruikers: () => traag(gebruikersoverzicht()),
+
+  zoek: (q: string) => traag(zoekPatient(repo, q)),
+  maakEpisode: (patientId: string, code: { icpc: string; snomed?: string; display: string }) => {
+    const episodeId = repo.maakEpisode(patientId, code, 'zv-poh-1');
+    if (!episodeId) return Promise.reject(new Error('patiënt niet gevonden'));
+    return traag({ episodeId, overzicht: patientOverzicht(repo, patientId)! });
+  },
+  historie: (patientId: string, episodeId?: string) =>
+    traag(dossierHistorie(repo, patientId, episodeId)!),
+  meetreeksen: (patientId: string) => traag(meetreeksen(repo, patientId)),
+  orders: (patientId: string) => traag(orderVoorstellen(repo, patientId)),
+
+  berichten: (gebruikerId: string) => traag(berichten(repo, gebruikerId)),
+  stuurBericht: (gesprekId: string, vanId: string, tekst: string) => {
+    repo.stuurBericht(gesprekId, vanId, tekst);
+    return traag(berichten(repo, vanId));
+  },
+  markeerGelezen: (gesprekId: string, gebruikerId: string) => {
+    repo.markeerGelezen(gesprekId, gebruikerId);
+    return traag(berichten(repo, gebruikerId));
+  },
 
   handelTriageAf: (id: string) => {
     repo.handelTriageAf(id);
@@ -106,7 +139,7 @@ export const lokaleApi = {
     return traag(patientOverzicht(repo, patientId)!);
   },
 
-  zoek: (q: string, breed: boolean) => traag({
+  zoekTerm: (q: string, breed: boolean) => traag({
     waarschuwing: DEMO_SEED_WAARSCHUWING,
     treffers: terminologie.zoek(q, {
       niveaus: breed

@@ -177,7 +177,9 @@ HTTP en geen opslag; `apps/*` bevatten geen klinische regels.
 | [13 — Beslissingsondersteuning](docs/13-beslissingsondersteuning.md) | Klinisch vs. logistiek, automatisering, bronverwijzing, MDR |
 | [14 — Configuratie en apps](docs/14-configuratie.md) | Vier niveaus, terminologie als instelling, ingebedde partnerapps |
 | [15 — Zelfredzaamheid](docs/15-zelfredzaamheid.md) | Leefdomeinen, score, doorwerking op frequentie en kanaal |
-| [ADR's](docs/adr/) | Acht vastgelegde ontwerpbesluiten met alternatieven |
+| [16 — Ordermanagement](docs/16-ordermanagement.md) | Ordersets, contra-indicatiecheck, rechten en autorisatie |
+| [17 — Toegang en samenwerking](docs/17-toegang-rollen-en-samenwerking.md) | Inloggen, vier rollen, rechten, berichten, persoonlijke voorkeuren |
+| [ADR's](docs/adr/) | Negen vastgelegde ontwerpbesluiten met alternatieven |
 
 ---
 
@@ -194,6 +196,15 @@ scoringslogica van bestaande instrumenten na met eigen formuleringen. CCQ, PHQ-9
 en EQ-5D zijn auteursrechtelijk beschermd en vragen een licentie voor digitaal gebruik.
 Hetzelfde geldt voor de Zelfredzaamheid-Matrix: de domeinnamen zijn feitelijk, maar de
 officiële scoringsankers moeten vóór gebruik worden geverifieerd ([`docs/15`](docs/15-zelfredzaamheid.md)).
+
+**Authenticatie.** Het aanmeldscherm is een demonstratie: vier accounts met een
+wachtwoord in platte tekst en een vaste tweefactorcode
+([`docs/17` §1](docs/17-toegang-rollen-en-samenwerking.md)). Er is geen hashing, geen
+sessiebeheer en geen koppeling met UZI. **Niet op een netwerk zetten met echte gegevens.**
+
+**Medicatiebewaking.** De contra-indicatiecheck bij ordersets kijkt naar nierfunctie,
+leeftijd en polyfarmacie — niet naar middel-middelinteracties. Dat vraagt de G-Standaard
+([`docs/16` §5](docs/16-ordermanagement.md)).
 
 **Richtlijnverwijzingen.** De links naar `richtlijnen.nhg.org` volgen het bekende
 patroon maar zijn niet stuk voor stuk tegen de live index gecontroleerd. Doe dat vóór

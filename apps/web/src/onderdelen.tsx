@@ -167,19 +167,21 @@ export function Agenda({ regels, openPatient }: {
   if (regels.length === 0) return <Leeg tekst="Geen afspraken vandaag." />;
   return (
     <div className="agenda">
-      {regels.map((r) => (
-        <div key={r.id} className="regel" data-soort={r.soort} data-aandacht={Boolean(r.aandacht)}>
+      {regels.map((r) => {
+        // De hele regel is de knop, niet alleen de naam: je klikt op een afspraak, niet op tekst.
+        const klikbaar = Boolean(r.patientId && openPatient);
+        return (
+        <div key={r.id} className="regel" data-soort={r.soort} data-aandacht={Boolean(r.aandacht)}
+          data-klikbaar={klikbaar}
+          role={klikbaar ? 'button' : undefined} tabIndex={klikbaar ? 0 : undefined}
+          onClick={klikbaar ? () => openPatient!(r.patientId!) : undefined}
+          onKeyDown={klikbaar
+            ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPatient!(r.patientId!); } }
+            : undefined}>
           <span className="klok">{r.tijd}</span>
           <span className="streep" />
           <div>
-            <div className="wie">
-              {r.naam
-                ? (openPatient
-                    ? <button className="knop" data-toon="stil" style={{ padding: 0, fontWeight: 600 }}
-                        onClick={() => openPatient(r.patientId!)}>{r.naam}</button>
-                    : r.naam)
-                : r.titel}
-            </div>
+            <div className="wie">{r.naam ?? r.titel}</div>
             <div className="bij">
               {r.naam ? `${r.leeftijd} jaar · ${r.reden ?? r.titel}` : `${r.duurMinuten} minuten`}
             </div>
@@ -200,7 +202,8 @@ export function Agenda({ regels, openPatient }: {
             {r.voorbereid === true && <span className="merkje" data-toon="ok">voorbereid</span>}
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

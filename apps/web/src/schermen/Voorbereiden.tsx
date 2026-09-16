@@ -11,7 +11,10 @@ import {
  * zitten (docs/12 §2.3). In bestaande systemen bestaat deze stap niet: daar ontdek je
  * tijdens het consult dat het lab er nog niet is.
  */
-export function Voorbereiden({ openPatient }: { openPatient: (id: string) => void }) {
+export function Voorbereiden({ openPatient, toonUitleg = true }: {
+  openPatient: (id: string) => void;
+  toonUitleg?: boolean;
+}) {
   const { data, fout, bezig } = useData(() => api.voorbereiding());
   const [geregeld, setGeregeld] = useState<Record<string, boolean>>({});
 
@@ -37,11 +40,13 @@ export function Voorbereiden({ openPatient }: { openPatient: (id: string) => voi
         </div>
       </div>
 
-      <div className="notitie">
-        <strong>Wat je hier kunt doen.</strong> Per patiënt zie je wat er binnen is, wat ontbreekt
-        en waar het gesprek over zou moeten gaan. Labaanvragen en vragenlijsten klaarzetten is
-        logistiek werk zonder klinische beslissing — dat kan in één handeling voor iedereen.
-      </div>
+      {toonUitleg && (
+        <div className="notitie">
+          <strong>Wat je hier kunt doen.</strong> Per patiënt zie je wat er binnen is, wat ontbreekt
+          en waar het gesprek over zou moeten gaan. Labaanvragen en vragenlijsten klaarzetten is
+          logistiek werk zonder klinische beslissing — dat kan in één handeling voor iedereen.
+        </div>
+      )}
 
       {data.length === 0 && <Leeg tekst="Geen afspraken vandaag." />}
 
