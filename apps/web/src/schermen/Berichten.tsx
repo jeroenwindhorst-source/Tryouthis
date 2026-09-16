@@ -1,8 +1,104 @@
-import { useState } from 'react';
-import { api, type Gebruiker, type Gesprek } from '../api';
+import { useEffect, useState } from 'react';
+import {
+  api, type Contactvorm, type Declaratiebeeld, type Gebruiker, type Gesprek, type Treffer,
+} from '../api';
 import { useData } from '../gebruik';
 import { Icoon } from '../iconen';
 import { Fout, Kaart, Laden, Leeg } from '../onderdelen';
+
+/**
+ * Aan welke episode hangt dit contact?
+ *
+ * Zonder episode is het antwoord een los briefje: het staat niet bij het verhaal waar het
+ * over gaat, en het telt niet mee voor de verantwoording. Vaak gaat een portaalvraag over
+ * iets bestaands; soms is het iets nieuws en dan open je hier een episode, zonder eerst
+ * het dossier te hoeven openen.
+ */
+function Episodekeuze({ patientId, gekozen, opKies }: {
+  patientId: string; gekozen: string; opKies: (id: string) => void;
+}) {
+  const [episodes, setEpisodes] = useState<{ id: string; titel: string; icpc?: string }[]>([]);
+  const [nieuw, setNieuw] = useState(false);
+  const [zoek, setZoek] = useState('');
+  const [treffers, setTreffers] = useState<Treffer[]>([]);
+  const [bezig, setBezig] = useState(false);
+
+  useEffect(() => {
+    api.patient(patientId)
+      .then((p) => {
+        setEpisodes(p.episodes);
+        // Eén episode? Dan is de keuze geen keuze en vullen we hem alvast in.
+        if (p.episodes.length > 0 && !gekozen) opKies(p.episodes[0].id);
+      })
+      .catch(() => setEpisodes([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patientId]);
+
+  const zoekCode = async (q: string) => {
+    setZoek(q);
+    if (q.trim().length < 2) { setTreffers([]); return; }
+    const uitkomst = await api.zoekTerm(q, false);
+    setTreffers(uitkomst.treffers.slice(0, 5));
+  };
+
+  const maak = async (treffer: Treffer) => {
+    setBezig(true);
+    try {
+      const antwoord = await api.maakEpisode(patientId, {
+        icpc: treffer.concept.icpc1 ?? '',
+        snomed: treffer.concept.snomed,
+        display: treffer.concept.display,
+      });
+      setEpisodes(antwoord.overzicht.episodes);
+      opKies(antwoord.episodeId);
+      setNieuw(false); setZoek(''); setTreffers([]);
+    } finally { setBezig(false); }
+  };
+
+  return (
+    <div style={{ marginTop: 9 }}>
+      <label className="veld">Episode</label>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <select value={gekozen} onChange={(e) => opKies(e.target.value)}>
+          <option value="">— geen episode —</option>
+          {episodes.map((e) => (
+            <option key={e.id} value={e.id}>{e.icpc} — {e.titel}</option>
+          ))}
+        </select>
+        <button className="knop" onClick={() => setNieuw(!nieuw)}>
+          <Icoon naam={nieuw ? 'kruis' : 'plus'} grootte={13} />
+          {nieuw ? 'Annuleren' : 'Nieuwe'}
+        </button>
+      </div>
+
+      {nieuw && (
+        <div style={{ marginTop: 8 }}>
+          <input type="search" value={zoek} autoFocus
+            placeholder="Zoek een diagnose of klacht"
+            onChange={(e) => zoekCode(e.target.value)} />
+          {treffers.map((t) => (
+            <button key={t.concept.snomed} className="gesprekknop" disabled={bezig}
+              onClick={() => maak(t)}>
+              <strong style={{ fontSize: 13 }}>{t.concept.display}</strong>
+              <div className="mini">ICPC {t.concept.icpc1 ?? '—'} · SNOMED {t.concept.snomed}</div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const BERICHTVORMEN: { id: Contactvorm; label: string; icoon: string; uitleg: string }[] = [
+  { id: 'e-consult', label: 'E-consult', icoon: 'huis',
+    uitleg: 'Schriftelijk antwoord via het portaal. Telt als consult als de vraag inhoudelijk is.' },
+  { id: 'telefonisch', label: 'Telefonisch', icoon: 'gesprek',
+    uitleg: 'Je hebt naar aanleiding van dit bericht gebeld.' },
+  { id: 'videoconsult', label: 'Videoconsult', icoon: 'video',
+    uitleg: 'Je hebt beeldgebeld. Sterkere identificatie dan telefonisch.' },
+  { id: 'herhaalrecept', label: 'Herhaalrecept', icoon: 'pil',
+    uitleg: 'Administratief. Zit in het inschrijftarief en is geen consult.' },
+];
 
 const KANAAL_LABEL: Record<string, string> = {
   'e-consult': 'e-consult', herhaalrecept: 'herhaalrecept',
@@ -30,6 +126,10 @@ export function Berichten({ gebruiker, openPatient }: {
   const [bak, setBak] = useState<'collega' | 'patient'>('collega');
   const [concept, setConcept] = useState('');
   const [bezigMet, setBezigMet] = useState(false);
+  const [vorm, setVorm] = useState<Contactvorm>('e-consult');
+  const [vastleggen, setVastleggen] = useState(true);
+  const [declaratie, setDeclaratie] = useState<Declaratiebeeld | undefined>();
+  const [episodeId, setEpisodeId] = useState('');
 
   if (fout) return <Fout boodschap={fout} />;
   if (bezig || !data) return <Laden wat="Berichten" />;
@@ -50,7 +150,19 @@ export function Berichten({ gebruiker, openPatient }: {
     if (!actief || !concept.trim()) return;
     setBezigMet(true);
     try {
-      setData(await api.stuurBericht(actief.id, gebruiker.id, concept.trim()));
+      if (actief.soort === 'patient' && vastleggen) {
+        // Antwoord én registratie in één handeling. Een antwoord dat alleen in het
+        // berichtenbakje blijft staan, bestaat over twee weken niet meer.
+        const antwoord = await api.beantwoordBericht({
+          gesprekId: actief.id, gebruikerId: gebruiker.id, tekst: concept.trim(),
+          contactvorm: vorm, episodeId: episodeId || undefined,
+          duurMinuten: vorm === 'videoconsult' ? 10 : undefined,
+        });
+        setData(antwoord.berichten);
+        setDeclaratie(antwoord.uitkomst?.declaratie);
+      } else {
+        setData(await api.stuurBericht(actief.id, gebruiker.id, concept.trim()));
+      }
       setConcept('');
     } finally { setBezigMet(false); }
   };
@@ -186,6 +298,65 @@ export function Berichten({ gebruiker, openPatient }: {
                   </div>
                 ))}
               </div>
+
+              {actief.soort === 'patient' && (
+                <div className="berichtvorm">
+                  {/*
+                    Wat dit contact wordt, kies je hier — niet achteraf bij de declaratie.
+                    Een schriftelijk antwoord is een e-consult; heb je gebeld of beeldgebeld
+                    naar aanleiding van dit bericht, dan is het dát, met een andere prestatie
+                    en een andere zekerheid over met wie je sprak (docs/19).
+                  */}
+                  <label className="veld">Dit wordt een…</label>
+                  <div className="chips">
+                    {BERICHTVORMEN.map((v) => (
+                      <button key={v.id} className="filterchip" data-actief={vorm === v.id}
+                        title={v.uitleg} onClick={() => setVorm(v.id)}>
+                        <Icoon naam={v.icoon} grootte={12} /> {v.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {vastleggen && actief.patientId && (
+                    <Episodekeuze patientId={actief.patientId} gekozen={episodeId}
+                      opKies={setEpisodeId} />
+                  )}
+
+                  <label className="aanvinken" style={{ marginTop: 9 }}>
+                    <input type="checkbox" checked={vastleggen}
+                      onChange={(e) => setVastleggen(e.target.checked)} />
+                    <span>
+                      Als contact vastleggen in het dossier
+                      <div className="mini">
+                        {vastleggen
+                          ? 'De vraag komt onder S, jouw antwoord onder P, met de contactvorm erbij.'
+                          : 'Alleen een bericht. Kies dit voor administratieve vragen.'}
+                      </div>
+                    </span>
+                  </label>
+                </div>
+              )}
+
+              {declaratie && (
+                <div className="declaratie" data-declarabel={declaratie.declarabel}
+                  style={{ marginTop: 10 }}>
+                  <div className="kop">
+                    <Icoon naam="euro" grootte={14} />
+                    <strong>Vastgelegd als {declaratie.naam}</strong>
+                    {declaratie.prestatie && (
+                      <span className="merkje" data-toon={declaratie.declarabel ? 'ok' : 'aandacht'}>
+                        {declaratie.prestatie.code}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mini">{declaratie.toelichting}</div>
+                  {declaratie.ontbreekt.length > 0 && (
+                    <div className="mini">
+                      Ontbreekt nog: {declaratie.ontbreekt.join(', ')} — vul aan in het dossier.
+                    </div>
+                  )}
+                </div>
+              )}
 
               <form onSubmit={verstuur} style={{ marginTop: 14, display: 'flex', gap: 8 }}>
                 <input type="text" value={concept}

@@ -7,12 +7,14 @@ import {
 import {
   agenda, assistentOverzicht, beheer, berichten, consultvoorbereiding, controleerTweefactor,
   dagafsluiting, dagstart, dossierHistorie, gebruikersoverzicht, huisartsOverzicht, instroom,
-  InMemoryRepository, intakes, meetreeksen, meldAan, monitoringCohort, orderOverzicht,
-  orderVoorstellen, overleg, patientOverzicht, plaatsLosseOrders, planbord, planbordPraktijk,
-  praktijkrapportage, praktijkSamenvatting, registreerConsult, terminologie, verwerkVragenlijst,
-  vraagAfspraakAan, zetOpBespreeklijst, zoekOrders, zoekPatient,
-  type Afspraakstatus, type ConsultRegistratie, type NieuweOrder, type NieuwAfspraakverzoek,
-  type NieuwBespreekpunt,
+  acuteInstroom, beantwoordPatientbericht, contactvormen, handelAcuutAf,
+  InMemoryRepository, intakes, legVerrichtingVast, meetreeksen, meldAan, monitoringCohort,
+  orderOverzicht, orderVoorstellen, overleg, pakAcuutOp, patientOverzicht, plaatsLosseOrders,
+  planbord, planbordPraktijk, praktijkrapportage, praktijkSamenvatting, registreerConsult,
+  terminologie, verrichtingen, verwerkVragenlijst, vraagAfspraakAan, zetOpBespreeklijst,
+  zoekOrders, zoekPatient,
+  type Afspraakstatus, type Beoordelaar, type ConsultRegistratie, type Contactvorm,
+  type NieuweOrder, type NieuwAfspraakverzoek, type NieuwBespreekpunt,
 } from '@zpe/praktijk';
 
 const repo = new InMemoryRepository();
@@ -221,6 +223,56 @@ app.post<{ Params: { id: string }; Body: { reden: string } }>(
 );
 
 app.get('/api/praktijk/rapportage', async () => praktijkrapportage(repo));
+
+// ── Acute instroom ──────────────────────────────────────────────────────────
+
+app.get<{ Params: { rol: string } }>('/api/acuut/:rol', async (req) =>
+  acuteInstroom(repo, req.params.rol as 'poh-s' | 'assistent' | 'huisarts'));
+
+app.post<{ Params: { id: string }; Body: { gebruikerId: string; rol: string } }>(
+  '/api/acuut/:id/oppakken',
+  async (req) => pakAcuutOp(repo, req.params.id, req.body.gebruikerId,
+    req.body.rol as 'poh-s' | 'assistent' | 'huisarts'),
+);
+
+app.post<{ Params: { id: string }; Body: { uitkomst: string; rol: string } }>(
+  '/api/acuut/:id/afhandelen',
+  async (req) => handelAcuutAf(repo, req.params.id, req.body.uitkomst,
+    req.body.rol as 'poh-s' | 'assistent' | 'huisarts'),
+);
+
+// ── Contactvormen en verrichtingen ──────────────────────────────────────────
+
+app.get('/api/contactvormen', async () => contactvormen);
+
+app.get<{ Params: { id: string } }>('/api/patient/:id/verrichtingen', async (req, reply) => {
+  const beeld = verrichtingen(repo, req.params.id);
+  return beeld ?? reply.code(404).send({ fout: 'patiënt niet gevonden' });
+});
+
+app.post<{ Body: {
+  gebruikerId: string; patientId: string; orderId: string; soortCode: string;
+  waarden: Record<string, string>; beoordelaar: Beoordelaar;
+  vraagstelling?: string; conclusie?: string;
+} }>(
+  '/api/verrichtingen',
+  async (req, reply) => {
+    const { gebruikerId, ...gegevens } = req.body;
+    const beeld = legVerrichtingVast(repo, gebruikerId, gegevens);
+    return beeld ?? reply.code(400).send({ fout: 'kon de verrichting niet vastleggen' });
+  },
+);
+
+app.post<{ Body: {
+  gesprekId: string; gebruikerId: string; tekst: string;
+  contactvorm: Contactvorm; episodeId?: string; duurMinuten?: number;
+} }>(
+  '/api/berichten/beantwoorden',
+  async (req, reply) => {
+    const uitkomst = beantwoordPatientbericht(repo, req.body);
+    return uitkomst ?? reply.code(404).send({ fout: 'gesprek niet gevonden' });
+  },
+);
 
 // ── Overleg en bespreeklijst ────────────────────────────────────────────────
 

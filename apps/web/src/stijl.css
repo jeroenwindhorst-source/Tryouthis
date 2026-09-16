@@ -1085,3 +1085,74 @@ body {
   border-radius: 999px; background: var(--urgent); color: #fff;
   font-size: 10.5px; font-weight: 700; line-height: 1;
 }
+
+/* ── Acute instroom ───────────────────────────────────────────────────────── */
+
+.acuutmodaal, .acuuttoast {
+  background: var(--vlak); border-radius: var(--rond);
+  box-shadow: var(--schaduw-op); padding: 18px 20px;
+}
+.acuutmodaal {
+  position: fixed; top: 12vh; left: 50%; transform: translateX(-50%);
+  width: min(520px, 92vw); z-index: 70;
+  border: 1px solid #f1c4bf; border-top: 4px solid var(--urgent);
+}
+.acuuttoast {
+  position: fixed; right: 20px; bottom: 20px; width: min(400px, calc(100vw - 40px));
+  z-index: 55; border: 1px solid var(--line); border-left: 4px solid var(--aandacht);
+  animation: schuifin .22s ease-out;
+}
+@keyframes schuifin { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .acuuttoast { animation: none; } }
+
+.acuutmodaal > header, .acuuttoast > header {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 9px;
+}
+.acuutmodaal > header .knop, .acuuttoast > header .knop { margin-left: auto; }
+.acuutmodaal h3, .acuuttoast h3 { font-size: 15px; margin-bottom: 4px; }
+.acuutmodaal .samenvatting, .acuuttoast .samenvatting, .acuutregel .samenvatting {
+  margin: 0 0 9px; font-size: 13.5px; font-weight: 550; line-height: 1.45;
+}
+.acuutmodaal .onderbouwing, .acuuttoast .onderbouwing {
+  margin-bottom: 7px; font-size: 12.5px; color: var(--ink-2); line-height: 1.45;
+}
+.acuutmodaal .onderbouwing strong, .acuuttoast .onderbouwing strong {
+  display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--ink-3); margin-bottom: 2px;
+}
+
+.acuutregel {
+  border: 1px solid var(--line); border-left: 3px solid var(--aandacht);
+  border-radius: var(--rond-klein); padding: 12px 14px; margin-bottom: 10px;
+}
+.acuutregel[data-urgentie="spoed"] { border-left-color: var(--urgent); background: var(--urgent-zacht); }
+.acuutregel .kop { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+
+/* ── Declaratie ───────────────────────────────────────────────────────────── */
+
+.declaratie {
+  margin-top: 12px; padding: 10px 13px; border-radius: var(--rond-klein);
+  border: 1px solid var(--line); background: var(--bg);
+}
+.declaratie[data-declarabel="true"] { border-color: #c8ebd9; background: var(--ok-zacht); }
+.declaratie[data-declarabel="false"] { border-color: #f2dfb4; background: var(--aandacht-zacht); }
+.declaratie .kop { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 3px; }
+.declaratie ul { margin: 5px 0 0; padding-left: 18px; }
+
+/* ── Bericht als contact vastleggen ───────────────────────────────────────── */
+
+.berichtvorm {
+  margin-top: 12px; padding: 11px 13px; background: var(--bg);
+  border-radius: var(--rond-klein); border: 1px solid var(--line-zacht);
+}
+.aanvinken { display: flex; gap: 9px; align-items: flex-start; font-size: 12.5px; cursor: pointer; }
+.aanvinken input { width: auto; margin-top: 2px; }
+
+/* ── Verrichtingsuitslag ──────────────────────────────────────────────────── */
+
+.uitslagblok {
+  border: 1px solid var(--line); border-radius: var(--rond-klein);
+  padding: 11px 13px; margin-bottom: 10px;
+}
+.uitslagblok .kop { display: flex; gap: 9px; align-items: baseline; flex-wrap: wrap; margin-bottom: 7px; }
+.uitslagblok .waardetabel td { padding: 5px 0; }

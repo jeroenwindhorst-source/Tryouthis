@@ -98,6 +98,7 @@ export function Orderpaneel({ patientId, patientNaam, gebruiker, startSoort, opS
     bestemming: t.instellingen?.[0],
     waarschuwingen: t.waarschuwingen,
     levert: t.levert,
+    verrichtingCode: t.verrichtingCode,
     bijRol: t.bijRol,
     duurMinuten: t.duurMinuten,
     planroute: t.soort === 'afspraak' ? (planroute ?? 'assistent') : undefined,

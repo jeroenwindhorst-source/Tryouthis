@@ -12,6 +12,14 @@ import { journaal, type JournaalRegel } from './historie.js';
 import type { ExternDocument } from './externe-bronnen.js';
 import type { NieuweOrder, Order } from './orderopslag.js';
 import { bespreeklijstVoor, type NieuwBespreekpunt } from './bespreeklijst.js';
+import {
+  beoordeelDeclaratie, contactvormen, naarContactSoort, vindContactvorm, type Contactvorm,
+} from './contactsoorten.js';
+import { acuutVoor, BRON_LABEL, URGENTIE_UITLEG } from './acuut.js';
+import {
+  buitenBandbreedte, verrichtingsoorten, vindVerrichting, type Beoordelaar,
+  type Verrichtinguitslag,
+} from './verrichtingen.js';
 import { vindGebruiker } from './gebruikers.js';
 import { gesprekkenVoor, naamVanGebruiker, ongelezenVoor } from './berichten.js';
 import {
@@ -583,6 +591,14 @@ export interface ConsultRegistratie {
   episodeId?: string;
   /** Wie registreert. Bepaalt de herkomst; de rol volgt uit de gebruiker. */
   gebruikerId?: string;
+  /**
+   * In welke vorm dit contact plaatsvond.
+   *
+   * Bekend op het moment van het contact, dus hier gevraagd en niet achteraf afgeleid.
+   * Bepaalt de prestatie én de identificatiesterkte (docs/19).
+   */
+  contactvorm?: Contactvorm;
+  duurMinuten?: number;
 }
 
 export interface RegistratieUitkomst {
@@ -591,6 +607,8 @@ export interface RegistratieUitkomst {
   verantwoordingGevuld: { keten: string; indicator: string }[];
   /** Wat het systeem hierna zelf doet. */
   vervolg: string[];
+  /** Wat dit contact administratief oplevert, en wat er eventueel nog ontbreekt. */
+  declaratie?: ReturnType<typeof beoordeelDeclaratie>;
 }
 
 /**
@@ -650,12 +668,47 @@ export function registreerConsult(
     .filter(([, tekst]) => Boolean(tekst?.trim()))
     .map(([letter, tekst]) => ({ letter: letter as 'S' | 'O' | 'E' | 'P', tekst: tekst!.trim() }));
 
+  // De contactvorm bepaalt wat dit administratief is. Hij wordt gevraagd op het moment
+  // van registreren en niet achteraf afgeleid: wie de vorm later moet reconstrueren, gokt.
+  const vorm: Contactvorm = registratie.contactvorm ?? 'consult';
+  const declaratie = beoordeelDeclaratie({
+    vorm,
+    duurMinuten: registratie.duurMinuten,
+    heeftSoep: soepRegels.length > 0,
+    heeftEpisode: Boolean(registratie.episodeId),
+  });
+
+  const encounterId = `${patientId}-enc-${Date.now()}`;
+  const contact = {
+    resourceType: 'Encounter' as const,
+    id: encounterId,
+    patientId,
+    soort: naarContactSoort(declaratie.vorm),
+    status: 'finished' as const,
+    periode: { start: nu, einde: nu },
+    uitvoerder: {
+      id: herkomst.auteurId,
+      naam: gebruiker?.naam ?? 'Sanne Bakker',
+      rol: auteurRol,
+    },
+    duurMinuten: registratie.duurMinuten,
+    declaratie: declaratie.prestatie
+      ? {
+          code: declaratie.prestatie.code,
+          omschrijving: declaratie.prestatie.omschrijving,
+          declarabel: declaratie.declarabel,
+          ontbreekt: declaratie.ontbreekt,
+        }
+      : undefined,
+    herkomst,
+  };
+
   const deelcontact = soepRegels.length > 0 && registratie.episodeId
     ? {
         resourceType: 'Deelcontact' as const,
         id: `${patientId}-dc-${Date.now()}`,
         patientId,
-        encounterId: `${patientId}-enc-${Date.now()}`,
+        encounterId,
         episodeId: registratie.episodeId,
         regels: soepRegels,
         afgerond: true,
@@ -663,6 +716,7 @@ export function registreerConsult(
       }
     : undefined;
 
+  if (deelcontact) repo.dossier(patientId)?.contacten.push(contact);
   repo.registreer(patientId, observaties, deelcontact);
 
   const na = planVoor(repo, repo.dossier(patientId)!);
@@ -698,6 +752,7 @@ export function registreerConsult(
     })),
     verantwoordingGevuld,
     vervolg,
+    declaratie,
   };
 }
 
@@ -1272,6 +1327,168 @@ export function vraagAfspraakAan(
 }
 
 export type { Planroute };
+
+// ── 18b. Acute instroom ─────────────────────────────────────────────────────
+
+/**
+ * Wat er nú binnenkomt en door iemand opgepakt moet worden.
+ *
+ * Bewust geen teller maar een lijst met een claim. Een cijfertje dat van 3 naar 4 gaat
+ * terwijl je een consult doet, ziet niemand; en als drie mensen hetzelfde signaal zien
+ * zonder dat zichtbaar is wie ermee bezig is, gaan er twee bellen of geen enkele.
+ */
+export function acuteInstroom(repo: DossierRepository, rol: Rol) {
+  const eigen = acuutVoor(repo.acuteSignalen(), rol);
+  const verrijk = (s: (typeof eigen)[number]) => ({
+    ...s,
+    bronLabel: BRON_LABEL[s.bron],
+    urgentieLabel: URGENTIE_UITLEG[s.urgentie].label,
+    opdringen: URGENTIE_UITLEG[s.urgentie].opdringen,
+    binnenOmTijd: s.binnenOp.slice(11, 16),
+  });
+
+  return {
+    open: eigen.filter((s) => s.status === 'open').map(verrijk),
+    opgepakt: eigen.filter((s) => s.status === 'opgepakt').map(verrijk),
+    afgehandeld: eigen.filter((s) => s.status === 'afgehandeld').map(verrijk),
+    /** Alles wat deze rol kan oppakken, ongeacht status — voor het overzichtsscherm. */
+    alles: eigen.map(verrijk),
+  };
+}
+
+export function pakAcuutOp(repo: DossierRepository, id: string, gebruikerId: string, rol: Rol) {
+  const gebruiker = vindGebruiker(gebruikerId);
+  if (gebruiker && gebruiker.rol !== 'administrator') {
+    repo.pakAcuutOp(id, { id: gebruiker.id, naam: gebruiker.naam, rol: gebruiker.rol });
+  }
+  return acuteInstroom(repo, rol);
+}
+
+export function handelAcuutAf(repo: DossierRepository, id: string, uitkomst: string, rol: Rol) {
+  repo.handelAcuutAf(id, uitkomst);
+  return acuteInstroom(repo, rol);
+}
+
+// ── 18c. Verrichtingen ──────────────────────────────────────────────────────
+
+/**
+ * Wat er aan verrichtingen openstaat en wat er al uit kwam.
+ *
+ * Een order voor een ECG is niet af als het ECG gemaakt is: er komt een strook uit en er
+ * moet iemand naar kijken. Dat spoor houdt dit overzicht vast — van aanvraag tot oordeel,
+ * met de uitvoerder erbij, want dat is vaak een ander dan de aanvrager.
+ */
+export function verrichtingen(repo: DossierRepository, patientId: string) {
+  const dossier = repo.dossier(patientId);
+  if (!dossier) return undefined;
+  const orders = repo.orders(patientId).filter((o) => o.soort === 'onderzoek');
+  const uitslagen = repo.verrichtinguitslagen(patientId);
+  const gedaan = new Set(uitslagen.map((u) => u.orderId));
+
+  return {
+    open: orders
+      .filter((o) => !gedaan.has(o.id) && o.status !== 'afgewezen' && o.status !== 'ingetrokken')
+      .map((o) => ({
+        order: o,
+        // Via de code uit de catalogus, niet via naamvergelijking: een verrichting die
+        // hernoemd wordt, mag niet stilletjes zijn uitkomstvelden kwijtraken.
+        soort: o.verrichtingCode ? vindVerrichting(o.verrichtingCode) : undefined,
+      })),
+    uitslagen: uitslagen.map((u) => {
+      const soort = vindVerrichting(u.soortCode);
+      return {
+        ...u,
+        soortNaam: soort?.naam ?? u.soortCode,
+        afwijkingen: soort ? buitenBandbreedte(soort, u.waarden) : [],
+        velden: (soort?.uitkomstvelden ?? []).map((veld) => ({
+          naam: veld.naam,
+          waarde: veld.soort === 'keuze'
+            ? (veld.opties?.find((o) => o.code === u.waarden[veld.code])?.label
+              ?? u.waarden[veld.code] ?? '')
+            : `${u.waarden[veld.code] ?? ''}${veld.eenheid ? ` ${veld.eenheid}` : ''}`.trim(),
+        })).filter((v) => v.waarde !== ''),
+      };
+    }),
+    soorten: verrichtingsoorten,
+  };
+}
+
+export function legVerrichtingVast(
+  repo: DossierRepository,
+  gebruikerId: string,
+  gegevens: {
+    patientId: string; orderId: string; soortCode: string; waarden: Record<string, string>;
+    beoordelaar: Beoordelaar; vraagstelling?: string; conclusie?: string;
+  },
+) {
+  const gebruiker = vindGebruiker(gebruikerId);
+  if (!gebruiker || gebruiker.rol === 'administrator') return undefined;
+  const soort = vindVerrichting(gegevens.soortCode);
+  const nu = new Date().toISOString();
+
+  const uitslag: Verrichtinguitslag = {
+    orderId: gegevens.orderId,
+    soortCode: gegevens.soortCode,
+    uitgevoerdDoor: { id: gebruiker.id, naam: gebruiker.naam, rol: gebruiker.rol },
+    uitgevoerdOp: nu,
+    waarden: gegevens.waarden,
+    beoordelaar: gegevens.beoordelaar,
+    conclusie: gegevens.conclusie,
+    teleconsult: gegevens.beoordelaar === 'teleconsultatie' && soort?.teleconsultatie
+      ? {
+          specialisme: soort.teleconsultatie.specialisme,
+          vraagstelling: gegevens.vraagstelling ?? 'Beoordeling gevraagd',
+          verstuurdOp: nu,
+        }
+      : undefined,
+  };
+  repo.legVerrichtingVast(uitslag);
+  return verrichtingen(repo, gegevens.patientId);
+}
+
+/**
+ * Een patiëntbericht beantwoorden én vastleggen.
+ *
+ * Dit is waar het kanaal zijn waarde krijgt of verliest. Een antwoord dat alleen in het
+ * berichtenbakje blijft staan, bestaat over twee weken niet meer. Daarom gaat het
+ * antwoord hier tegelijk als deelcontact het dossier in, mét de contactvorm — want een
+ * e-consult is administratief iets anders dan een telefoontje, en dat is bekend op dit
+ * moment en niet achteraf.
+ */
+export function beantwoordPatientbericht(
+  repo: DossierRepository,
+  gegevens: {
+    gesprekId: string; gebruikerId: string; tekst: string;
+    contactvorm: Contactvorm; episodeId?: string;
+    soep?: { S?: string; O?: string; E?: string; P?: string };
+    duurMinuten?: number;
+  },
+) {
+  const gesprek = repo.alleGesprekken().find((g) => g.id === gegevens.gesprekId);
+  if (!gesprek?.patientId) return undefined;
+
+  repo.stuurBericht(gegevens.gesprekId, gegevens.gebruikerId, gegevens.tekst);
+
+  const vraag = gesprek.berichten.find((b) => b.vanId === gesprek.patientId)?.tekst ?? '';
+  const uitkomst = registreerConsult(repo, gesprek.patientId, {
+    metingen: [],
+    soep: {
+      S: gegevens.soep?.S ?? vraag,
+      O: gegevens.soep?.O,
+      E: gegevens.soep?.E,
+      P: gegevens.soep?.P ?? gegevens.tekst,
+    },
+    episodeId: gegevens.episodeId,
+    gebruikerId: gegevens.gebruikerId,
+    contactvorm: gegevens.contactvorm,
+    duurMinuten: gegevens.duurMinuten,
+  });
+
+  return { berichten: berichten(repo, gegevens.gebruikerId), uitkomst };
+}
+
+export { contactvormen, vindContactvorm, beoordeelDeclaratie };
+export type { Contactvorm };
 
 // ── 19. Praktijkrapportage ──────────────────────────────────────────────────
 

@@ -1,9 +1,10 @@
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import {
   api, MODULE_NAAM,
   type ExternDocument, type GeplandContact, type GeplandItem, type Gebruiker,
-  type JournaalRegel, type Meetreeks, type NieuweOrder, type Overlegnotitie,
-  type PatientOverzicht, type RegistratieUitkomst, type Treffer,
+  type Contactvorm, type Declaratiebeeld, type JournaalRegel, type Meetreeks,
+  type NieuweOrder, type Overlegnotitie, type PatientOverzicht, type RegistratieUitkomst,
+  type Treffer,
 } from '../api';
 import { useData } from '../gebruik';
 import { Trendgrafiek } from '../grafiek';
@@ -16,6 +17,7 @@ import {
 } from '../onderdelen';
 import { Orders } from './Orders';
 import { Orderpaneel } from './Orderpaneel';
+import { Verrichtingen } from './Verrichtingen';
 import { Bespreekknop } from './Overleg';
 
 /**
@@ -41,8 +43,90 @@ const INTENSITEITEN = [
   { id: 'palliatief', label: 'palliatief', uitleg: 'streefwaarden vervallen, comfort leidend' },
 ];
 
-type Tab = 'consult' | 'journaal' | 'metingen' | 'orders';
+type Tab = 'consult' | 'journaal' | 'metingen' | 'orders' | 'verrichtingen';
 type OrderSoort = 'medicatie' | 'lab' | 'onderzoek' | 'verwijzing' | 'afspraak';
+
+/**
+ * Wat deze registratie administratief oplevert, vóór het afronden.
+ *
+ * Niet om tot declareren aan te zetten, maar omdat het omgekeerde vaker gebeurt: werk
+ * dat gedaan is en niet vergoed wordt omdat één veld leeg bleef. Wie dat aan het eind
+ * van het kwartaal ontdekt, kan er niets meer aan doen.
+ */
+function Declaratievoorbeeld({ vorm, duurMinuten, heeftSoep, heeftEpisode }: {
+  vorm: Contactvorm; duurMinuten: number; heeftSoep: boolean; heeftEpisode: boolean;
+}) {
+  const [beeld, setBeeld] = useState<Declaratiebeeld | undefined>();
+  const [vormen, setVormen] = useState<Awaited<ReturnType<typeof api.contactvormen>>>([]);
+
+  useEffect(() => { api.contactvormen().then(setVormen).catch(() => setVormen([])); }, []);
+
+  useEffect(() => {
+    // De beoordeling draait in de domeinlaag en niet hier: dezelfde regel moet gelden in
+    // de browser, in de server en straks in de declaratie-export.
+    const definitie = vormen.find((v) => v.id === vorm);
+    if (!definitie) { setBeeld(undefined); return; }
+    const ontbreekt: string[] = [];
+    if (!heeftSoep) ontbreekt.push('geen SOEP-registratie');
+    if (!heeftEpisode) ontbreekt.push('niet aan een episode gekoppeld');
+    const lang = definitie.duurGrensMinuten !== undefined
+      && duurMinuten >= definitie.duurGrensMinuten;
+    const langVorm = vormen.find((v) => v.id === `${vorm}-lang`);
+    const gekozen = lang && langVorm ? langVorm : definitie;
+    setBeeld({
+      vorm: gekozen.id, naam: gekozen.naam, declarabel: gekozen.declarabel && ontbreekt.length === 0,
+      prestatie: gekozen.prestatie, ontbreekt,
+      toelichting: gekozen.declarabel
+        ? (ontbreekt.length === 0
+          ? `Voldoet aan de voorwaarden voor ${gekozen.prestatie?.omschrijving.toLowerCase()}.`
+          : 'Nog niet declarabel; vul aan wat hierboven ontbreekt.')
+        : (gekozen.nietDeclarabelOmdat ?? ''),
+    });
+  }, [vorm, duurMinuten, heeftSoep, heeftEpisode, vormen]);
+
+  if (!beeld) return null;
+
+  return (
+    <div className="declaratie" data-declarabel={beeld.declarabel}>
+      <div className="kop">
+        <Icoon naam="euro" grootte={14} />
+        <strong>{beeld.naam}</strong>
+        {beeld.prestatie && (
+          <span className="merkje" data-toon={beeld.declarabel ? 'ok' : 'aandacht'}>
+            {beeld.prestatie.code}
+          </span>
+        )}
+      </div>
+      <div className="mini">{beeld.toelichting}</div>
+      {beeld.ontbreekt.length > 0 && (
+        <ul className="uitleg">{beeld.ontbreekt.map((o) => <li key={o}>{o}</li>)}</ul>
+      )}
+      {beeld.prestatie && beeld.declarabel && (
+        <div className="mini" style={{ marginTop: 4 }}>
+          Voorwaarden: {beeld.prestatie.voorwaarden.join(' · ')}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const VORMEN: { id: Contactvorm; label: string; icoon: string; uitleg: string }[] = [
+  { id: 'consult', label: 'Op de praktijk', icoon: 'klembord',
+    uitleg: 'Face-to-face. De duurstaffel bepaalt of het een kort of lang consult is.' },
+  { id: 'telefonisch', label: 'Telefonisch', icoon: 'gesprek',
+    uitleg: 'Inhoudelijk telefonisch contact — geen afspraak maken of uitslag doorgeven.' },
+  { id: 'videoconsult', label: 'Videoconsult', icoon: 'video',
+    uitleg: 'Beeld én geluid, met de patiënt zelf. Zelfde duurstaffel als op de praktijk.' },
+  { id: 'e-consult', label: 'E-consult', icoon: 'huis',
+    uitleg: 'Schriftelijke vraag via het portaal met een inhoudelijk antwoord.' },
+  { id: 'visite', label: 'Visite', icoon: 'huis',
+    uitleg: 'Bij de patiënt thuis.' },
+  { id: 'verrichting', label: 'Verrichting', icoon: 'radar',
+    uitleg: 'Een uitgevoerde handeling met een vastgelegde uitkomst.' },
+];
+
+/** Vormen waarbij de duur de prestatie bepaalt. */
+const DUURVORMEN: Contactvorm[] = ['consult', 'visite', 'videoconsult'];
 
 const PLAN_ICOON: Record<string, string> = {
   medicatie: 'pil', lab: 'buisje', verwijzing: 'uitgaand', onderzoek: 'radar',
@@ -197,6 +281,9 @@ export function Consult({ patientId, gebruiker, terug }: {
         <button data-actief={tab === 'orders'} onClick={() => setTab('orders')}>
           <Icoon naam="pil" grootte={14} /> Orders
         </button>
+        <button data-actief={tab === 'verrichtingen'} onClick={() => setTab('verrichtingen')}>
+          <Icoon naam="radar" grootte={14} /> Verrichtingen
+        </button>
       </div>
 
       {tab === 'journaal' && <Journaal patientId={patientId} />}
@@ -206,6 +293,10 @@ export function Consult({ patientId, gebruiker, terug }: {
       {tab === 'orders' && (
         <Orders patientId={patientId} gebruiker={gebruiker}
           opNieuweOrder={() => setOrderpaneel('alles')} />
+      )}
+
+      {tab === 'verrichtingen' && (
+        <Verrichtingen patientId={patientId} patientNaam={data.patient.naam} gebruiker={gebruiker} />
       )}
 
       {orderpaneel && (
@@ -458,10 +549,25 @@ export function Consult({ patientId, gebruiker, terug }: {
                   <span className="merkje" data-toon="ok">
                     <Icoon naam="vink" grootte={11} /> vastgelegd in het dossier
                   </span>
+                  {uitkomst.declaratie && (
+                    <span className="merkje"
+                      data-toon={uitkomst.declaratie.declarabel ? 'ok' : 'aandacht'}>
+                      <Icoon naam="euro" grootte={11} /> {uitkomst.declaratie.naam}
+                      {uitkomst.declaratie.prestatie ? ` · ${uitkomst.declaratie.prestatie.code}` : ''}
+                    </span>
+                  )}
                   <span className="mini">
                     De afspraak van vandaag staat nu op <strong>afgerond</strong> in de agenda.
                   </span>
                 </div>
+
+                {uitkomst.declaratie && !uitkomst.declaratie.declarabel && (
+                  <div className="notitie" data-toon="waarschuwing" style={{ marginBottom: 10 }}>
+                    <strong>Nog niet declarabel.</strong> {uitkomst.declaratie.toelichting}
+                    {uitkomst.declaratie.ontbreekt.length > 0
+                      && ` Ontbreekt: ${uitkomst.declaratie.ontbreekt.join(', ')}.`}
+                  </div>
+                )}
 
                 <table>
                   <tbody>
@@ -1462,6 +1568,8 @@ function Registreren({
   const contact = overzicht.zorgplan.contacten[0];
   const [bezig, setBezig] = useState(false);
   const [nieuweEpisode, setNieuweEpisode] = useState(false);
+  const [contactvorm, setContactvorm] = useState<Contactvorm>('consult');
+  const [duurMinuten, setDuurMinuten] = useState(15);
   const [zoek, setZoek] = useState('');
   const [treffers, setTreffers] = useState<Treffer[]>([]);
 
@@ -1515,7 +1623,7 @@ function Registreren({
       });
       const antwoord = await api.consult(patientId, {
         metingen, soep: registratie.soep, episodeId: episodeId || undefined,
-        gebruikerId: gebruiker.id,
+        gebruikerId: gebruiker.id, contactvorm, duurMinuten,
       });
       opWijzig({ waarden: {}, bronnen: {}, soep: {}, episodeId: '', suggestieCodes: [] });
       opKlaar(antwoord.overzicht, antwoord.uitkomst);
@@ -1594,6 +1702,35 @@ function Registreren({
           <Icoon naam="gesprek" grootte={13} />
           {viaVragenlijst.map((m) => m.naam).join(', ')} komt binnen via de vragenlijst.
         </div>
+      )}
+
+      {/*
+        De contactvorm hoort hier en niet bij de declaratie achteraf. Hij is nú bekend;
+        wie hem later moet reconstrueren, gokt. En het verschil is echt: een videoconsult
+        en een telefoontje leveren een andere prestatie op en een andere zekerheid over
+        met wie je sprak (docs/19).
+      */}
+      <label className="veld">Contactvorm</label>
+      <div className="chips" style={{ marginBottom: 10 }}>
+        {VORMEN.map((v) => (
+          <button key={v.id} className="filterchip" data-actief={contactvorm === v.id}
+            title={v.uitleg} onClick={() => setContactvorm(v.id)}>
+            <Icoon naam={v.icoon} grootte={12} /> {v.label}
+          </button>
+        ))}
+      </div>
+
+      {DUURVORMEN.includes(contactvorm) && (
+        <>
+          <label className="veld">Duur</label>
+          <div className="segment" style={{ marginBottom: 10 }}>
+            {[5, 10, 15, 20, 30].map((n) => (
+              <button key={n} data-actief={duurMinuten === n} onClick={() => setDuurMinuten(n)}>
+                {n} min
+              </button>
+            ))}
+          </div>
+        </>
       )}
 
       <label className="veld">Episode</label>
@@ -1729,13 +1866,17 @@ function Registreren({
         </div>
       )}
 
+      <Declaratievoorbeeld vorm={contactvorm} duurMinuten={duurMinuten}
+        heeftSoep={Object.values(registratie.soep).some((t) => (t ?? '').trim() !== '')}
+        heeftEpisode={Boolean(episodeId)} />
+
       <div className="knop-rij" style={{ marginTop: 14 }}>
         <button className="knop" data-toon="primair" disabled={bezig || ingevuld.length === 0}
           onClick={afronden}>
           <Icoon naam="vink" grootte={13} /> Consult afronden
         </button>
         <span className="mini" style={{ alignSelf: 'center' }}>
-          {ingevuld.length === 0 ? 'Vul minstens één meting in.' : 'Declaratie en indicatoren volgen automatisch.'}
+          {ingevuld.length === 0 ? 'Vul minstens één meting in.' : 'Indicatoren volgen automatisch.'}
         </span>
       </div>
     </Kaart>

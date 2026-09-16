@@ -168,6 +168,14 @@ is. Wat er wél staat is het werkproces eromheen: hoe de patiënt de uitnodiging
 is), dat het dossier ernaast open blijft, en dat je achteraf gewoon een deelcontact
 registreert. Het beeld zelf komt van een ingebedde partij (`docs/14` §4).
 
+## 4f. Acute instroom
+
+Overdag komt wat niet kan wachten hier terecht en niet bij de huisartsenpost. Een spoedmelding
+onderbreekt het scherm; minder urgente signalen komen als kaart rechtsonder. Elk signaal
+draagt zijn onderbouwing en een voorstel, en **oppakken is een claim** die de andere rollen
+direct zien. Zie [ADR-0013](adr/ADR-0013-acute-instroom-moet-zich-opdringen.md) en
+`docs/19` §5.
+
 ## 5. Dossierdiepte
 
 Een startscherm dat met werk opent, mag niet betekenen dat je er niet doorheen kunt.
@@ -209,6 +217,10 @@ het vastleggen tussen *hier gemeten* en *door patiënt* — zie
 [ADR-0012](adr/ADR-0012-patientgegevens-zijn-geen-eigen-registratie.md). Een waarde van
 de patiënt telt mee in het beloop maar vult geen ketenindicator, en de indicator zegt dat
 dan ook letterlijk in plaats van een gat te laten.
+
+**Verrichtingen** hebben een eigen tabblad: aanvragen, uitvoeren, laten beoordelen. Met de
+uitvoerder erbij — vaak de assistent — en een expliciete keuze wie de uitslag beoordeelt:
+jij, de huisarts, of een specialist op afstand (`docs/19` §4).
 
 **Wat er in het overleg besloten is**, staat als eigen soort in de tijdlijn: vraag,
 context en uitkomst, met wie erbij waren. Geen SOEP, want er is geen patiënt gezien —

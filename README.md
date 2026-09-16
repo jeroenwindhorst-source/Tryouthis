@@ -104,7 +104,8 @@ Per stap staat in het scherm letterlijk wát je daar ziet en wát je kunt doen.
 ```bash
 npm install
 npm run build
-npm test            # 51 tests: terminologie, protocol, zelfredzaamheid, planning, beslisregels
+npm test            # 60 tests: terminologie, protocol, zelfredzaamheid, planning, beslisregels,
+                    # contactvormen en declaratie, verrichtingen, acute instroom
 
 npm run web         # werkplek op http://localhost:5173 — draait zónder server
 ```
@@ -187,7 +188,8 @@ HTTP en geen opslag; `apps/*` bevatten geen klinische regels.
 | [16 — Ordermanagement](docs/16-ordermanagement.md) | Ordersets, contra-indicatiecheck, rechten en autorisatie |
 | [17 — Toegang en samenwerking](docs/17-toegang-rollen-en-samenwerking.md) | Inloggen, vier rollen, rechten, berichten van collega's én patiënten |
 | [18 — Plannen en agenda](docs/18-plannen-en-agenda.md) | Planbord, vrije plekken, vier planroutes, afspraken als order |
-| [ADR's](docs/adr/) | Twaalf vastgelegde ontwerpbesluiten met alternatieven |
+| [19 — Contactvormen en declaratie](docs/19-contactvormen-en-declaratie.md) | Contactvorm bij het contact, verrichtingen met uitslag, acute instroom |
+| [ADR's](docs/adr/) | Dertien vastgelegde ontwerpbesluiten met alternatieven |
 
 ---
 
@@ -218,6 +220,17 @@ overgevoeligheden. Dat vraagt de G-Standaard ([`docs/16` §5](docs/16-ordermanag
 `packages/care-engine/src/catalogus.ts` zijn plausibel en gangbaar, maar niet tegen de
 G-Standaard of de NHG-Tabellen gecontroleerd. Bewust klein en expliciet onvolledig:
 genoeg om het werkproces te bouwen, niet om zorg mee te leveren.
+
+**Declaratie.** De prestatiecodes in `packages/praktijk/src/contactsoorten.ts` zijn
+**niet geverifieerd** tegen de actuele NZa-beleidsregel huisartsenzorg. De structuur klopt
+— duurstaffels, visites apart, digitale contacten die meetellen als ze inhoudelijk zijn —
+maar codes en voorwaarden moeten vóór gebruik tegen de actuele regelgeving worden gelegd.
+Er is geen declaratie-export, geen VECOZO-koppeling en geen controle op dubbeldeclaratie
+([`docs/19`](docs/19-contactvormen-en-declaratie.md)).
+
+**Verrichtingen.** De uitkomstvelden en bandbreedtes per verrichting zijn plausibel maar
+niet tegen de NHG-standaarden gelegd. Ze dienen om het werkproces te bouwen — aanvragen,
+uitvoeren, laten beoordelen — niet om uitslagen mee te interpreteren.
 
 **Spraakherkenning.** De dicteerknop in de SOEP-velden gebruikt de spraakherkenning van
 de browser. Dat is genoeg om het werkproces te laten zien en niet genoeg voor de

@@ -34,6 +34,8 @@ export interface Order {
   waarschuwingen: Waarschuwing[];
   /** Meetcodes die deze order gaat opleveren; het zorgplan rekent daarmee. */
   levert?: string[];
+  /** Bij onderzoek: welke verrichting, zodat de uitkomstvelden erbij te vinden zijn. */
+  verrichtingCode?: string;
   /** Bij een afspraak: bij welke rol, hoe lang, en langs welke route hij ingepland wordt. */
   bijRol?: string;
   duurMinuten?: number;
@@ -62,6 +64,7 @@ export interface NieuweOrder {
   richtlijn?: Richtlijn;
   waarschuwingen?: Waarschuwing[];
   levert?: string[];
+  verrichtingCode?: string;
   bijRol?: string;
   duurMinuten?: number;
   planroute?: string;
@@ -94,6 +97,7 @@ export function maakOrder(
     richtlijn: nieuw.richtlijn,
     waarschuwingen: nieuw.waarschuwingen ?? [],
     levert: nieuw.levert,
+    verrichtingCode: nieuw.verrichtingCode,
     bijRol: nieuw.bijRol,
     duurMinuten: nieuw.duurMinuten,
     planroute: nieuw.planroute,

@@ -1,4 +1,5 @@
 import type { Appointment, Deelcontact, Dossier, Observation, Rol, Task } from '@zpe/fhir-model';
+import { leeftijd } from '@zpe/fhir-model';
 import {
   beoordeelInstroom, leegPersoonlijkPlan, type PersoonlijkPlan,
 } from '@zpe/care-engine';
@@ -12,6 +13,9 @@ import { genereerExterneDocumenten, type ExternDocument } from './externe-bronne
 import { genereerOrderhistorie, maakOrder, type NieuweOrder, type Order, type Orderstatus } from './orderopslag.js';
 import { genereerBespreekpunten, type Bespreekpunt, type NieuwBespreekpunt } from './bespreeklijst.js';
 import { genereerBeleidsafspraken, type Beleidsafspraak } from './beleidsafspraken.js';
+import { genereerAcuteSignalen, type AcuutSignaal } from './acuut.js';
+import type { Contactvorm } from './contactsoorten.js';
+import { vindVerrichting, type Verrichtinguitslag } from './verrichtingen.js';
 import {
   genereerVerzoeken, maakVerzoek, vrijeSlots,
   type Afspraakverzoek, type NieuwAfspraakverzoek, type Slot,
@@ -82,6 +86,17 @@ export interface DossierRepository {
   /** Afspraakstatus op de dag zelf: aangemeld, wachtkamer, in consult, afgerond. */
   zetAfspraakstatus(afspraakId: string, status: Afspraakstatus): void;
 
+  /** Acute instroom die iemand moet oppakken, en wie dat doet. */
+  acuteSignalen(): AcuutSignaal[];
+  pakAcuutOp(id: string, door: { id: string; naam: string; rol: Rol }): void;
+  handelAcuutAf(id: string, uitkomst: string): void;
+  /** Hoe lang deze sessie loopt; bepaalt welke signalen al binnen zijn. */
+  sessieSeconden(): number;
+
+  /** Uitkomst van een verrichting vastleggen, inclusief teleconsultatie. */
+  legVerrichtingVast(uitslag: Verrichtinguitslag): void;
+  verrichtinguitslagen(patientId: string): Verrichtinguitslag[];
+
   /** Behandelgrenzen en wilsafspraken; zichtbaar vóór je handelt, niet erna. */
   beleidsafspraken(patientId: string): Beleidsafspraak[];
 
@@ -141,6 +156,9 @@ export class InMemoryRepository implements DossierRepository {
   private beleidLijst = new Map<string, Beleidsafspraak[]>();
   private notities = new Map<string, Overlegnotitie[]>();
   private verzoeken: Afspraakverzoek[] = [];
+  private acuut: AcuutSignaal[] = [];
+  private uitslagen = new Map<string, Verrichtinguitslag[]>();
+  private gestartOp = Date.now();
   private bekend = new Map<string, Set<string>>();
   private afgehandeld = new Map<string, Map<string, { besluit: string; reden?: string }>>();
 
@@ -167,6 +185,9 @@ export class InMemoryRepository implements DossierRepository {
     this.beleidLijst = new Map();
     this.notities = new Map();
     this.verzoeken = [];
+    this.acuut = [];
+    this.uitslagen = new Map();
+    this.gestartOp = Date.now();
 
     // Drie jaar dossierhistorie: contacten met SOEP en de bijbehorende meetreeksen.
     // Zonder historie is er niets om in terug te kijken, en dan lijkt elk dossier nieuw.
@@ -247,6 +268,15 @@ export class InMemoryRepository implements DossierRepository {
     this.verzoeken = genereerVerzoeken(
       this.praktijk.dossiers.slice(0, 40).map((d) => ({
         patientId: d.patient.id, naam: this.naamVan(d.patient.id),
+      })),
+      this.praktijk.peildatum,
+    );
+
+    this.acuut = genereerAcuteSignalen(
+      this.praktijk.dossiers.slice(0, 45).map((d) => ({
+        patientId: d.patient.id,
+        naam: this.naamVan(d.patient.id),
+        leeftijd: leeftijd(d, this.praktijk.peildatum),
       })),
       this.praktijk.peildatum,
     );
@@ -590,6 +620,108 @@ export class InMemoryRepository implements DossierRepository {
   zetAfspraakstatus(afspraakId: string, status: Afspraakstatus): void {
     const item = this.agendaItems.find((a) => a.id === afspraakId);
     if (item) item.status = status;
+  }
+
+  // ── Acute instroom ───────────────────────────────────────────────────────
+
+  sessieSeconden(): number { return Math.floor((Date.now() - this.gestartOp) / 1000); }
+
+  /**
+   * Alleen wat al binnen is.
+   *
+   * De signalen hebben een aankomsttijd ten opzichte van het begin van de sessie, omdat
+   * het punt van deze functie is dat er iets binnenkomt terwijl je met iets anders bezig
+   * bent. Een lijst die er bij het inloggen al compleet staat, laat dat niet zien.
+   */
+  acuteSignalen(): AcuutSignaal[] {
+    const verstreken = this.sessieSeconden();
+    return this.acuut.filter((s) => s.naSeconden <= verstreken);
+  }
+
+  pakAcuutOp(id: string, door: { id: string; naam: string; rol: Rol }): void {
+    const signaal = this.acuut.find((s) => s.id === id);
+    // Wie al opgepakt is, blijft opgepakt: twee mensen die tegelijk klikken mogen niet
+    // allebei denken dat zij het doen.
+    if (!signaal || signaal.status !== 'open') return;
+    signaal.status = 'opgepakt';
+    signaal.opgepaktDoor = door;
+    signaal.opgepaktOp = new Date().toISOString();
+  }
+
+  handelAcuutAf(id: string, uitkomst: string): void {
+    const signaal = this.acuut.find((s) => s.id === id);
+    if (!signaal) return;
+    signaal.status = 'afgehandeld';
+    signaal.uitkomst = uitkomst;
+    signaal.afgehandeldOp = new Date().toISOString();
+  }
+
+  // ── Verrichtingen ────────────────────────────────────────────────────────
+
+  legVerrichtingVast(uitslag: Verrichtinguitslag): void {
+    // De patiënt volgt uit de order, niet uit een afspraak over hoe het id eruitziet.
+    const order = [...this.orderLijst.values()].flat().find((o) => o.id === uitslag.orderId);
+    if (!order) return;
+    const patientId = order.patientId;
+
+    const lijst = this.uitslagen.get(patientId) ?? [];
+    lijst.unshift(uitslag);
+    this.uitslagen.set(patientId, lijst);
+
+    order.status = uitslag.beoordelaar === 'zelf' ? 'uitgevoerd' : 'geplaatst';
+
+    // Meetwaarden uit de verrichting horen in het dossier: een FEV1 uit een spirometrie
+    // is dezelfde waarde als een FEV1 uit het lab, en moet dus in dezelfde reeks staan.
+    const soort = vindVerrichting(uitslag.soortCode);
+    const dossier = this.dossier(patientId);
+    if (soort && dossier) {
+      const nu = uitslag.uitgevoerdOp;
+      for (const veld of soort.uitkomstvelden) {
+        const ruw = uitslag.waarden[veld.code];
+        if (!ruw || veld.soort === 'tekst') continue;
+        dossier.observaties.push({
+          resourceType: 'Observation',
+          id: `${patientId}-verr-${uitslag.orderId}-${veld.code}`,
+          patientId,
+          code: { coding: [{ system: 'http://loinc.org', code: veld.code }] },
+          effectief: nu,
+          waarde: veld.soort === 'getal'
+            ? { value: Number(ruw.replace(',', '.')), unit: veld.eenheid ?? '' }
+            : { code: { system: 'http://snomed.info/sct', code: ruw,
+                display: veld.opties?.find((o) => o.code === ruw)?.label } },
+          status: 'final',
+          herkomst: {
+            bron: 'zorgverlener', vastgelegdOp: nu,
+            auteurId: uitslag.uitgevoerdDoor.id, auteurRol: uitslag.uitgevoerdDoor.rol,
+          },
+        });
+      }
+    }
+
+    // Een uitkomst die een arts moet zien, gaat naar de autorisatiestroom — niet naar
+    // een la waar hij wacht tot iemand eraan denkt.
+    if (uitslag.beoordelaar !== 'zelf') {
+      this.autorisatieLijst.unshift({
+        id: `aut-verr-${uitslag.orderId}`,
+        patientId,
+        naam: this.naamVan(patientId),
+        soort: 'poh-registratie',
+        omschrijving: `${soort?.naam ?? 'Verrichting'} — uitslag ter beoordeling`,
+        aanleiding: uitslag.beoordelaar === 'teleconsultatie'
+          ? `Verstuurd naar ${uitslag.teleconsult?.specialisme} met de vraag: `
+            + `${uitslag.teleconsult?.vraagstelling}`
+          : `Uitgevoerd door ${uitslag.uitgevoerdDoor.naam}; vraagt beoordeling door de huisarts.`,
+        ingediendDoor: { naam: uitslag.uitgevoerdDoor.naam, rol: uitslag.uitgevoerdDoor.rol },
+        ingediendOp: uitslag.uitgevoerdOp,
+        routine: false,
+        redenGeenRoutine: 'Uitslag van een verrichting vraagt altijd een oordeel.',
+        status: 'open',
+      });
+    }
+  }
+
+  verrichtinguitslagen(patientId: string): Verrichtinguitslag[] {
+    return this.uitslagen.get(patientId) ?? [];
   }
 
   afgehandeldeSuggesties(patientId: string): string[] {

@@ -1,12 +1,13 @@
 import {
   agenda, assistentOverzicht, beheer, berichten, consultvoorbereiding, controleerTweefactor,
   dagafsluiting, dagstart, dossierHistorie, gebruikersoverzicht, huisartsOverzicht, instroom,
-  InMemoryRepository, intakes, meetreeksen, meldAan, monitoringCohort, orderOverzicht,
-  orderVoorstellen, overleg, patientOverzicht, plaatsLosseOrders, planbord, planbordPraktijk,
-  praktijkrapportage, praktijkSamenvatting, registreerConsult, terminologie, vraagAfspraakAan,
-  zetOpBespreeklijst, zoekOrders, zoekPatient,
-  type Afspraakstatus, type ConsultRegistratie, type NieuweOrder, type NieuwAfspraakverzoek,
-  type NieuwBespreekpunt,
+  acuteInstroom, beantwoordPatientbericht, contactvormen, handelAcuutAf,
+  InMemoryRepository, intakes, legVerrichtingVast, meetreeksen, meldAan, monitoringCohort,
+  orderOverzicht, orderVoorstellen, overleg, pakAcuutOp, patientOverzicht, plaatsLosseOrders,
+  planbord, planbordPraktijk, praktijkrapportage, praktijkSamenvatting, registreerConsult,
+  terminologie, verrichtingen, vraagAfspraakAan, zetOpBespreeklijst, zoekOrders, zoekPatient,
+  type Afspraakstatus, type Beoordelaar, type ConsultRegistratie, type Contactvorm,
+  type NieuweOrder, type NieuwAfspraakverzoek, type NieuwBespreekpunt,
 } from '@zpe/praktijk';
 import {
   ketens, modules, REGELSET_VERSIE, type CatalogusSoort, type PersoonlijkPlan,
@@ -97,6 +98,23 @@ export const lokaleApi = {
     return traag(planbordPraktijk(repo));
   },
   rapportage: () => traag(praktijkrapportage(repo)),
+
+  acuut: (rol: string) => traag(acuteInstroom(repo, rol as 'poh-s' | 'assistent' | 'huisarts')),
+  pakAcuutOp: (id: string, gebruikerId: string, rol: string) =>
+    traag(pakAcuutOp(repo, id, gebruikerId, rol as 'poh-s' | 'assistent' | 'huisarts')),
+  handelAcuutAf: (id: string, uitkomst: string, rol: string) =>
+    traag(handelAcuutAf(repo, id, uitkomst, rol as 'poh-s' | 'assistent' | 'huisarts')),
+
+  contactvormen: () => traag(contactvormen),
+  verrichtingen: (patientId: string) => traag(verrichtingen(repo, patientId)!),
+  legVerrichtingVast: (gebruikerId: string, gegevens: {
+    patientId: string; orderId: string; soortCode: string; waarden: Record<string, string>;
+    beoordelaar: Beoordelaar; vraagstelling?: string; conclusie?: string;
+  }) => traag(legVerrichtingVast(repo, gebruikerId, gegevens)!),
+  beantwoordBericht: (gegevens: {
+    gesprekId: string; gebruikerId: string; tekst: string;
+    contactvorm: Contactvorm; episodeId?: string; duurMinuten?: number;
+  }) => traag(beantwoordPatientbericht(repo, gegevens)!),
 
   overleg: (rol: string) => traag(overleg(repo, rol as 'poh-s' | 'assistent' | 'huisarts')),
   zetOpBespreeklijst: (gebruikerId: string, punt: NieuwBespreekpunt) => {

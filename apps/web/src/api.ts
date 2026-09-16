@@ -185,7 +185,7 @@ export interface Catalogustreffer {
   naam: string; detail: string; varianten: string[];
   atc?: string; levert?: string[]; route?: string;
   instellingen?: string[]; portaal?: { naam: string; url: string };
-  bijRol?: string; duurMinuten?: number; vorm?: string;
+  verrichtingCode?: string; bijRol?: string; duurMinuten?: number; vorm?: string;
   vereistRecht: string;
   waarschuwingen: Waarschuwing[];
 }
@@ -193,7 +193,7 @@ export interface Catalogustreffer {
 export interface NieuweOrder {
   patientId: string; soort: string; omschrijving: string; detail?: string;
   atc?: string; route?: string; bestemming?: string;
-  bijRol?: string; duurMinuten?: number; planroute?: string;
+  verrichtingCode?: string; bijRol?: string; duurMinuten?: number; planroute?: string;
   uitSet?: { id: string; naam: string };
   richtlijn?: { naam: string; versie?: string; paragraaf?: string; url?: string; uitgever?: string };
   waarschuwingen?: Waarschuwing[]; levert?: string[]; vereistRecht: string;
@@ -291,6 +291,65 @@ export interface Praktijkrapportage {
   bezetting: {
     rol: string; afspraken: number; geboekteMinuten: number; vrijeSlots: number; noshow: number;
   }[];
+}
+
+export type Contactvorm =
+  | 'consult' | 'consult-lang' | 'visite' | 'visite-lang'
+  | 'telefonisch' | 'e-consult' | 'videoconsult'
+  | 'verrichting' | 'intern-overleg' | 'herhaalrecept';
+
+export interface Contactvormdefinitie {
+  id: Contactvorm; naam: string; wanneer: string; doorRollen: string[];
+  duurGrensMinuten?: number; declarabel: boolean;
+  prestatie?: { code: string; omschrijving: string; voorwaarden: string[] };
+  nietDeclarabelOmdat?: string; identificatie: string;
+}
+
+export interface Declaratiebeeld {
+  vorm: string; naam: string; declarabel: boolean;
+  prestatie?: { code: string; omschrijving: string; voorwaarden: string[] };
+  ontbreekt: string[]; toelichting: string;
+}
+
+export interface AcuutSignaal {
+  id: string; patientId: string; naam: string; leeftijd: number;
+  bron: string; bronLabel: string; binnenOp: string; binnenOmTijd: string;
+  urgentie: string; urgentieLabel: string; opdringen: 'modaal' | 'melding';
+  samenvatting: string; onderbouwing: string; voorgesteldeActie: string;
+  voorRollen: string[]; status: 'open' | 'opgepakt' | 'afgehandeld';
+  opgepaktDoor?: { id: string; naam: string; rol: string };
+  opgepaktOp?: string; afgehandeldOp?: string; uitkomst?: string;
+}
+
+export interface Acuutbeeld {
+  open: AcuutSignaal[]; opgepakt: AcuutSignaal[];
+  afgehandeld: AcuutSignaal[]; alles: AcuutSignaal[];
+}
+
+export interface Uitkomstveld {
+  code: string; naam: string; soort: 'getal' | 'keuze' | 'tekst';
+  eenheid?: string; opties?: { code: string; label: string }[];
+  normaal?: { onder?: number; boven?: number };
+}
+
+export interface Verrichtingsoort {
+  code: string; naam: string; doorRollen: string[]; duurMinuten: number;
+  uitkomstvelden: Uitkomstveld[];
+  teleconsultatie?: { specialisme: string; toelichting: string };
+  indicaties: string[];
+}
+
+export interface Verrichtingbeeld {
+  open: { order: Order; soort?: Verrichtingsoort }[];
+  uitslagen: {
+    orderId: string; soortCode: string; soortNaam: string;
+    uitgevoerdDoor: { id: string; naam: string; rol: string };
+    uitgevoerdOp: string; beoordelaar: string; conclusie?: string;
+    teleconsult?: { specialisme: string; vraagstelling: string; verstuurdOp: string };
+    afwijkingen: { veld: string; waarde: string; reden: string }[];
+    velden: { naam: string; waarde: string }[];
+  }[];
+  soorten: Verrichtingsoort[];
 }
 
 export interface Gesprek {
@@ -453,6 +512,7 @@ export interface RegistratieUitkomst {
   vastgelegd: { code: string; naam: string; waarde: number | string }[];
   verantwoordingGevuld: { keten: string; indicator: string }[];
   vervolg: string[];
+  declaratie?: Declaratiebeeld;
 }
 
 export interface Praktijksamenvatting {
@@ -537,6 +597,8 @@ const httpApi = {
     soep?: Record<string, string>;
     episodeId?: string;
     gebruikerId?: string;
+    contactvorm?: Contactvorm;
+    duurMinuten?: number;
   }) => stuur<{ uitkomst: RegistratieUitkomst; overzicht: PatientOverzicht }>(
     `/api/patient/${patientId}/consult`, registratie),
   accepteerModule: (patientId: string, moduleId: string) =>
@@ -581,6 +643,25 @@ const httpApi = {
   annuleerVerzoek: (verzoekId: string, reden: string) =>
     stuur<Praktijkplanbord>(`/api/planning/${verzoekId}/annuleren`, { reden }),
   rapportage: () => haal<Praktijkrapportage>('/api/praktijk/rapportage'),
+
+  acuut: (rol: string) => haal<Acuutbeeld>(`/api/acuut/${rol}`),
+  pakAcuutOp: (id: string, gebruikerId: string, rol: string) =>
+    stuur<Acuutbeeld>(`/api/acuut/${id}/oppakken`, { gebruikerId, rol }),
+  handelAcuutAf: (id: string, uitkomst: string, rol: string) =>
+    stuur<Acuutbeeld>(`/api/acuut/${id}/afhandelen`, { uitkomst, rol }),
+
+  contactvormen: () => haal<Contactvormdefinitie[]>('/api/contactvormen'),
+  verrichtingen: (patientId: string) =>
+    haal<Verrichtingbeeld>(`/api/patient/${patientId}/verrichtingen`),
+  legVerrichtingVast: (gebruikerId: string, gegevens: {
+    patientId: string; orderId: string; soortCode: string; waarden: Record<string, string>;
+    beoordelaar: string; vraagstelling?: string; conclusie?: string;
+  }) => stuur<Verrichtingbeeld>('/api/verrichtingen', { gebruikerId, ...gegevens }),
+  beantwoordBericht: (gegevens: {
+    gesprekId: string; gebruikerId: string; tekst: string;
+    contactvorm: Contactvorm; episodeId?: string; duurMinuten?: number;
+  }) => stuur<{ berichten: Berichtenbox; uitkomst?: RegistratieUitkomst }>(
+    '/api/berichten/beantwoorden', gegevens),
 
   overleg: (rol: string) => haal<Overleg>(`/api/overleg/${rol}`),
   zetOpBespreeklijst: (gebruikerId: string, punt: {

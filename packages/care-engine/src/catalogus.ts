@@ -227,7 +227,8 @@ export interface Verrichting {
 }
 
 export const ONDERZOEKEN: Verrichting[] = [
-  { code: 'ecg', naam: 'ECG', waar: 'praktijk', indicaties: ['hart', 'palpitaties', 'pijn op de borst'] },
+  { code: 'ecg', naam: 'ECG (rust)', waar: 'praktijk',
+    indicaties: ['hart', 'palpitaties', 'pijn op de borst', 'ritme'] },
   { code: 'spirometrie', naam: 'Spirometrie', waar: 'praktijk', levert: [CODE.fev1, CODE.fevRatio],
     indicaties: ['copd', 'astma', 'luchtweg'] },
   { code: 'abpm', naam: '24-uurs bloeddrukmeting', waar: 'praktijk', levert: [CODE.rrSys, CODE.rrDia],
@@ -236,6 +237,12 @@ export const ONDERZOEKEN: Verrichting[] = [
   { code: 'x-thorax', naam: 'X-thorax', waar: 'diagnostisch centrum', indicaties: ['luchtweg', 'hoesten'] },
   { code: 'echo-abdomen', naam: 'Echo abdomen', waar: 'diagnostisch centrum', indicaties: ['buikklachten', 'galsteen'] },
   { code: 'audiometrie', naam: 'Audiometrie', waar: 'praktijk', indicaties: ['gehoor', 'oor'] },
+  { code: 'wratten', naam: 'Wratten aanstippen', waar: 'praktijk',
+    indicaties: ['wratten', 'huid', 'stikstof'] },
+  { code: 'uitstrijkje', naam: 'Uitstrijkje (BVO)', waar: 'praktijk',
+    indicaties: ['baarmoederhals', 'bevolkingsonderzoek', 'uitstrijk'] },
+  { code: 'voetonderzoek', naam: 'Voetonderzoek (Simms)', waar: 'praktijk',
+    indicaties: ['diabetes', 'voet', 'neuropathie'] },
 ];
 
 export interface Afspraaksoort {
@@ -305,6 +312,8 @@ export interface Catalogustreffer {
   /** Voor verwijzingen: naar welke instelling het kan. */
   instellingen?: string[];
   portaal?: { naam: string; url: string };
+  /** Voor onderzoek: de code van de verrichting, zodat de uitkomstvelden erbij te vinden zijn. */
+  verrichtingCode?: string;
   /** Voor afspraken: bij welke rol en hoe lang. */
   bijRol?: string;
   duurMinuten?: number;
@@ -357,7 +366,7 @@ export function zoekCatalogus(vraag: string, soorten?: CatalogusSoort[]): Catalo
       if (!past(vraag, o.naam, o.indicaties)) continue;
       treffers.push({
         id: `ond-${o.code}`, soort: 'onderzoek', naam: o.naam, detail: `uit te voeren in de ${o.waar}`,
-        varianten: ['deze week', 'binnen een maand'], levert: o.levert,
+        varianten: ['deze week', 'binnen een maand'], levert: o.levert, verrichtingCode: o.code,
         route: o.waar === 'praktijk' ? 'inplannen bij de assistent' : 'aanvraag diagnostisch centrum',
         vereistRecht: o.waar === 'praktijk' ? 'dossier-registreren' : 'lab-aanvragen',
       });

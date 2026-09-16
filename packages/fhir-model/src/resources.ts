@@ -71,6 +71,20 @@ export interface Encounter extends KlinischeResource {
   uitvoerder: { id: string; naam: string; rol: Rol };
   /** De hulpvraag zoals de patiënt hem stelde — startpunt van het contact (docs/12 §2.2). */
   hulpvraag?: string;
+  duurMinuten?: number;
+  /**
+   * Wat dit contact administratief oplevert.
+   *
+   * Afgeleid uit de vorm en de inhoud, niet apart ingevoerd. De vorm is bekend op het
+   * moment van het contact; wie de declaratie later moet reconstrueren, gokt (docs/19).
+   */
+  declaratie?: {
+    code: string;
+    omschrijving: string;
+    declarabel: boolean;
+    /** Wat er ontbrak; leeg betekent in orde. */
+    ontbreekt?: string[];
+  };
 }
 
 export type SoepLetter = 'S' | 'O' | 'E' | 'P';

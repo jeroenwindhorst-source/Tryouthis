@@ -19,6 +19,7 @@ import { Berichten } from './schermen/Berichten';
 import { Overleg } from './schermen/Overleg';
 import { Plannen } from './schermen/Plannen';
 import { Rapportage } from './schermen/Rapportage';
+import { Acuut, Acuutmelding, useAcuut } from './schermen/Acuut';
 import { Gebruikers } from './schermen/Gebruikers';
 import { STANDAARD_VOORKEUREN, Voorkeuren, type Persoonlijk } from './schermen/Voorkeuren';
 
@@ -33,6 +34,7 @@ interface Ingang { id: string; label: string; icoon: string; recht?: string }
 const WERKPROCES: Record<string, Ingang[]> = {
   'poh-s': [
     { id: 'dagstart', label: 'Dagstart', icoon: 'zon' },
+    { id: 'acuut', label: 'Acuut', icoon: 'waarschuwing' },
     { id: 'voorbereiden', label: 'Voorbereiden', icoon: 'klembord' },
     { id: 'spreekuur', label: 'Spreekuur', icoon: 'agenda' },
     { id: 'monitoren', label: 'Monitoren', icoon: 'radar' },
@@ -41,6 +43,7 @@ const WERKPROCES: Record<string, Ingang[]> = {
   ],
   assistent: [
     { id: 'as-overzicht', label: 'Dagstart', icoon: 'zon' },
+    { id: 'acuut', label: 'Acuut', icoon: 'waarschuwing' },
     { id: 'as-triage', label: 'Triage', icoon: 'gesprek' },
     { id: 'plannen', label: 'Plannen', icoon: 'slot' },
     { id: 'spreekuur', label: 'Dossiers', icoon: 'klembord' },
@@ -48,6 +51,7 @@ const WERKPROCES: Record<string, Ingang[]> = {
   ],
   huisarts: [
     { id: 'ha-overzicht', label: 'Dagstart', icoon: 'zon' },
+    { id: 'acuut', label: 'Acuut', icoon: 'waarschuwing' },
     { id: 'ha-autoriseren', label: 'Autoriseren', icoon: 'klembord' },
     { id: 'spreekuur', label: 'Spreekuur', icoon: 'agenda' },
     { id: 'overleg', label: 'Overleg', icoon: 'persoon' },
@@ -131,6 +135,9 @@ function Werkplek({
   const huisarts = useData(() => (gebruiker.rol === 'huisarts' ? api.huisarts() : Promise.resolve(undefined)), [gebruiker.id]);
   const assistent = useData(() => (gebruiker.rol === 'assistent' ? api.assistent() : Promise.resolve(undefined)), [gebruiker.id]);
   const berichten = useData(() => api.berichten(gebruiker.id), [gebruiker.id]);
+  // Acute instroom loopt buiten de schermen om: het moet ook opvallen terwijl je met
+  // iets anders bezig bent. Dat is het hele punt van deze functie.
+  const acuut = useAcuut(gebruiker, zorgrol);
 
   const tellingen: Record<string, { n: number; urgent?: boolean }> = {};
   for (const stap of dagstart.data?.stappen ?? []) {
@@ -144,6 +151,7 @@ function Werkplek({
     };
   }
   if (berichten.data?.ongelezen) tellingen.berichten = { n: berichten.data.ongelezen, urgent: true };
+  if (acuut.aantalOpen > 0) tellingen.acuut = { n: acuut.aantalOpen, urgent: true };
 
   const Ingangen = ({ lijst }: { lijst: Ingang[] }) => (
     <>
@@ -244,6 +252,7 @@ function Werkplek({
           {scherm === 'berichten' && <Berichten gebruiker={gebruiker} openPatient={opOpen} />}
           {scherm === 'overleg' && <Overleg gebruiker={gebruiker} openPatient={opOpen} />}
           {scherm === 'plannen' && <Plannen gebruiker={gebruiker} openPatient={opOpen} />}
+          {scherm === 'acuut' && <Acuut gebruiker={gebruiker} openPatient={opOpen} />}
           {scherm === 'rapportage' && <Rapportage />}
           {scherm === 'voorkeuren' && (
             <Voorkeuren gebruiker={gebruiker} voorkeuren={voorkeuren} opWijzig={opVoorkeuren} />
@@ -251,6 +260,13 @@ function Werkplek({
           {scherm === 'terminologie' && <Terminologie />}
         </main>
       </div>
+
+      {acuut.dringend && (
+        <Acuutmelding signaal={acuut.dringend} gebruiker={gebruiker}
+          opOpgepakt={acuut.setBeeld}
+          opWeg={() => acuut.klikWeg(acuut.dringend!.id)}
+          openPatient={opOpen} />
+      )}
     </div>
   );
 }
