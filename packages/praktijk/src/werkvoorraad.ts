@@ -97,26 +97,45 @@ export interface AgendaItem {
   aangemeldOm?: string;
 }
 
-const HULPVRAGEN_TELEFOON = [
-  'Hoesten sinds vier dagen, nu ook koorts',
-  'Pijn bij het plassen sinds gisteren',
-  'Uitslag op de arm na tuinieren',
-  'Bloeddrukmeter thuis geeft 175, wat nu?',
-  'Enkel verzwikt bij het hardlopen',
-  'Slaapt al twee weken slecht, piekert veel',
-  'Oor zit dicht sinds het zwemmen',
-  'Rugpijn sinds tillen, straalt uit naar het been',
-  'Wond aan de voet die niet geneest',
-  'Wil graag een herhaalrecept voor de pufjes',
+/*
+ * Hulpvragen, met de episode die ze veronderstellen.
+ *
+ * "Mijn suikers thuis zijn hoger dan normaal" bij iemand zonder diabetes in het dossier
+ * is een zorgvraag die nergens op slaat zodra je doorklikt — en doorklikken is precies
+ * wat de assistent doet. Een klacht die iedereen kan krijgen (een verzwikte enkel, een
+ * blaasontsteking) draagt geen eis; een klacht die naar bestaande zorg verwijst wel.
+ */
+interface Hulpvraag {
+  tekst: string;
+  vereistIcpc?: string[];
+  /** "Sinds de nieuwe tablet" veronderstelt dat er tabletten zijn. */
+  vereistMedicatie?: boolean;
+}
+
+const HULPVRAGEN_TELEFOON: Hulpvraag[] = [
+  { tekst: 'Hoesten sinds vier dagen, nu ook koorts' },
+  { tekst: 'Pijn bij het plassen sinds gisteren' },
+  { tekst: 'Uitslag op de arm na tuinieren' },
+  { tekst: 'Bloeddrukmeter thuis geeft 175, wat nu?', vereistIcpc: ['K86', 'K87'] },
+  { tekst: 'Enkel verzwikt bij het hardlopen' },
+  { tekst: 'Slaapt al twee weken slecht, piekert veel' },
+  { tekst: 'Oor zit dicht sinds het zwemmen' },
+  { tekst: 'Rugpijn sinds tillen, straalt uit naar het been' },
+  { tekst: 'Wond aan de voet die niet geneest', vereistIcpc: ['T90'] },
+  { tekst: 'Wil graag een herhaalrecept voor de pufjes', vereistIcpc: ['R95', 'R96'] },
 ];
 
-const HULPVRAGEN_PORTAAL = [
-  'Al een week keelpijn, nu ook slikklachten',
-  'Vraag over de uitslag van het bloedonderzoek',
-  'Steeds duizelig bij opstaan sinds de nieuwe tablet',
-  'Jeukende plekjes op de rug, worden groter',
-  'Zou graag de bloeddrukmedicatie bespreken',
-  'Mijn suikers thuis zijn hoger dan normaal',
+const HULPVRAGEN_PORTAAL: Hulpvraag[] = [
+  { tekst: 'Al een week keelpijn, nu ook slikklachten' },
+  { tekst: 'Vraag over de uitslag van het bloedonderzoek', vereistIcpc: ['T90', 'K86', 'U99', 'T93'] },
+  { tekst: 'Steeds duizelig bij opstaan sinds de nieuwe tablet', vereistMedicatie: true },
+  { tekst: 'Jeukende plekjes op de rug, worden groter' },
+  { tekst: 'Zou graag de bloeddrukmedicatie bespreken', vereistIcpc: ['K86', 'K87'] },
+  { tekst: 'Mijn suikers thuis zijn hoger dan normaal', vereistIcpc: ['T90'] },
+  // Drie vragen zonder voorwaarde, zodat er voor elk dossier iets passends overblijft.
+  { tekst: 'Blauwe plek op mijn been zonder dat ik me gestoten heb' },
+  { tekst: 'Al twee weken hoofdpijn aan het eind van de dag' },
+  { tekst: 'Mag ik met deze klachten naar de fysiotherapeut?' },
 ];
 
 const ZELFZORGADVIEZEN: Record<string, { urgentie: Urgentie; bestemming: Bestemming; toelichting: string }> = {
@@ -183,25 +202,84 @@ function minutenOpDeDag(tijdstempel: string): number {
 }
 
 /** Triage-instroom van vandaag: telefonisch én digitaal, in één stroom. */
-export function genereerTriage(praktijk: Praktijk, zaad = 7): Triageverzoek[] {
+export function genereerTriage(
+  praktijk: Praktijk, zaad = 7, alElders: Set<string> = new Set(),
+): Triageverzoek[] {
   const willekeurig = rng(zaad);
   const verzoeken: Triageverzoek[] = [];
-  const kandidaten = praktijk.dossiers;
+  const kandidaten = praktijk.dossiers.filter((d) => !alElders.has(d.patient.id));
 
   // Eén patiënt komt hoogstens één keer in de ochtendstroom voor. Dezelfde mevrouw die
   // binnen zeven minuten twee keer belt over twee verschillende klachten, leidt in een
   // demo de aandacht af van waar het over gaat.
   const alGebeld = new Set<string>();
+  const alGevraagd = new Set<string>();
+  const heeft = (dossier: Dossier, vraag: Hulpvraag) => {
+    if (vraag.vereistMedicatie && !dossier.medicatie.some((m) => m.status === 'active')) return false;
+    if (!vraag.vereistIcpc) return true;
+    return dossier.episodes
+      .filter((e) => e.status === 'active')
+      .some((e) => (e.code.coding ?? []).some((c) =>
+        vraag.vereistIcpc!.some((p) => c.code.startsWith(p))));
+  };
+
+  /*
+   * De ochtendstroom dekt alle vier de triage-uitkomsten.
+   *
+   * De digitale triage kan uitkomen op zelfzorg, op de assistent, op de POH of op de
+   * huisarts, en dat onderscheid is het hele punt van één triagemodel voor twee kanalen.
+   * Met puur loten zat er geregeld geen enkele POH- of huisartsroute in de lijst, en dan
+   * is er niets te zien. Deze vier gaan daarom vooraan, elk bij iemand bij wie de klacht
+   * kán kloppen; de rest van de ochtend wordt daarna geloot zoals altijd.
+   */
+  const etalage = [
+    'Mijn suikers thuis zijn hoger dan normaal',      // → POH
+    'Steeds duizelig bij opstaan sinds de nieuwe tablet', // → huisarts, vandaag
+    'Jeukende plekjes op de rug, worden groter',      // → assistent, deze week
+    'Al een week keelpijn, nu ook slikklachten',      // → zelfzorg
+  ].map((tekst) => HULPVRAGEN_PORTAAL.find((h) => h.tekst === tekst)!);
+
+  const kiesVoor = (vraag: Hulpvraag, moetPortaal: boolean) => kandidaten.find((d) =>
+    !alGebeld.has(d.patient.id)
+    && (!moetPortaal || d.patient.portaalActief)
+    && heeft(d, vraag));
+
   for (let i = 0; i < 14; i++) {
-    let dossier = kandidaten[Math.floor(willekeurig() * kandidaten.length)];
+    const etalagevraag = etalage[i];
+    let dossier = etalagevraag
+      ? kiesVoor(etalagevraag, true)
+      : kandidaten[Math.floor(willekeurig() * kandidaten.length)];
+    if (!dossier) dossier = kandidaten[Math.floor(willekeurig() * kandidaten.length)];
     for (let poging = 0; alGebeld.has(dossier.patient.id) && poging < kandidaten.length; poging++) {
       dossier = kandidaten[(kandidaten.indexOf(dossier) + 1) % kandidaten.length];
     }
     alGebeld.add(dossier.patient.id);
-    const viaPortaal = willekeurig() < 0.45 && dossier.patient.portaalActief;
-    const hulpvraag = viaPortaal
-      ? HULPVRAGEN_PORTAAL[Math.floor(willekeurig() * HULPVRAGEN_PORTAAL.length)]
-      : HULPVRAGEN_TELEFOON[Math.floor(willekeurig() * HULPVRAGEN_TELEFOON.length)];
+    const viaPortaal = etalagevraag
+      ? true
+      : willekeurig() < 0.45 && dossier.patient.portaalActief;
+
+    // Eerst loten, dan doorschuiven tot de klacht bij dit dossier kán horen én nog niet
+    // eerder die ochtend voorbijkwam. Drie keer "hoesten met koorts" onder elkaar leest
+    // als een kopieerfout, ook als het toeval is.
+    const lijst = viaPortaal ? HULPVRAGEN_PORTAAL : HULPVRAGEN_TELEFOON;
+    const start = Math.floor(willekeurig() * lijst.length);
+    let keuze = etalagevraag;
+    if (!keuze) {
+      for (let stap = 0; stap < lijst.length; stap++) {
+        const kandidaat = lijst[(start + stap) % lijst.length];
+        if (heeft(dossier, kandidaat) && !alGevraagd.has(kandidaat.tekst)) {
+          keuze = kandidaat;
+          break;
+        }
+      }
+    }
+    // Is alles al een keer langsgekomen, dan telt alleen nog of het dossier past.
+    for (let stap = 0; !keuze && stap < lijst.length; stap++) {
+      const kandidaat = lijst[(start + stap) % lijst.length];
+      if (heeft(dossier, kandidaat)) keuze = kandidaat;
+    }
+    const hulpvraag = (keuze ?? lijst[start]).tekst;
+    alGevraagd.add(hulpvraag);
 
     const geboren = new Date(dossier.patient.geboortedatum);
     const leeftijd = praktijk.peildatum.getFullYear() - geboren.getFullYear();

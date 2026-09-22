@@ -138,3 +138,39 @@ test('dagstart: "vraagt als eerste aandacht" is niet structureel leeg', () => {
     assert.ok(regel.naam && regel.titel && regel.bevinding);
   }
 });
+
+test('triage: de ochtendstroom laat alle vier de uitkomsten van de zelftriage zien', () => {
+  const bestemmingen = new Set(
+    repo.triage().map((t) => t.zelftriage?.bestemming).filter(Boolean),
+  );
+  // Zonder een POH- of huisartsroute in de lijst is er van één triagemodel voor twee
+  // kanalen niets te zien, en dat is juist wat dit scherm moet tonen.
+  for (const nodig of ['zelfzorg', 'assistent', 'poh-s', 'huisarts']) {
+    assert.ok(bestemmingen.has(nodig), `geen enkele zorgvraag komt uit op ${nodig}`);
+  }
+});
+
+test('triage: een hulpvraag over bestaande zorg hoort bij een dossier dat die zorg kent', () => {
+  const eisen = {
+    suikers: ['T90'],
+    pufjes: ['R95', 'R96'],
+    'Bloeddrukmeter thuis': ['K86', 'K87'],
+    bloeddrukmedicatie: ['K86', 'K87'],
+    'Wond aan de voet': ['T90'],
+  };
+  for (const verzoek of repo.triage()) {
+    for (const [woord, prefixen] of Object.entries(eisen)) {
+      if (!verzoek.hulpvraag.includes(woord)) continue;
+      assert.ok(heeft(actieveIcpc(verzoek.patientId), prefixen),
+        `${verzoek.naam} vraagt "${verzoek.hulpvraag}" zonder passende episode`);
+    }
+  }
+});
+
+test('triage: wie al een acuut signaal draagt, staat niet óók in de gewone stroom', () => {
+  const acuut = new Set(repo.acuteSignalen().map((s) => s.patientId));
+  for (const verzoek of repo.triage()) {
+    assert.ok(!acuut.has(verzoek.patientId),
+      `${verzoek.naam} komt twee keer binnen op één ochtend`);
+  }
+});

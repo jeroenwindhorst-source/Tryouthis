@@ -251,7 +251,30 @@ export class InMemoryRepository implements DossierRepository {
         soort: a.soort, titel: 'Chronische controle', reden: a.reden, status: 'gepland',
       })),
     ].sort((a, b) => a.start.localeCompare(b.start)), this.praktijk.peildatum);
-    this.triageLijst = genereerTriage(this.praktijk);
+    // De kandidaten dragen hun dossierkenmerken mee, zodat een acuut signaal terechtkomt
+    // bij iemand bij wie de onderbouwing ook werkelijk in het dossier staat.
+    this.acuut = genereerAcuteSignalen(
+      this.praktijk.dossiers.slice(0, 45).map((d) => ({
+        patientId: d.patient.id,
+        naam: this.naamVan(d.patient.id),
+        leeftijd: leeftijd(d, this.praktijk.peildatum),
+        icpc: d.episodes
+          .filter((e) => e.status === 'active')
+          .flatMap((e) => (e.code.coding ?? []).map((c) => c.code)),
+        atc: d.medicatie
+          .filter((m) => m.status === 'active')
+          .flatMap((m) => (m.middel.coding ?? []).map((c) => c.code)),
+        aantalContacten: d.contacten.length,
+      })),
+      this.praktijk.peildatum,
+    );
+
+    // Wie vanochtend al een acuut signaal draagt, komt niet óók nog in de gewone
+    // triagestroom: dat zijn twee verschillende deuren, en dezelfde man die tweemaal op
+    // één ochtend contact zoekt leidt af van waar het over gaat.
+    this.triageLijst = genereerTriage(
+      this.praktijk, undefined, new Set(this.acuut.map((a) => a.patientId)),
+    );
     this.autorisatieLijst = genereerAutorisaties(this.praktijk);
 
     const wachtkamerApp = appsVoor('wachtkamer')[0];
@@ -304,23 +327,6 @@ export class InMemoryRepository implements DossierRepository {
       this.praktijk.peildatum,
     );
 
-    // De kandidaten dragen hun dossierkenmerken mee, zodat een acuut signaal terechtkomt
-    // bij iemand bij wie de onderbouwing ook werkelijk in het dossier staat.
-    this.acuut = genereerAcuteSignalen(
-      this.praktijk.dossiers.slice(0, 45).map((d) => ({
-        patientId: d.patient.id,
-        naam: this.naamVan(d.patient.id),
-        leeftijd: leeftijd(d, this.praktijk.peildatum),
-        icpc: d.episodes
-          .filter((e) => e.status === 'active')
-          .flatMap((e) => (e.code.coding ?? []).map((c) => c.code)),
-        atc: d.medicatie
-          .filter((m) => m.status === 'active')
-          .flatMap((m) => (m.middel.coding ?? []).map((c) => c.code)),
-        aantalContacten: d.contacten.length,
-      })),
-      this.praktijk.peildatum,
-    );
 
     this.groepen = genereerGroepsconsulten(
       this.praktijk.dossiers.map((d) => ({
