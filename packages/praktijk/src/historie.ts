@@ -54,7 +54,7 @@ const SOEP_SJABLONEN: { s: string; o: string; e: string; p: string; modules: str
   },
   {
     modules: ['mentaal'],
-    s: 'Piekert meer sinds het overlijden van haar zus. Slaapt slecht in.',
+    s: 'Piekert meer sinds het overlijden van een zus. Slaapt slecht in.',
     o: 'Somber ogend, wel goed contact. Geen aanwijzingen voor suïcidaliteit.',
     e: 'Rouw met invloed op het zelfmanagement van de diabetes.',
     p: 'Ruimte gegeven, contact over twee weken. POH-GGZ als het aanhoudt.',

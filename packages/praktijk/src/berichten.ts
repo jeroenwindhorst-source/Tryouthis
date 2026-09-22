@@ -52,32 +52,43 @@ export interface Gesprek {
   berichten: Bericht[];
 }
 
+/*
+ * De teksten noemen geen "zij" of "haar".
+ *
+ * Een sjabloon wordt aan een dossier gekoppeld, en een collegabericht over "ze gebruikt
+ * metformine" bij een man is precies het soort detail waar een demo op stukloopt. Waar het
+ * gesprek over een aandoening gaat, staat daarom ook een eis aan het dossier.
+ */
 const SJABLONEN: {
   onderwerp: string; deelnemers: string[]; urgent: boolean;
   aanleiding?: Gesprek['aanleiding']; regels: { van: string; tekst: string; minutenGeleden: number }[];
+  /** ICPC-prefixen waarvan er ten minste één actief moet zijn bij de gekoppelde patiënt. */
+  vereistIcpc?: string[];
 }[] = [
   {
     onderwerp: 'Nierfunctie gedaald — metformine aanpassen?',
     deelnemers: ['zv-poh-1', 'zv-huisarts-1'],
     urgent: true,
     aanleiding: { soort: 'uitslag', tekst: 'eGFR 38 ml/min, was 62' },
+    vereistIcpc: ['T90'],
     regels: [
       { van: 'zv-poh-1', minutenGeleden: 95,
-        tekst: 'De eGFR is fors gezakt sinds vorig jaar. Ze gebruikt metformine 2dd500. Wil jij naar de dosering kijken voordat ik haar donderdag zie?' },
+        tekst: 'De eGFR is fors gezakt sinds vorig jaar, bij metformine 2dd500. Wil jij naar de dosering kijken voordat ik donderdag de controle doe?' },
       { van: 'zv-huisarts-1', minutenGeleden: 62,
         tekst: 'Goed gezien. Halveren naar 1dd500 en over zes weken opnieuw prikken. Ik zet het voorstel klaar, jij bespreekt het donderdag?' },
     ],
   },
   {
-    onderwerp: 'Mevrouw belt over benauwdheid — hoort dit bij jou?',
+    onderwerp: 'Belt over benauwdheid — hoort dit bij jou?',
     deelnemers: ['zv-assistent-1', 'zv-poh-1'],
     urgent: false,
     aanleiding: { soort: 'monitoring', tekst: 'CCQ opgelopen van 1,8 naar 2,9' },
+    vereistIcpc: ['R95', 'R96'],
     regels: [
       { van: 'zv-assistent-1', minutenGeleden: 180,
-        tekst: 'Ze belde net, meer benauwd bij traplopen sinds een week. Geen koorts. Ik zie dat jij haar volgt — zal ik bij jou inplannen of moet de huisarts ernaar kijken?' },
+        tekst: 'Belde net: meer benauwd bij traplopen sinds een week. Geen koorts. Ik zie dat jij deze patiënt volgt — zal ik bij jou inplannen of moet de huisarts ernaar kijken?' },
       { van: 'zv-poh-1', minutenGeleden: 150,
-        tekst: 'Zet haar maar bij mij, donderdagochtend. Als er koorts bij komt of het slijm verkleurt, dan direct naar Daan.' },
+        tekst: 'Zet maar bij mij, donderdagochtend. Als er koorts bij komt of het slijm verkleurt, dan direct naar Daan.' },
     ],
   },
   {
@@ -173,8 +184,16 @@ export function genereerGesprekken(praktijk: Praktijk): Gesprek[] {
   const nu = praktijk.peildatum.getTime();
   const kandidaten = praktijk.dossiers;
 
+  const vergeven = new Set<string>();
+  const past = (d: (typeof kandidaten)[number], prefixen?: string[]) => !prefixen || d.episodes
+    .filter((e) => e.status === 'active')
+    .some((e) => (e.code.coding ?? []).some((c) => prefixen.some((p) => c.code.startsWith(p))));
+
   return SJABLONEN.map((sjabloon, i) => {
-    const dossier = sjabloon.aanleiding?.soort === 'overleg' ? undefined : kandidaten[i * 5 + 2];
+    const dossier = sjabloon.aanleiding?.soort === 'overleg'
+      ? undefined
+      : kandidaten.find((d) => !vergeven.has(d.patient.id) && past(d, sjabloon.vereistIcpc));
+    if (dossier) vergeven.add(dossier.patient.id);
     const naam = dossier
       ? [dossier.patient.naam.voornaam, dossier.patient.naam.tussenvoegsel, dossier.patient.naam.achternaam]
           .filter(Boolean).join(' ')

@@ -190,11 +190,20 @@ HTTP en geen opslag; `apps/*` bevatten geen klinische regels.
 | [18 — Plannen en agenda](docs/18-plannen-en-agenda.md) | Planbord, vrije plekken, vier planroutes, afspraken als order |
 | [19 — Contactvormen en declaratie](docs/19-contactvormen-en-declaratie.md) | Contactvorm bij het contact, verrichtingen met uitslag, acute instroom |
 | [20 — Dossierdiepte en rapportage](docs/20-dossierdiepte-en-rapportage.md) | Overzichtstab, samenvatting, het hele contact, media, groepsconsulten, rapporten |
+| [21 — Het demonstratiescript](docs/21-demonstratie.md) | Uitgeschreven route langs assistent, huisarts en POH, met de cijfers die kloppen |
 | [ADR's](docs/adr/) | Zestien vastgelegde ontwerpbesluiten met alternatieven |
 
 ---
 
 ## Belangrijke waarschuwingen
+
+**Demopopulatie.** De 48 patiënten zijn synthetisch en deterministisch opgebouwd, en de
+seed is bewust zo gemaakt dat elke melding bij een dossier terechtkomt dat de onderbouwing
+waarmaakt: een COPD-exacerbatie bij iemand met COPD, een kaliummelding bij iemand die een
+RAS-remmer én een diureticum gebruikt. Dat is testdata-ontwerp en geen klinische validatie
+— de waarden zelf zijn plausibel maar niet getoetst. De demoklok staat vast op 10:20, zodat
+een demonstratie op elk tijdstip hetzelfde beeld geeft
+([`docs/21`](docs/21-demonstratie.md)).
 
 **Demoterminologie.** `packages/terminology/src/seed.ts` bevat een kleine set met échte
 SNOMED-concept-id's en ICPC-codes, maar de selectie is willekeurig en de
