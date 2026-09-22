@@ -14,6 +14,7 @@ je publiek te geven.*
 | **Accounts** | `ilse` (assistent) · `daan` (huisarts) · `sanne` (POH-S) · `mirjam` (praktijkmanager) |
 | **Wachtwoord** | `cadans` voor alle vier · verificatiecode `123456` |
 | **Reset** | **Demo herstellen** rechtsboven zet alles terug naar de beginstand |
+| **Op papier** | `npm run demoscript` maakt hiervan `Cadans-demonstratiescript.docx` |
 
 Drie dingen om te weten voordat je begint.
 

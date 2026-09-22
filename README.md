@@ -190,7 +190,7 @@ HTTP en geen opslag; `apps/*` bevatten geen klinische regels.
 | [18 — Plannen en agenda](docs/18-plannen-en-agenda.md) | Planbord, vrije plekken, vier planroutes, afspraken als order |
 | [19 — Contactvormen en declaratie](docs/19-contactvormen-en-declaratie.md) | Contactvorm bij het contact, verrichtingen met uitslag, acute instroom |
 | [20 — Dossierdiepte en rapportage](docs/20-dossierdiepte-en-rapportage.md) | Overzichtstab, samenvatting, het hele contact, media, groepsconsulten, rapporten |
-| [21 — Het demonstratiescript](docs/21-demonstratie.md) | Uitgeschreven route langs assistent, huisarts en POH, met de cijfers die kloppen |
+| [21 — Het demonstratiescript](docs/21-demonstratie.md) | Uitgeschreven route langs assistent, huisarts en POH, met de cijfers die kloppen (`npm run demoscript` → Word) |
 | [ADR's](docs/adr/) | Zestien vastgelegde ontwerpbesluiten met alternatieven |
 
 ---
