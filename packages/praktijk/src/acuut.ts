@@ -68,7 +68,28 @@ export interface AcuutSignaal {
   naSeconden: number;
 }
 
-const SJABLONEN: (Omit<AcuutSignaal, 'id' | 'patientId' | 'naam' | 'leeftijd' | 'binnenOp' | 'status'>)[] = [
+/**
+ * Waar het dossier aan moet voldoen om dit signaal te kunnen dragen.
+ *
+ * Zonder deze eis krijg je een melding die zegt "COPD met een exacerbatie in de
+ * voorgeschiedenis" bij iemand zonder één episode in het dossier. Wie dan doorklikt, ziet
+ * een leeg scherm — en leert dat de onderbouwing van een melding niets betekent. Precies
+ * de gewoonte die alarmmoeheid maakt.
+ */
+export interface Dossiereis {
+  /** ICPC-prefixen waarvan er ten minste één actief moet zijn. */
+  episodes?: string[];
+  /**
+   * Middelgroepen. Binnen een groep volstaat één treffer, maar élke groep moet raak zijn:
+   * "een RAS-remmer én een diureticum" is twee groepen, niet één lijst van vier codes.
+   */
+  middelgroepen?: string[][];
+  /** Er moet al zorg vastgelegd zijn; een leeg dossier draagt geen voorgeschiedenis. */
+  minimaalContacten?: number;
+}
+
+const SJABLONEN: (Omit<AcuutSignaal, 'id' | 'patientId' | 'naam' | 'leeftijd' | 'binnenOp' | 'status'>
+  & { eis: Dossiereis })[] = [
   {
     bron: 'telefoon', urgentie: 'spoed', naSeconden: 0,
     samenvatting: 'Belt zelf: drukkende pijn op de borst sinds een half uur, zweterig.',
@@ -77,6 +98,9 @@ const SJABLONEN: (Omit<AcuutSignaal, 'id' | 'patientId' | 'naam' | 'leeftijd' | 
       + 'is een atypisch beeld eerder regel dan uitzondering.',
     voorgesteldeActie: 'Direct terugbellen door de huisarts; ambulance overwegen. Niet in de wachtrij.',
     voorRollen: ['huisarts', 'assistent'],
+    // "Bekend met diabetes en hypertensie" moet in het dossier staan, anders is de
+    // onderbouwing een verzinsel.
+    eis: { episodes: ['T90', 'K86'], minimaalContacten: 3 },
   },
   {
     bron: 'portaal', urgentie: 'binnen-een-uur', naSeconden: 40,
@@ -86,6 +110,8 @@ const SJABLONEN: (Omit<AcuutSignaal, 'id' | 'patientId' | 'naam' | 'leeftijd' | 
       + 'reactie op luchtwegverwijders wijst op een exacerbatie die vandaag beoordeeld moet worden.',
     voorgesteldeActie: 'Vandaag zien, bij voorkeur op de praktijk. Anders videoconsult met beeld van de ademhaling.',
     voorRollen: ['huisarts', 'poh-s', 'assistent'],
+    // COPD én een luchtwegverwijder: "de pufjes helpen minder goed" veronderstelt pufjes.
+    eis: { episodes: ['R95', 'R96'], middelgroepen: [['R03']], minimaalContacten: 3 },
   },
   {
     bron: 'thuismeting', urgentie: 'binnen-een-uur', naSeconden: 95,
@@ -95,6 +121,8 @@ const SJABLONEN: (Omit<AcuutSignaal, 'id' | 'patientId' | 'naam' | 'leeftijd' | 
       + 'Bij deze hoogte hoort nagevraagd te worden of er klachten bij zijn.',
     voorgesteldeActie: 'Bellen: klachten uitvragen (hoofdpijn, visus, pijn op de borst). Zonder klachten vandaag herhalen.',
     voorRollen: ['huisarts', 'poh-s'],
+    // Een thuismeter hoort bij iemand die voor zijn bloeddruk behandeld wordt.
+    eis: { episodes: ['K86', 'K87'], middelgroepen: [['C09', 'C07', 'C08', 'C03']], minimaalContacten: 3 },
   },
   {
     bron: 'uitslag', urgentie: 'vandaag', naSeconden: 150,
@@ -104,15 +132,47 @@ const SJABLONEN: (Omit<AcuutSignaal, 'id' | 'patientId' | 'naam' | 'leeftijd' | 
       + 'uitslag die niet in de autorisatiestapel hoort te wachten.',
     voorgesteldeActie: 'Vandaag bellen, medicatie tijdelijk staken en binnen 48 uur opnieuw prikken.',
     voorRollen: ['huisarts'],
+    // De onderbouwing noemt een RAS-remmer én een diureticum; die moeten er dus zijn.
+    eis: { middelgroepen: [['C09'], ['C03']], minimaalContacten: 3 },
   },
 ];
 
+/** Kandidaat voor een acuut signaal, met net genoeg dossier om de eis te kunnen toetsen. */
+export interface Acuutkandidaat {
+  patientId: string;
+  naam: string;
+  leeftijd: number;
+  /** ICPC-codes van de actieve episodes. */
+  icpc: string[];
+  /** ATC-codes van de actief gebruikte middelen. */
+  atc: string[];
+  aantalContacten: number;
+}
+
+function voldoet(kandidaat: Acuutkandidaat, eis: Dossiereis): boolean {
+  if (eis.minimaalContacten && kandidaat.aantalContacten < eis.minimaalContacten) return false;
+  if (eis.episodes && !eis.episodes.some((p) => kandidaat.icpc.some((c) => c.startsWith(p)))) return false;
+  for (const groep of eis.middelgroepen ?? []) {
+    if (!groep.some((p) => kandidaat.atc.some((c) => c.startsWith(p)))) return false;
+  }
+  return true;
+}
+
+/**
+ * Elk signaal krijgt een patiënt wiens dossier het verhaal draagt.
+ *
+ * Deterministisch: de kandidaten staan in vaste volgorde en per sjabloon wordt de eerste
+ * passende gekozen die nog niet gebruikt is. Past er niemand, dan komt het signaal er niet
+ * — liever één melding minder dan een melding die bij doorklikken nergens op slaat.
+ */
 export function genereerAcuteSignalen(
-  patienten: { patientId: string; naam: string; leeftijd: number }[], peildatum: Date,
+  kandidaten: Acuutkandidaat[], peildatum: Date,
 ): AcuutSignaal[] {
-  return SJABLONEN.flatMap((sjabloon, i) => {
-    const patient = patienten[i * 9 + 4];
+  const vergeven = new Set<string>();
+  return SJABLONEN.flatMap(({ eis, ...sjabloon }, i) => {
+    const patient = kandidaten.find((k) => !vergeven.has(k.patientId) && voldoet(k, eis));
     if (!patient) return [];
+    vergeven.add(patient.patientId);
     const binnen = new Date(peildatum);
     binnen.setMinutes(binnen.getMinutes() - (SJABLONEN.length - i) * 3);
     return [{

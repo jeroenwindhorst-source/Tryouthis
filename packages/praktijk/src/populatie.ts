@@ -93,6 +93,32 @@ export function genereerPraktijk(opties: GeneratieOpties = {}): Praktijk {
   const tussen = (min: number, max: number): number => min + willekeurig() * (max - min);
   const rond = (x: number, d = 0): number => Math.round(x * 10 ** d) / 10 ** d;
 
+  /*
+   * Namen komen maar één keer voor.
+   *
+   * Twee patiënten die "Marjan Bos" heten, zijn in de werkelijkheid een bekend
+   * veiligheidsprobleem en in een demo een struikelblok: je zoekt een naam, krijgt twee
+   * regels en opent de verkeerde. Met twaalf voornamen en achttien achternamen op
+   * achtenveertig patiënten botst het vanzelf, dus wordt een botsing hier opgelost door
+   * door te tellen in plaats van opnieuw te loten — dat blijft deterministisch.
+   */
+  const gebruikteNamen = new Set<string>();
+  const uniekeNaam = (vrouw: boolean): { voornaam: string; achternaam: string } => {
+    const voornamen = vrouw ? VOORNAMEN_V : VOORNAMEN_M;
+    const startV = Math.floor(willekeurig() * voornamen.length);
+    const startA = Math.floor(willekeurig() * ACHTERNAMEN.length);
+    for (let stap = 0; stap < voornamen.length * ACHTERNAMEN.length; stap++) {
+      const voornaam = voornamen[(startV + stap) % voornamen.length];
+      const achternaam = ACHTERNAMEN[(startA + Math.floor(stap / voornamen.length)) % ACHTERNAMEN.length];
+      const sleutel = `${voornaam} ${achternaam}`;
+      if (!gebruikteNamen.has(sleutel)) {
+        gebruikteNamen.add(sleutel);
+        return { voornaam, achternaam };
+      }
+    }
+    return { voornaam: voornamen[startV], achternaam: ACHTERNAMEN[startA] };
+  };
+
   for (let i = 0; i < aantal; i++) {
     const vrouw = willekeurig() < 0.52;
     const leeftijd = Math.floor(tussen(35, 88));
@@ -103,10 +129,7 @@ export function genereerPraktijk(opties: GeneratieOpties = {}): Praktijk {
       resourceType: 'Patient',
       id,
       identifier: [{ system: 'http://fhir.nl/fhir/NamingSystem/bsn', value: `99999${String(1000 + i)}`, use: 'official' }],
-      naam: {
-        voornaam: vrouw ? kies(VOORNAMEN_V) : kies(VOORNAMEN_M),
-        achternaam: kies(ACHTERNAMEN),
-      },
+      naam: uniekeNaam(vrouw),
       geboortedatum: `${geboortejaar}-${String(1 + Math.floor(willekeurig() * 12)).padStart(2, '0')}-${String(1 + Math.floor(willekeurig() * 28)).padStart(2, '0')}`,
       geslacht: vrouw ? 'female' : 'male',
       contact: { telefoon: `06${String(Math.floor(tussen(10_000_000, 99_999_999)))}` },

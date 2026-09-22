@@ -70,6 +70,14 @@ export interface Signaal {
   module?: string;
 }
 
+/** Waarom een signaal van deze soort bovenaan hoort te staan, in één regel. */
+const SIGNAALTOELICHTING: Record<Signaal['soort'], string> = {
+  meetwaarde: 'Waarde buiten de streefwaarde. Beoordelen vóór het volgende contact.',
+  achterstand: 'De controle is te lang geleden; er is nu geen actueel beeld.',
+  trend: 'Het beloop gaat de verkeerde kant op, niet één losse uitschieter.',
+  voorbereiding: 'Wat voor dit contact nodig is, is nog niet binnen.',
+};
+
 export function signalen(dossier: Dossier, peildatum: Date): Signaal[] {
   const lijst: Signaal[] = [];
 
@@ -164,15 +172,42 @@ export function dagstart(repo: DossierRepository): Dagstart {
   const perTitel = new Map<string, number>();
   for (const s of auto.automatischUitgevoerd) perTitel.set(s.titel, (perTitel.get(s.titel) ?? 0) + 1);
 
-  const urgent = alleSuggesties
-    .filter((s) => s.ernst === 'urgent')
-    .slice(0, 6)
-    .map((s) => ({
-      patientId: s.patientId,
-      naam: volledigeNaam(repo.dossier(s.patientId)!),
-      titel: s.titel,
-      bevinding: s.bevinding,
-    }));
+  /*
+   * "Vraagt als eerste aandacht" is de eerste kaart waar een POH naar kijkt, en die moet
+   * de vraag beantwoorden die zij op dat moment stelt: wie van vandaag springt eruit?
+   *
+   * Dat antwoord zat alleen in de suggesties, en een suggestie is zelden 'urgent' — een
+   * voorstel om iets te doen is per definitie afgewogen. De scherpte zit in de signálen:
+   * een HbA1c boven 75, een bloeddruk boven 180, een eGFR onder 30, een CCQ die met een
+   * heel punt stijgt. Die stonden hier niet in, en daardoor bleef de kaart leeg terwijl
+   * er wel degelijk iets uitsprong.
+   */
+  const urgent: Dagstart['urgent'] = [];
+  const gezien = new Set<string>();
+  for (const patientId of relevante) {
+    const dossier = repo.dossier(patientId);
+    if (!dossier) continue;
+    for (const signaal of signalen(dossier, peildatum).filter((sg) => sg.ernst === 'urgent')) {
+      if (gezien.has(patientId)) break;
+      gezien.add(patientId);
+      urgent.push({
+        patientId,
+        naam: volledigeNaam(dossier),
+        titel: signaal.tekst,
+        bevinding: SIGNAALTOELICHTING[signaal.soort],
+      });
+    }
+  }
+  for (const suggestie of alleSuggesties.filter((sg) => sg.ernst === 'urgent')) {
+    if (gezien.has(suggestie.patientId)) continue;
+    gezien.add(suggestie.patientId);
+    urgent.push({
+      patientId: suggestie.patientId,
+      naam: volledigeNaam(repo.dossier(suggestie.patientId)!),
+      titel: suggestie.titel,
+      bevinding: suggestie.bevinding,
+    });
+  }
 
   return {
     datum,
@@ -212,7 +247,7 @@ export function dagstart(repo: DossierRepository): Dagstart {
       })),
       wachtOpJou: auto.wachtOpMens.length,
     },
-    urgent,
+    urgent: urgent.slice(0, 6),
   };
 }
 

@@ -15,6 +15,7 @@ import { Terminologie } from './schermen/Terminologie';
 import { AssistentWerkplek } from './schermen/Assistent';
 import { HuisartsWerkplek } from './schermen/Huisarts';
 import { Beheer } from './schermen/Beheer';
+import { Spreekuur } from './schermen/Spreekuur';
 import { Berichten } from './schermen/Berichten';
 import { Overleg } from './schermen/Overleg';
 import { Plannen } from './schermen/Plannen';
@@ -236,7 +237,7 @@ function Werkplek({
               startTab={voorkeuren.dossierStart} />
           )}
           {scherm === 'spreekuur' && !patientId && gebruiker.rol === 'poh-s' && (
-            <Voorbereiden openPatient={opOpen} toonUitleg={voorkeuren.toonUitleg} />
+            <Spreekuur openPatient={opOpen} gaNaar={opGa} />
           )}
           {scherm === 'spreekuur' && !patientId && gebruiker.rol === 'assistent' && (
             <Dossierzoeker opOpen={opOpen} />

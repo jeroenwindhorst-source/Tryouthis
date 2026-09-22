@@ -104,7 +104,7 @@ const HULPVRAGEN_TELEFOON = [
   'Bloeddrukmeter thuis geeft 175, wat nu?',
   'Enkel verzwikt bij het hardlopen',
   'Slaapt al twee weken slecht, piekert veel',
-  'Oordopje zit vast, kind van 4',
+  'Oor zit dicht sinds het zwemmen',
   'Rugpijn sinds tillen, straalt uit naar het been',
   'Wond aan de voet die niet geneest',
   'Wil graag een herhaalrecept voor de pufjes',
@@ -170,7 +170,11 @@ function naamVan(dossier: Dossier): string {
 function tijd(peildatum: Date, uur: number, minuut: number): string {
   const dag = peildatum.toISOString().slice(0, 10);
   const tweecijferig = (n: number) => String(n).padStart(2, '0');
-  return `${dag}T${tweecijferig(uur)}:${tweecijferig(minuut)}:00+02:00`;
+  // Minuten die over het uur heen lopen, rollen door. Zonder deze twee regels levert
+  // een reeks als "8 uur + i × 7 minuten" tijdstippen op als 08:61 en 08:96 — en een
+  // demo waarin de klok niet klopt, is een demo waarin niets meer klopt.
+  const totaal = uur * 60 + minuut;
+  return `${dag}T${tweecijferig(Math.floor(totaal / 60) % 24)}:${tweecijferig(totaal % 60)}:00+02:00`;
 }
 
 /** Minuten sinds middernacht, gelezen van de wandklok in de tijdstempel zelf. */
@@ -184,8 +188,16 @@ export function genereerTriage(praktijk: Praktijk, zaad = 7): Triageverzoek[] {
   const verzoeken: Triageverzoek[] = [];
   const kandidaten = praktijk.dossiers;
 
+  // Eén patiënt komt hoogstens één keer in de ochtendstroom voor. Dezelfde mevrouw die
+  // binnen zeven minuten twee keer belt over twee verschillende klachten, leidt in een
+  // demo de aandacht af van waar het over gaat.
+  const alGebeld = new Set<string>();
   for (let i = 0; i < 14; i++) {
-    const dossier = kandidaten[Math.floor(willekeurig() * kandidaten.length)];
+    let dossier = kandidaten[Math.floor(willekeurig() * kandidaten.length)];
+    for (let poging = 0; alGebeld.has(dossier.patient.id) && poging < kandidaten.length; poging++) {
+      dossier = kandidaten[(kandidaten.indexOf(dossier) + 1) % kandidaten.length];
+    }
+    alGebeld.add(dossier.patient.id);
     const viaPortaal = willekeurig() < 0.45 && dossier.patient.portaalActief;
     const hulpvraag = viaPortaal
       ? HULPVRAGEN_PORTAAL[Math.floor(willekeurig() * HULPVRAGEN_PORTAAL.length)]
@@ -471,7 +483,17 @@ export interface WachtkamerIntake {
   bevestigd: boolean;
 }
 
-const INTAKES: Omit<WachtkamerIntake, 'id' | 'patientId' | 'naam' | 'app' | 'opgenomenOp' | 'bevestigd'>[] = [
+/**
+ * De voorbereidingen, elk met de episode die het dossier moet hebben.
+ *
+ * Een gesproken voorbereiding over "ik gebruik de metformine trouw" bij iemand zonder
+ * diabetes in het dossier is niet alleen onzin, het ondermijnt precies wat deze functie
+ * moet laten zien: dat een partnerapp gestructureerde, controleerbare tekst oplevert.
+ * Waar de klacht nieuw is — een blaasontsteking, somberheid, de partner die vergeetachtig
+ * wordt — hoort er juist géén eis te staan.
+ */
+const INTAKES: (Omit<WachtkamerIntake, 'id' | 'patientId' | 'naam' | 'app' | 'opgenomenOp' | 'bevestigd'>
+  & { vereistIcpc?: string[] })[] = [
   {
     waar: 'wachtkamer',
     duurSeconden: 138,
@@ -486,6 +508,7 @@ const INTAKES: Omit<WachtkamerIntake, 'id' | 'patientId' | 'naam' | 'app' | 'opg
       { icpc: 'A04', display: 'Moeheid/zwakte', vertrouwen: 0.72 },
     ],
     metingen: [{ code: '29463-7', naam: 'Gewicht', waarde: 84.2, eenheid: 'kg' }],
+    vereistIcpc: ['T90'],
   },
   {
     waar: 'thuis',
@@ -503,6 +526,7 @@ const INTAKES: Omit<WachtkamerIntake, 'id' | 'patientId' | 'naam' | 'app' | 'opg
       { code: '8480-6', naam: 'Bloeddruk systolisch', waarde: 155, eenheid: 'mmHg' },
       { code: '8462-4', naam: 'Bloeddruk diastolisch', waarde: 90, eenheid: 'mmHg' },
     ],
+    vereistIcpc: ['K86', 'K87'],
   },
   {
     waar: 'wachtkamer',
@@ -518,6 +542,7 @@ const INTAKES: Omit<WachtkamerIntake, 'id' | 'patientId' | 'naam' | 'app' | 'opg
       { icpc: 'P17', display: 'Tabaksmisbruik', vertrouwen: 0.78 },
     ],
     metingen: [],
+    vereistIcpc: ['R95', 'R96'],
   },
 
   {
@@ -575,9 +600,22 @@ export function genereerIntakes(
   praktijk: Praktijk, agendaItems: AgendaItem[], app: { id: string; naam: string; leverancier: string },
 ): WachtkamerIntake[] {
   const metPatient = agendaItems.filter((a) => a.patientId);
-  return INTAKES.flatMap((sjabloon, i) => {
-    const item = metPatient[i];
+  const vergeven = new Set<string>();
+  const heeft = (dossier: Dossier, prefixen: string[]) => dossier.episodes
+    .filter((e) => e.status === 'active')
+    .some((e) => (e.code.coding ?? []).some((c) => prefixen.some((p) => c.code.startsWith(p))));
+
+  return INTAKES.flatMap(({ vereistIcpc, ...sjabloon }, i) => {
+    // De voorbereiding komt bij iemand bij wie hij kán kloppen: een verhaal over de
+    // metformine hoort bij een dossier met diabetes erin.
+    const item = metPatient.find((a) => {
+      if (!a.patientId || vergeven.has(a.patientId)) return false;
+      if (!vereistIcpc) return true;
+      const d = praktijk.dossiers.find((x) => x.patient.id === a.patientId);
+      return d ? heeft(d, vereistIcpc) : false;
+    });
     if (!item?.patientId) return [];
+    vergeven.add(item.patientId);
     const dossier = praktijk.dossiers.find((d) => d.patient.id === item.patientId);
     if (!dossier) return [];
     const start = new Date(item.start);

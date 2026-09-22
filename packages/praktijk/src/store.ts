@@ -1,7 +1,7 @@
 import type { Appointment, Deelcontact, Dossier, Observation, Rol, Task } from '@zpe/fhir-model';
 import { leeftijd } from '@zpe/fhir-model';
 import {
-  beoordeelInstroom, leegPersoonlijkPlan, type PersoonlijkPlan,
+  beoordeelInstroom, beoordeelZelfredzaamheid, CODE, leegPersoonlijkPlan, type PersoonlijkPlan,
 } from '@zpe/care-engine';
 import {
   genereerPraktijk, genereerSpreekuur, genereerZelfredzaamheid, type Praktijk,
@@ -304,11 +304,20 @@ export class InMemoryRepository implements DossierRepository {
       this.praktijk.peildatum,
     );
 
+    // De kandidaten dragen hun dossierkenmerken mee, zodat een acuut signaal terechtkomt
+    // bij iemand bij wie de onderbouwing ook werkelijk in het dossier staat.
     this.acuut = genereerAcuteSignalen(
       this.praktijk.dossiers.slice(0, 45).map((d) => ({
         patientId: d.patient.id,
         naam: this.naamVan(d.patient.id),
         leeftijd: leeftijd(d, this.praktijk.peildatum),
+        icpc: d.episodes
+          .filter((e) => e.status === 'active')
+          .flatMap((e) => (e.code.coding ?? []).map((c) => c.code)),
+        atc: d.medicatie
+          .filter((m) => m.status === 'active')
+          .flatMap((m) => (m.middel.coding ?? []).map((c) => c.code)),
+        aantalContacten: d.contacten.length,
       })),
       this.praktijk.peildatum,
     );
@@ -322,10 +331,36 @@ export class InMemoryRepository implements DossierRepository {
       this.praktijk.peildatum,
     );
 
+    // Ook hier: een overlegvraag hoort bij een dossier dat de vraag waarmaakt. In een
+    // overleg wordt er juist doorgeklikt, en dan valt een lege episodelijst meteen op.
     this.bespreeklijst = genereerBespreekpunten(
-      this.praktijk.dossiers.slice(0, 30).map((d) => ({
-        patientId: d.patient.id, naam: this.naamVan(d.patient.id),
-      })),
+      this.praktijk.dossiers.slice(0, 30).map((d) => {
+        const actief = d.medicatie.filter((m) => m.status === 'active');
+        const laatste = (code: string) => {
+          const reeks = d.observaties
+            .filter((o) => o.code.coding?.[0]?.code === code)
+            .sort((a, x) => a.effectief.localeCompare(x.effectief));
+          const waarde = reeks.at(-1)?.waarde;
+          return waarde && 'value' in waarde ? waarde.value : undefined;
+        };
+        return {
+          patientId: d.patient.id,
+          naam: this.naamVan(d.patient.id),
+          vrouw: d.patient.geslacht === 'female',
+          icpc: d.episodes
+            .filter((e) => e.status === 'active')
+            .flatMap((e) => (e.code.coding ?? []).map((c) => c.code)),
+          atc: actief.flatMap((m) => (m.middel.coding ?? []).map((c) => c.code)),
+          middelen: actief.map((m) => m.middel.text ?? m.middel.coding?.[0]?.code ?? 'middel'),
+          hba1c: laatste(CODE.hba1c),
+          egfr: laatste(CODE.egfr),
+          rrSys: laatste(CODE.rrSys),
+          zelfredzaamheid: (() => {
+            const z = this.plannen.get(d.patient.id)?.zelfredzaamheid;
+            return z ? beoordeelZelfredzaamheid(z).gemiddelde : undefined;
+          })(),
+        };
+      }),
       this.praktijk.peildatum,
     );
   }
