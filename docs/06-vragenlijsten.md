@@ -64,6 +64,46 @@ CCQ afgenomen
 Let op de laatste tak: het systeem stelt ook voor om **minder** te doen. Dat is
 persoonsgerichte zorg, en geen enkel huidig systeem doet het.
 
+## 3b. De twee lijsten uit de stedelijke werkwijze
+
+Naast de voorbeelden hierboven zitten de twee lijsten uit de *stedelijke werkwijze
+integrale chronische zorg* (versie 4.0, 29 mei 2026) letterlijk in het product, in
+`packages/care-engine/src/vragenlijsten-demo.ts`. De vraagteksten zijn overgenomen zoals
+ze op het formulier staan; de codes waaronder de antwoorden landen zijn voor deze fase
+zelf gekozen en moeten vóór gebruik in de praktijk worden vastgesteld.
+
+**Jaarlijkse screening** (`vl-jaarscreening`) beantwoordt de vraag óf iemand op de
+praktijk moet komen: lengte, gewicht, bloeddruk, pols, rookstatus, bijwerkingen, problemen
+met het innemen, nieuwe klachten. Een deel van de vragen geldt alleen bij bepaalde
+aandoeningen — *alleen bij DM*, *alleen bij COPD/astma* — en dat is een voorwaarde op het
+dossier, niet op een eerder antwoord. Daar is een eigen veld voor (`alleenBijModules`):
+wie de lijst uitprint laat de regel staan, wie hem digitaal uitzet laat hem weg bij wie
+hij niet over gaat.
+
+**Consultvoorbereidende vragenlijst** (`vl-consultvoorbereiding`) gaat over wat een
+meetwaarde niet laat zien: bewegen, alcohol, stress, slaap, steun in de omgeving,
+dagbesteding, geldzorgen, seksualiteit, en één cijfer voor de eigen gezondheid. De laatste
+vraag is *is er iets waar je over wil praten met de praktijkondersteuner* — en die staat
+in het scherm bovenaan in plaats van onderaan, omdat wat de patiënt zelf inbrengt in een
+consult dat door het protocol wordt geleid anders zelden aan bod komt.
+
+### Wat er met de antwoorden gebeurt
+
+De antwoorden staan in het dossier zodra ze binnen zijn: je leest ze in de voorbereiding
+van het spreekuur, in het consult en bij het monitoren. Maar ze zijn geen registratie van
+de praktijk. Pas als een zorgverlener ze **overneemt** — één knop — landen ze in het
+consult:
+
+- de opgebouwde tekst komt onder de **S** van de SOEP, want het is wat de patiënt aangeeft;
+- de gecodeerde antwoorden komen als **patiëntgerapporteerde** metingen in het dossier;
+- bij de afname staat wie hem heeft overgenomen en wanneer.
+
+Die tekst wordt met een vaste tabel opgebouwd, niet door een taalmodel: wat in het
+journaal belandt moet elke keer hetzelfde zijn en herleidbaar tot het antwoord waar het
+uit komt ([ADR-0014](adr/ADR-0014-samenvatting-is-regelgebaseerd.md)). Het onderscheid
+tussen aanleveren en overnemen staat in
+[ADR-0012](adr/ADR-0012-patientgegevens-zijn-geen-eigen-registratie.md).
+
 ## 4. Twee kanten van dezelfde lijst
 
 Dezelfde `Questionnaire` wordt op twee plekken gerenderd:

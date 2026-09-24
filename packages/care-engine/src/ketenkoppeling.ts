@@ -134,13 +134,20 @@ export function ketenbijdragen(
       // zelf doorgaf is echt en bruikbaar, maar hij is niet door de praktijk vastgelegd
       // en mag dus niet stilzwijgend een declaratiegrondslag worden (docs/03 §3).
       const meting = alle.find((o) => isEigenRegistratie(o.herkomst));
-      const alleenVanPatient = !meting && alle.length > 0;
+      const alleenVanElders = !meting && alle.length > 0;
 
-      if (alleenVanPatient) {
+      if (alleenVanElders) {
+        // De reden benoemen, niet raden: 'door de patiënt aangeleverd' onder een
+        // ziekenhuisuitslag zetten is onjuist en kost het vertrouwen in de verantwoording.
+        const bron = alle[0].herkomst.bron === 'patient'
+          ? 'door de patiënt aangeleverd'
+          : alle[0].herkomst.bron === 'extern-systeem'
+            ? `van elders ontvangen (${alle[0].herkomst.systeem?.naam ?? 'extern systeem'})`
+            : 'een nog onbevestigde suggestie';
         return {
           code: item.code, naam: item.naam, voldaan: false,
-          toelichting: `wel een waarde van ${alle[0].effectief.slice(0, 10)}, maar door de patiënt `
-            + 'aangeleverd en nog niet overgenomen',
+          toelichting: `wel een waarde van ${alle[0].effectief.slice(0, 10)}, maar `
+            + `${bron} en nog niet overgenomen`,
         };
       }
       if (!meting) {

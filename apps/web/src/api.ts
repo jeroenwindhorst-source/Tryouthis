@@ -43,7 +43,7 @@ export interface Suggestie {
 }
 
 export interface Processtap {
-  id: 'voorbereiden' | 'spreekuur' | 'monitoren' | 'afronden';
+  id: 'aanloop' | 'spreekuur' | 'opvolgen' | 'monitoren' | 'afronden';
   naam: string; omschrijving: string; watZieIk: string; aantal: number; aandacht: number;
 }
 
@@ -551,17 +551,80 @@ export interface Dagstart {
 export interface Voorbereiding {
   tijd: string; patientId: string; naam: string; leeftijd: number; soort: string;
   modules: ModuleChip[]; compleet: boolean; binnen: string[]; ontbreekt: string[];
+  /** Wat de POH straks zelf in de spreekkamer meet — geen achterstand. */
+  tijdensConsult: string[];
   signalen: Signaal[];
   gespreksonderwerpen: { titel: string; bevinding: string; ernst: Ernst }[];
   doelen: { tekst: string }[];
   zelfredzaamheid?: { gemiddelde: number; niveau: string; knelpunten: string[] };
   intake?: WachtkamerIntake;
+  vragenlijst?: Vragenlijstinzage;
 }
+
+// ── Vragenlijsten ───────────────────────────────────────────────────────────
+
+export interface AntwoordRegel {
+  vraagId: string; tekst: string; patientTekst?: string; kantlijn?: string;
+  antwoord: string; eenheid?: string; observatieCode?: string;
+  vrijeTekst: boolean; opvallend: boolean;
+}
+
+export interface Vragenlijstinzage {
+  afnameId: string; patientId: string; vragenlijstId: string;
+  naam: string; versie: string; doel: string; licentie?: string;
+  uitgezetOp: string; ingevuldOp?: string; kanaal: string;
+  status: 'ingevuld' | 'open'; openDagen?: number;
+  overgenomenOp?: string; overgenomenDoor?: string;
+  kernzin?: string;
+  rubrieken: { naam: string; regels: AntwoordRegel[] }[];
+  scores: { naam: string; waarde: number }[];
+  signalen: { ernst: Ernst; tekst: string; onderbouwing: string }[];
+  overname: {
+    subjectief: string;
+    metingen: { code: string; naam: string; waarde: string | number; eenheid?: string }[];
+    eigenOnderwerp?: string;
+  };
+}
+
+// ── Aanloop en opvolgen ─────────────────────────────────────────────────────
+
+export type Aanloopstatus = 'op-schema' | 'herinnering-loopt' | 'bellen' | 'verzetten';
+
+export interface Aanloopregel {
+  afspraakId: string; patientId: string; naam: string; leeftijd: number;
+  datum: string; tijd: string; dagenTot: number;
+  modules: ModuleChip[];
+  vooraf: { naam: string; binnen: boolean; op?: string }[];
+  vragenlijst?: { naam: string; status: 'ingevuld' | 'open'; openDagen?: number };
+  status: Aanloopstatus; advies: string; toelichting: string;
+}
+
+export type Opvolgbron = 'labuitslag' | 'vragenlijst' | 'thuismeting';
+
+export interface Opvolgregel {
+  id: string; patientId: string; naam: string; leeftijd: number;
+  bron: Opvolgbron; binnenOp: string;
+  titel: string; bevinding: string; ernst: Ernst; voorstel: string;
+}
+
+export const AANLOOPSTATUS_LABEL: Record<Aanloopstatus, string> = {
+  'op-schema': 'Op schema',
+  'herinnering-loopt': 'Herinnering loopt',
+  bellen: 'Bellen',
+  verzetten: 'Verzetten',
+};
+
+export const OPVOLGBRON_LABEL: Record<Opvolgbron, string> = {
+  labuitslag: 'Labuitslag binnen',
+  vragenlijst: 'Vragenlijst ingevuld',
+  thuismeting: 'Thuismetingen',
+};
 
 export interface MonitoringRegel {
   patientId: string; naam: string; leeftijd: number;
   modules: ModuleChip[]; signalen: Signaal[]; suggesties: Suggestie[];
   zelfredzaamheid?: { gemiddelde: number; niveau: string; richting?: string };
+  vragenlijst?: Vragenlijstinzage;
 }
 
 export interface InstroomRegel {
@@ -726,6 +789,12 @@ export interface Ontvangst {
 const httpApi = {
   dagstart: () => haal<Dagstart>('/api/poh/dagstart'),
   voorbereiding: () => haal<Voorbereiding[]>('/api/poh/voorbereiding'),
+  aanloop: () => haal<Aanloopregel[]>('/api/poh/aanloop'),
+  opvolgen: () => haal<Opvolgregel[]>('/api/poh/opvolgen'),
+  vragenlijsten: (patientId: string) =>
+    haal<Vragenlijstinzage[]>(`/api/patient/${patientId}/vragenlijsten`),
+  neemVragenlijstOver: (afnameId: string, door: string) =>
+    stuur<{ inzage?: Vragenlijstinzage }>(`/api/vragenlijst/${afnameId}/overnemen`, { door }),
   monitoring: () => haal<MonitoringRegel[]>('/api/poh/monitoring'),
   instroom: () => haal<InstroomRegel[]>('/api/poh/instroom'),
   afronden: () => haal<Afsluiting>('/api/poh/afronden'),

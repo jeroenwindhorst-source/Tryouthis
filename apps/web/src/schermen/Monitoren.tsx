@@ -3,7 +3,8 @@ import { api, type Suggestie } from '../api';
 import { useData } from '../gebruik';
 import { Icoon } from '../iconen';
 import {
-  Fout, Kaart, Laden, Leeg, ModuleChips, Signalen, SuggestieKaart, Zelfredzaamheidsmeter,
+  Fout, Kaart, Laden, Leeg, ModuleChips, Signalen, SuggestieKaart, Vragenlijstkaart,
+  Zelfredzaamheidsmeter,
 } from '../onderdelen';
 
 /**
@@ -15,6 +16,7 @@ export function Monitoren({ openPatient }: { openPatient: (id: string) => void }
   const { data, fout, bezig, herlaad } = useData(() => api.monitoring());
   const [open, setOpen] = useState<string | undefined>();
   const [bezigMet, setBezigMet] = useState<string | undefined>();
+  const [lijstUit, setLijstUit] = useState<Record<string, boolean>>({});
 
   if (fout) return <Fout boodschap={fout} />;
   if (bezig || !data) return <Laden wat="Monitoringcohort" />;
@@ -79,6 +81,17 @@ export function Monitoren({ openPatient }: { openPatient: (id: string) => void }
 
                       <div className="waarom">
                         <Signalen signalen={regel.signalen} />
+                        {/*
+                          Eén regel uit de vragenlijst, in de woorden van de patiënt. Bij
+                          monitoren op afstand is dat vaak het enige dat er werkelijk toe
+                          doet: een HbA1c van 59 verandert niets aan je dag, 'ik haal mijn
+                          medicijnen niet meer op' wel.
+                        */}
+                        {regel.vragenlijst?.kernzin && (
+                          <div className="citaatregel">
+                            <Icoon naam="gesprek" grootte={12} /> “{regel.vragenlijst.kernzin}”
+                          </div>
+                        )}
                       </div>
 
                       {/*
@@ -105,6 +118,12 @@ export function Monitoren({ openPatient }: { openPatient: (id: string) => void }
 
                     {uit && (
                       <div style={{ marginTop: 12 }}>
+                        {regel.vragenlijst && (
+                          <Vragenlijstkaart inzage={regel.vragenlijst} uitgeklapt={lijstUit[regel.patientId]}
+                            opUitklappen={() => setLijstUit((u) => ({
+                              ...u, [regel.patientId]: !u[regel.patientId],
+                            }))} />
+                        )}
                         {regel.suggesties.length === 0
                           ? <span className="mini">Geen suggesties — beoordelen op eigen inzicht.</span>
                           : regel.suggesties.map((s) => (

@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { InMemoryRepository } from '../dist/store.js';
-import { dagstart, overleg, patientOverzicht } from '../dist/bff.js';
+import {
+  aanloop, consultvoorbereiding, dagstart, opvolgen, overleg, patientOverzicht,
+} from '../dist/bff.js';
 
 /**
  * De demopopulatie is het product zelf zodra iemand hem laat zien.
@@ -172,5 +174,118 @@ test('triage: wie al een acuut signaal draagt, staat niet óók in de gewone str
   for (const verzoek of repo.triage()) {
     assert.ok(!acuut.has(verzoek.patientId),
       `${verzoek.naam} komt twee keer binnen op één ochtend`);
+  }
+});
+
+// ── Vragenlijsten, lab en de tijdshorizon ───────────────────────────────────
+
+test('vragenlijsten: niets is ingevuld voordat het is uitgezet, en niets in de toekomst', () => {
+  const vandaag = repo.peildatum().toISOString().slice(0, 10);
+  const afnames = repo.afnames();
+  assert.ok(afnames.length > 10, 'te weinig afnames om iets te bewaken');
+  for (const afname of afnames) {
+    assert.ok(afname.uitgezetOp.slice(0, 10) <= vandaag,
+      `${afname.id} is uitgezet in de toekomst`);
+    if (!afname.ingevuldOp) continue;
+    assert.ok(afname.ingevuldOp.slice(0, 10) <= vandaag,
+      `${afname.id} is ingevuld in de toekomst`);
+    assert.ok(afname.ingevuldOp >= afname.uitgezetOp,
+      `${afname.id} is ingevuld vóór hij werd uitgezet`);
+  }
+});
+
+test('vragenlijsten: een ingevulde lijst levert antwoorden op, een openstaande niet', () => {
+  for (const afname of repo.afnames()) {
+    const aantal = Object.keys(afname.antwoorden).length;
+    if (afname.ingevuldOp) assert.ok(aantal > 0, `${afname.id} is ingevuld maar leeg`);
+    else assert.equal(aantal, 0, `${afname.id} staat open maar heeft antwoorden`);
+  }
+});
+
+test('spreekuur: bij wie vandaag komt, is het bloedonderzoek al binnen', () => {
+  /*
+   * De kern van de aanloop: prikken hoort weken vóór het consult te gebeuren. Staat er
+   * bij een patiënt van vandaag toch nog een labbepaling open, dan klopt de volgorde van
+   * het proces niet — en dat is precies wat er in bestaande systemen misgaat.
+   */
+  for (const v of consultvoorbereiding(repo)) {
+    const labOpen = v.ontbreekt.filter((o) => !o.includes('vragenlijst'));
+    assert.deepEqual(labOpen, [],
+      `${v.naam} komt vandaag maar mist nog ${labOpen.join(', ')}`);
+  }
+});
+
+test('spreekuur: wat in de spreekkamer gemeten wordt, telt niet als achterstand', () => {
+  const tijdens = consultvoorbereiding(repo).flatMap((v) => v.tijdensConsult);
+  assert.ok(tijdens.length > 0, 'geen enkele meting wordt tijdens het consult gedaan');
+  for (const v of consultvoorbereiding(repo)) {
+    for (const naam of v.tijdensConsult) {
+      assert.ok(!v.ontbreekt.includes(naam), `${naam} staat twee keer bij ${v.naam}`);
+    }
+  }
+});
+
+test('aanloop: het advies past bij het aantal dagen dat er nog over is', () => {
+  for (const regel of aanloop(repo)) {
+    const ietsOpen = regel.vooraf.some((v) => !v.binnen)
+      || regel.vragenlijst?.status === 'open';
+    if (!ietsOpen) {
+      assert.equal(regel.status, 'op-schema', `${regel.naam} is rond maar heet ${regel.status}`);
+      continue;
+    }
+    const verwacht = regel.dagenTot <= 5 ? 'verzetten'
+      : regel.dagenTot <= 10 ? 'bellen'
+      : 'herinnering-loopt';
+    assert.equal(regel.status, verwacht,
+      `${regel.naam} over ${regel.dagenTot} dagen heet ${regel.status}`);
+  }
+});
+
+test('aanloop: niemand staat zowel in de aanloop als op het spreekuur van vandaag', () => {
+  const vandaag = new Set(
+    repo.spreekuur(repo.peildatum().toISOString().slice(0, 10)).map((a) => a.patientId),
+  );
+  for (const regel of aanloop(repo)) {
+    assert.ok(!vandaag.has(regel.patientId),
+      `${regel.naam} komt vandaag én staat in de aanloop`);
+  }
+});
+
+test('opvolgen: alleen mensen zonder afspraak vandaag, met een echte datum', () => {
+  const vandaag = repo.peildatum().toISOString().slice(0, 10);
+  const opSpreekuur = new Set(repo.spreekuur(vandaag).map((a) => a.patientId));
+  const regels = opvolgen(repo);
+  assert.ok(regels.length > 0, 'opvolgen is leeg');
+  for (const regel of regels) {
+    assert.ok(!opSpreekuur.has(regel.patientId),
+      `${regel.naam} staat in opvolgen maar komt vandaag op het spreekuur`);
+    assert.ok(regel.binnenOp <= vandaag, `${regel.naam}: binnengekomen in de toekomst`);
+    assert.ok(regel.titel.trim().length > 0, `${regel.naam}: lege titel`);
+    assert.ok(regel.voorstel.trim().length > 0, `${regel.naam}: geen voorstel`);
+  }
+});
+
+test('patiëntgegevens: de wachtkamerintake en de vragenlijst spreken elkaar niet tegen', () => {
+  /*
+   * Twee bronnen die allebei van de patiënt komen en tegengestelde dingen zeggen, maken
+   * het dossier ongeloofwaardig — en dat viel in een eerdere ronde meteen op tijdens het
+   * doorklikken. Wie in de wachtkamer een verhaal vertelt, geeft zijn leven geen 9.
+   */
+  for (const v of consultvoorbereiding(repo)) {
+    if (!v.intake || !v.vragenlijst) continue;
+    const cijfer = v.vragenlijst.scores.find((s) => s.naam.includes('cijfer'))?.waarde;
+    if (cijfer === undefined) continue;
+    assert.ok(cijfer <= 6,
+      `${v.naam} vertelt in de wachtkamer een verhaal maar geeft zichzelf een ${cijfer}`);
+  }
+});
+
+test('dagstart: de vijf blokken staan op volgorde van tijdshorizon en zijn geen van alle leeg', () => {
+  const stappen = dagstart(repo).stappen;
+  assert.deepEqual(stappen.map((s) => s.id),
+    ['aanloop', 'spreekuur', 'opvolgen', 'monitoren', 'afronden']);
+  for (const stap of stappen) {
+    assert.ok(stap.aantal > 0, `tegel ${stap.id} is leeg`);
+    assert.ok(stap.watZieIk.length > 30, `tegel ${stap.id} legt niet uit wat je er ziet`);
   }
 });

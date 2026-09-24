@@ -1,10 +1,11 @@
 import {
-  agenda, assistentOverzicht, beheer, berichten, consultvoorbereiding, controleerTweefactor,
+  aanloop, agenda, assistentOverzicht, beheer, berichten, consultvoorbereiding, controleerTweefactor,
   dagafsluiting, dagstart, dossierHistorie, gebruikersoverzicht, huisartsOverzicht, instroom,
   acuteInstroom, beantwoordPatientbericht, contactdossier, contactvormen, groepsconsulten, handelAcuutAf,
   medicatieoverzicht, medicatievoorbeeld, wijzigMedicatie,
   maakGroepsconsult, media, rapport, rapportExport, samenvatting,
   InMemoryRepository, intakes, legVerrichtingVast, meetreeksen, meldAan, monitoringCohort,
+  neemVragenlijstOver, opvolgen, vragenlijstenVoor,
   orderOverzicht, orderVoorstellen, overleg, pakAcuutOp, patientOverzicht, plaatsLosseOrders,
   planbord, planbordPraktijk, praktijkrapportage, praktijkSamenvatting, registreerConsult,
   terminologie, verrichtingen, vraagAfspraakAan, zetOpBespreeklijst, zoekOrders, zoekPatient,
@@ -36,6 +37,11 @@ const traag = <T>(waarde: T): Promise<T> =>
 export const lokaleApi = {
   dagstart: () => traag(dagstart(repo)),
   voorbereiding: () => traag(consultvoorbereiding(repo)),
+  aanloop: () => traag(aanloop(repo)),
+  opvolgen: () => traag(opvolgen(repo)),
+  vragenlijsten: (patientId: string) => traag(vragenlijstenVoor(repo, patientId)),
+  neemVragenlijstOver: (afnameId: string, door: string) =>
+    traag({ inzage: neemVragenlijstOver(repo, afnameId, door) }),
   monitoring: () => traag(monitoringCohort(repo)),
   instroom: () => traag(instroom(repo)),
   afronden: () => traag(dagafsluiting(repo)),

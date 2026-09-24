@@ -4,13 +4,16 @@ import { Icoon } from '../iconen';
 import { Agenda, Fout, Kaart, Laden } from '../onderdelen';
 
 const STAP_ICOON: Record<Processtap['id'], string> = {
-  voorbereiden: 'klembord', spreekuur: 'agenda', monitoren: 'radar', afronden: 'afvinken',
+  aanloop: 'klembord', spreekuur: 'agenda', opvolgen: 'bliksem',
+  monitoren: 'radar', afronden: 'afvinken',
 };
 
 /**
  * De dagstart ís het startscherm (docs/05 §1.1) — geen zoekveld.
  *
- * De vier kaarten zijn het werkproces van de POH, in volgorde. Per stap staat er
+ * De vijf kaarten zijn het werkproces van de POH, op volgorde van tijdshorizon: de
+ * komende weken (aanloop), vandaag (spreekuur), nu (opvolgen), doorlopend (monitoren)
+ * en straks (afronden). Per stap staat er
  * letterlijk bij wát je daar ziet, want dat is precies wat in bestaande systemen
  * ontbreekt: je moet er maar achter komen waar je je werk vindt.
  */

@@ -152,6 +152,25 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -.01em; }
 .paginakop .onder { color: var(--ink-2); font-size: 13px; }
 .paginakop .acties { margin-left: auto; display: flex; gap: 8px; }
 
+/* Tussenkop binnen een scherm: scheidt 'vraagt actie' van 'loopt goed' zonder kader. */
+.sectiekop {
+  font-size: 12px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--ink-3); margin: 18px 0 9px;
+}
+.sectiekop:first-of-type { margin-top: 4px; }
+
+/* Eén zin van de patiënt, tussen de signalen. Zachter dan een signaal, harder dan mini. */
+.citaatregel {
+  display: flex; gap: 6px; align-items: baseline; margin-top: 7px;
+  font-size: 12.5px; font-style: italic; color: var(--merk-diep);
+}
+
+/* Kopje binnen een kaart, boven een kolom of lijst. */
+.blokkop {
+  font-size: 12px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--ink-3); margin-bottom: 7px;
+}
+
 /* ── Kaarten ──────────────────────────────────────────────────────────────── */
 
 .kaart {
@@ -172,7 +191,8 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -.01em; }
 
 /* ── Processtappen ────────────────────────────────────────────────────────── */
 
-.stappen { display: grid; grid-template-columns: repeat(auto-fit, minmax(232px, 1fr)); gap: 12px; margin-bottom: 18px; }
+/* Vijf blokken naast elkaar op een normaal scherm: de dag past in één oogopslag. */
+.stappen { display: grid; grid-template-columns: repeat(auto-fit, minmax(198px, 1fr)); gap: 12px; margin-bottom: 18px; }
 .stap {
   position: relative; text-align: left;
   background: var(--vlak); border: 1px solid var(--line); border-radius: var(--rond);
@@ -409,6 +429,52 @@ label.veld { display: block; font-size: 12px; color: var(--ink-2); font-weight: 
   padding-left: 11px; margin: 8px 0;
 }
 .intake .anamnese { color: var(--ink-2); font-size: 12.5px; }
+
+/* ── Vragenlijst ──────────────────────────────────────────────────────────── */
+
+/*
+ * Bewust dezelfde vorm als de wachtkamerintake: allebei zijn het gegevens die van de
+ * patiënt komen en die pas het dossier in gaan als iemand ze overneemt. Dat onderscheid
+ * moet je kunnen zien zonder het te lezen.
+ */
+.vragenlijst {
+  border: 1px solid var(--merk-lijn); border-radius: var(--rond);
+  background: var(--merk-zacht); padding: 14px 16px; margin-bottom: 12px;
+}
+.vragenlijst[data-status="open"] { border-style: dashed; background: var(--vlak); }
+.vragenlijst .kop { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; flex-wrap: wrap; }
+.vragenlijst .kop h3 { font-size: 13.5px; color: var(--merk-diep); }
+.vragenlijst .citaat {
+  font-style: italic; color: var(--ink); border-left: 2px solid var(--merk);
+  padding-left: 11px; margin: 8px 0; font-size: 13px;
+}
+.vragenlijst .anamnese { color: var(--ink-2); font-size: 12.5px; }
+
+.vragenlijst .antwoorden {
+  margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--merk-lijn);
+}
+.vragenlijst .rubriek + .rubriek { margin-top: 13px; }
+.vragenlijst .rubriek h4 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--ink-3); margin-bottom: 5px;
+}
+/* Vraag links, antwoord rechts: zo kun je de antwoordkolom in één beweging aflezen. */
+.vragenlijst .regel {
+  display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 12px;
+  padding: 4px 6px; border-radius: var(--rond-klein); align-items: baseline;
+}
+.vragenlijst .regel + .regel { border-top: 1px solid var(--line-zacht); }
+.vragenlijst .regel[data-opvallend="true"] { background: rgba(255,255,255,.7); }
+.vragenlijst .regel[data-opvallend="true"] .antwoord { font-weight: 650; color: var(--merk-diep); }
+.vragenlijst .vraag { font-size: 12.5px; color: var(--ink-2); }
+.vragenlijst .vraag .kantlijn {
+  display: block; font-size: 11px; color: var(--ink-3); font-style: italic;
+}
+.vragenlijst .antwoord { font-size: 12.5px; color: var(--ink); }
+
+@media (max-width: 720px) {
+  .vragenlijst .regel { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
 
 .vertrouwen {
   display: inline-flex; align-items: center; gap: 5px;
@@ -681,10 +747,16 @@ body {
   background: var(--stapkleur, var(--merk));
 }
 .stap .kop .ikoon { background: var(--stapzacht, var(--merk-zacht)); color: var(--stapkleur, var(--merk-diep)); }
-.stap[data-stap="voorbereiden"] { --stapkleur: #0e7aa8; --stapzacht: #e8f5fc; }
-.stap[data-stap="spreekuur"]    { --stapkleur: #0f5f6e; --stapzacht: #e3f0f2; }
-.stap[data-stap="monitoren"]    { --stapkleur: #0d7d6e; --stapzacht: #e7f6f3; }
-.stap[data-stap="afronden"]     { --stapkleur: #b96708; --stapzacht: #fdf4e6; }
+/*
+ * De kleuren lopen mee met de tijdshorizon: van koel blauw voor wat nog ver weg is,
+ * via het merkpetrol voor vandaag, naar warm oker voor het afsluiten van de dag.
+ * Opvolgen krijgt paars — het staat los van de dagvolgorde en hoort op te vallen.
+ */
+.stap[data-stap="aanloop"]   { --stapkleur: #0e7aa8; --stapzacht: #e8f5fc; }
+.stap[data-stap="spreekuur"] { --stapkleur: #0f5f6e; --stapzacht: #e3f0f2; }
+.stap[data-stap="opvolgen"]  { --stapkleur: #7b3fa0; --stapzacht: #f4ecfa; }
+.stap[data-stap="monitoren"] { --stapkleur: #0d7d6e; --stapzacht: #e7f6f3; }
+.stap[data-stap="afronden"]  { --stapkleur: #b96708; --stapzacht: #fdf4e6; }
 
 /* ── Demo herstellen ──────────────────────────────────────────────────────── */
 

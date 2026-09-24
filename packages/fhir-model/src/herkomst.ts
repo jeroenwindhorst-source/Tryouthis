@@ -31,6 +31,20 @@ export interface Herkomst {
   auteurRol: Rol;
   /** Bij bron 'extern-systeem': welk systeem, met AGB/URA waar bekend. */
   systeem?: { naam: string; identificatie?: string };
+  /**
+   * Bij bron 'extern-systeem': kwam dit binnen op een aanvraag van de praktijk zelf?
+   *
+   * Het verschil is bepalend en zit niet in het systeem maar in de aanleiding. Een
+   * HbA1c die terugkomt op een labaanvraag die deze praktijk heeft uitgezet, is werk
+   * van deze praktijk: zij heeft hem besteld en is verantwoordelijk voor de opvolging.
+   * Een bloeddruk uit een ziekenhuisbrief of een BgZ-overdracht is dat niet — die is
+   * bruikbaar in het beeld, maar vult geen ketenindicator van deze praktijk.
+   *
+   * Zonder dit kenmerk zou elke labuitslag onder 'niet zelf geregistreerd' vallen, en
+   * omdat HbA1c en LDL vrijwel altijd uit het lab komen, zou vrijwel geen enkele
+   * ketenindicator ooit gevuld raken.
+   */
+  opEigenAanvraag?: boolean;
   ai?: AiHerkomst;
 }
 
@@ -67,5 +81,7 @@ export function isKlinischGeldig(h: Herkomst): boolean {
 export function isEigenRegistratie(h: Herkomst): boolean {
   if (h.bron === 'zorgverlener' || h.bron === 'apparaat') return true;
   if (h.bron === 'ai-suggestie') return Boolean(h.ai?.bevestigdDoor);
+  // Een uitslag op een eigen aanvraag telt mee; wat van elders binnenkomt niet.
+  if (h.bron === 'extern-systeem') return h.opEigenAanvraag === true;
   return false;
 }

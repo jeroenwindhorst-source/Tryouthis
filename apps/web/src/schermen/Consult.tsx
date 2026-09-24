@@ -5,7 +5,7 @@ import {
   type Contactvorm, type Declaratiebeeld, type Eigenmetingdag, type JournaalRegel,
   type Meetreeks, type WachtkamerIntake,
   type NieuweOrder, type Overlegnotitie, type PatientOverzicht, type RegistratieUitkomst,
-  type Treffer,
+  type Treffer, type Vragenlijstinzage,
 } from '../api';
 import { useData } from '../gebruik';
 import { Trendgrafiek } from '../grafiek';
@@ -14,7 +14,7 @@ import { Zorgreis } from '../zorgreis';
 import { Icoon, icoonVanModule } from '../iconen';
 import {
   Beleidsband, ErnstMerk, Fout, IntakeKaart, Kaart, Laden, Leeg, ModuleIdChips, Signalen,
-  SuggestieKaart, Zelfredzaamheidsmeter,
+  SuggestieKaart, Vragenlijstkaart, Zelfredzaamheidsmeter,
 } from '../onderdelen';
 import { Orders } from './Orders';
 import { Orderpaneel } from './Orderpaneel';
@@ -179,9 +179,19 @@ export function Consult({ patientId, gebruiker, terug, startTab = 'consult' }: {
   const [video, setVideo] = useState(false);
   const [toonDetails, setToonDetails] = useState(false);
   const [journaalBron, setJournaalBron] = useState<string | undefined>();
+  const [vragenlijsten, setVragenlijsten] = useState<Vragenlijstinzage[] | undefined>();
+  const [lijstUit, setLijstUit] = useState<Record<string, boolean>>({});
   const [registratie, setRegistratie] = useState<Registratie>({
     waarden: {}, bronnen: {}, soep: {}, episodeId: '', suggestieCodes: [],
   });
+
+  // De vragenlijsten horen bij de patiënt, niet bij het patiëntoverzicht: ze worden ook
+  // buiten het consult gelezen. Apart ophalen houdt het overzicht klein.
+  useEffect(() => {
+    let geldig = true;
+    api.vragenlijsten(patientId).then((lijsten) => { if (geldig) setVragenlijsten(lijsten); });
+    return () => { geldig = false; };
+  }, [patientId]);
 
   if (fout) return <Fout boodschap={fout} />;
   if (bezig || !data) return <Laden wat="Dossier" />;
@@ -225,6 +235,39 @@ export function Consult({ patientId, gebruiker, terug, startTab = 'consult' }: {
       await api.bevestigIntake(intake.id);
       return api.patient(patientId);
     });
+  };
+
+  /**
+   * De vragenlijst overnemen.
+   *
+   * Dezelfde beweging als bij de intake, en dat is geen toeval: in beide gevallen gaat
+   * het om gegevens die van de patiënt komen en die pas iets worden als een zorgverlener
+   * ze aanvaardt. De opgebouwde tekst landt onder de S — want het ís wat de patiënt
+   * aangeeft — en de waarden landen als patiëntgerapporteerde metingen, niet als eigen
+   * registratie (ADR-0012).
+   */
+  const neemVragenlijstOver = async (inzage: Vragenlijstinzage) => {
+    setRegistratie((r) => ({
+      ...r,
+      soep: { ...r.soep, S: [r.soep.S, inzage.overname.subjectief].filter(Boolean).join('\n\n') },
+      waarden: {
+        ...r.waarden,
+        ...Object.fromEntries(inzage.overname.metingen.map((m) => [m.code, String(m.waarde)])),
+      },
+      bronnen: {
+        ...r.bronnen,
+        ...Object.fromEntries(inzage.overname.metingen.map((m) => [m.code, 'patient' as const])),
+      },
+    }));
+    setTab('consult');
+    setBezigMet('vragenlijst');
+    try {
+      const { inzage: bijgewerkt } = await api.neemVragenlijstOver(inzage.afnameId, gebruiker.naam);
+      if (bijgewerkt) {
+        setVragenlijsten((lijsten) =>
+          lijsten?.map((l) => (l.afnameId === bijgewerkt.afnameId ? bijgewerkt : l)));
+      }
+    } finally { setBezigMet(undefined); }
   };
 
   const opMetingKlik = (code: string) => { setGekozenMeting(code); setTab('metingen'); };
@@ -606,6 +649,22 @@ export function Consult({ patientId, gebruiker, terug, startTab = 'consult' }: {
             verloopt, zodat je van boven naar beneden werkt in plaats van heen en weer.
           */}
           <div>
+            {/*
+              De vragenlijst staat vóór de wachtkamerintake en vóór de suggesties. Dat is
+              met opzet: dit is het enige blok waarin de patiënt zelf aan het woord is, en
+              alles eronder gaat over wat het systeem ervan vindt.
+            */}
+            {(vragenlijsten ?? [])
+              .filter((l) => l.status === 'ingevuld')
+              .slice(0, 2)
+              .map((l) => (
+                <Vragenlijstkaart key={l.afnameId} inzage={l}
+                  uitgeklapt={lijstUit[l.afnameId]}
+                  bezig={bezigMet === 'vragenlijst'}
+                  opUitklappen={() => setLijstUit((u) => ({ ...u, [l.afnameId]: !u[l.afnameId] }))}
+                  opOvernemen={() => neemVragenlijstOver(l)} />
+              ))}
+
             {data.intake && (
               <IntakeKaart intake={data.intake} bezig={bezigMet === 'intake'}
                 opBevestig={() => neemIntakeOver(false)}

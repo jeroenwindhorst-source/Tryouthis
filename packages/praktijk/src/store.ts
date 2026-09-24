@@ -1,13 +1,18 @@
 import type { Appointment, Deelcontact, Dossier, Observation, Rol, Task } from '@zpe/fhir-model';
 import { leeftijd } from '@zpe/fhir-model';
 import {
-  beoordeelInstroom, beoordeelZelfredzaamheid, CODE, leegPersoonlijkPlan, type PersoonlijkPlan,
+  beoordeelInstroom, beoordeelZelfredzaamheid, bouwZorgplan, CODE, leegPersoonlijkPlan,
+  type PersoonlijkPlan,
 } from '@zpe/care-engine';
 import {
-  genereerPraktijk, genereerSpreekuur, genereerZelfredzaamheid, type Praktijk,
+  genereerAanloop, genereerPraktijk, genereerSpreekuur, genereerZelfredzaamheid, type Praktijk,
 } from './populatie.js';
+import { genereerVoorafLab } from './laboratorium.js';
+import {
+  genereerAfnames, type Afnameopdracht, type Vragenlijstafname,
+} from './vragenlijstafnames.js';
 import { appsVoor } from './configuratie-demo.js';
-import { bouwHistorie } from './historie.js';
+import { bouwHistorie, genereerThuismetingen } from './historie.js';
 import { genereerGesprekken, genereerPatientgesprekken, type Gesprek } from './berichten.js';
 import { genereerExterneDocumenten, type ExternDocument } from './externe-bronnen.js';
 import { genereerOrderhistorie, maakOrder, type NieuweOrder, type Order, type Orderstatus } from './orderopslag.js';
@@ -41,6 +46,8 @@ export interface DossierRepository {
   alleDossiers(): Dossier[];
   dossier(patientId: string): Dossier | undefined;
   spreekuur(datum: string): Appointment[];
+  /** De al geplande controles van de komende weken — het werk vóór het werk. */
+  aanloop(): Appointment[];
   taken(): Task[];
   voegTaakToe(taak: Task): void;
   /** Het persoonlijke plan: modules, intervallen, doelen en voorkeuren van deze mens. */
@@ -67,6 +74,10 @@ export interface DossierRepository {
   /** Wat ingebedde partnerapps in de wachtkamer hebben opgeleverd. */
   intakes(): WachtkamerIntake[];
   bevestigIntake(id: string): void;
+
+  /** Uitgezette en ingevulde vragenlijsten; zonder patientId die van de hele praktijk. */
+  afnames(patientId?: string): Vragenlijstafname[];
+  neemAfnameOver(id: string, door: string): void;
   /** Nieuwe episode openen vanuit het consult. */
   maakEpisode(patientId: string, code: { icpc: string; snomed?: string; display: string }, door: string): string | undefined;
   /** Interne communicatie tussen teamleden. */
@@ -167,6 +178,8 @@ export interface Overlegnotitie {
 export class InMemoryRepository implements DossierRepository {
   private praktijk!: Praktijk;
   private afspraken!: Appointment[];
+  private aanloopAfspraken!: Appointment[];
+  private afnameLijst: Vragenlijstafname[] = [];
   private taakLijst: Task[] = [];
   private plannen = new Map<string, PersoonlijkPlan>();
   private agendaItems!: AgendaItem[];
@@ -216,6 +229,7 @@ export class InMemoryRepository implements DossierRepository {
     this.gestartOp = Date.now();
     this.mediaLijst = new Map();
     this.groepen = [];
+    this.afnameLijst = [];
 
     // Drie jaar dossierhistorie: contacten met SOEP en de bijbehorende meetreeksen.
     // Zonder historie is er niets om in terug te kijken, en dan lijkt elk dossier nieuw.
@@ -243,6 +257,8 @@ export class InMemoryRepository implements DossierRepository {
       ...genereerPatientgesprekken(this.praktijk),
     ];
     this.afspraken = genereerSpreekuur(this.praktijk);
+
+
     this.agendaItems = zetDagstatus([
       ...genereerAgenda(this.praktijk),
       ...this.afspraken.map((a): AgendaItem => ({
@@ -369,6 +385,105 @@ export class InMemoryRepository implements DossierRepository {
       }),
       this.praktijk.peildatum,
     );
+
+    /*
+     * Wie vandaag op het spreekuur komt, heeft het bloedonderzoek al achter de rug.
+     *
+     * Dat is geen cosmetische ingreep in de demogegevens maar het herstellen van de
+     * bedoelde volgorde: de uitnodiging gaat weken vooruit de deur uit, de patiënt gaat
+     * naar het prikpunt, en de uitslag staat er als de POH het consult voorbereidt.
+     * Stond die uitslag er niet, dan hoorde deze patiënt vandaag niet op het spreekuur
+     * maar in de aanloop.
+     */
+    const geprikt = new Date(this.praktijk.peildatum);
+    geprikt.setDate(geprikt.getDate() - 8);
+    for (const [i, afspraak] of this.afspraken.entries()) {
+      const dossier = this.dossier(afspraak.patientId);
+      if (!dossier) continue;
+      const plan = bouwZorgplan(dossier, this.persoonlijkPlan(afspraak.patientId), {
+        peildatum: this.praktijk.peildatum,
+      });
+      dossier.observaties.push(...genereerVoorafLab(dossier, plan, geprikt, 21000 + i));
+    }
+
+    // De komende weken: al geplande controles waar de voorbereiding nog moet landen.
+    this.aanloopAfspraken = genereerAanloop(
+      this.praktijk, new Set(this.afspraken.map((a) => a.patientId)),
+    );
+
+    /*
+     * Bij tweederde van de aanloop is het bloed wél geprikt. Bij de rest niet, en dat is
+     * de reden dat dit blok bestaat: het verschil tussen "de herinnering is verstuurd"
+     * en "er is iets gebeurd" is precies wat nu niemand ziet.
+     */
+    this.aanloopAfspraken.forEach((afspraak, i) => {
+      if (i % 3 === 0) return;
+      const dossier = this.dossier(afspraak.patientId);
+      if (!dossier) return;
+      const prikdag = new Date(afspraak.start.slice(0, 10));
+      prikdag.setDate(prikdag.getDate() - 12);
+      // Alleen wat al in het verleden ligt kan geprikt zijn; de rest wacht nog.
+      if (prikdag > this.praktijk.peildatum) return;
+      const plan = bouwZorgplan(dossier, this.persoonlijkPlan(afspraak.patientId), {
+        peildatum: this.praktijk.peildatum,
+      });
+      dossier.observaties.push(...genereerVoorafLab(dossier, plan, prikdag, 23000 + i));
+    });
+
+    /*
+     * De vragenlijsten. Bij het spreekuur van vandaag de consultvoorbereidende lijst,
+     * vrijwel overal ingevuld — daar hoort de POH hem immers vóór het consult te lezen.
+     * Bij de aanloop de jaarlijkse screening, die juist de vraag beantwoordt óf iemand
+     * op de praktijk moet komen; daar is een deel nog open.
+     */
+    /*
+     * Wie in de wachtkamer een verhaal heeft verteld, krijgt een vragenlijst die daar
+     * niet tegenin gaat. Twee bronnen die allebei van de patiënt komen en elkaar
+     * tegenspreken, maken het dossier ongeloofwaardig.
+     */
+    const ZWAARDER = [
+      'draagt het alleen', 'werk loopt over', 'zorgt voor een ander',
+      'net verhuisd', 'mantelzorger van zichzelf',
+    ];
+    const metIntake = new Set(this.intakeLijst.map((i) => i.patientId));
+
+    const opdrachten: Afnameopdracht[] = [
+      ...this.afspraken.map((a, i): Afnameopdracht => ({
+        patientId: a.patientId,
+        vragenlijstId: 'vl-consultvoorbereiding',
+        voorAfspraakOp: a.start.slice(0, 10),
+        ingevuld: i % 7 !== 5,
+        kanaal: i % 5 === 3 ? 'wachtkamer' : 'portaal',
+        uitgezetDagenVoor: 10,
+        /*
+         * Drie profielen liggen vast. Niet omdat de rest er niet toe doet, maar omdat een
+         * demonstratie begint bij wie er op dat moment aan de beurt is — met de klok op
+         * 10:20 is dat de afspraak van 10:40 — en daar hoort een vragenlijst te liggen
+         * waarin iets staat dat een consult van richting verandert.
+         */
+        profiel: i === 4 ? 'draagt het alleen'
+          : i === 0 ? 'zorgt voor een ander'
+          : i === 1 ? 'werk loopt over'
+          : undefined,
+        profielUit: metIntake.has(a.patientId) ? ZWAARDER : undefined,
+      })),
+      ...this.aanloopAfspraken.map((a, i): Afnameopdracht => ({
+        patientId: a.patientId,
+        vragenlijstId: 'vl-jaarscreening',
+        voorAfspraakOp: a.start.slice(0, 10),
+        ingevuld: i % 3 !== 0,
+        kanaal: i % 6 === 2 ? 'papier' : 'portaal',
+        uitgezetDagenVoor: 21,
+      })),
+    ];
+    this.afnameLijst = genereerAfnames(opdrachten, this.praktijk.peildatum);
+
+    // Een deel van de praktijk meet thuis de bloeddruk. Niet iedereen: dat is precies
+    // het punt van zelfmeting, het past bij de een wel en bij de ander niet.
+    this.praktijk.dossiers.forEach((dossier, i) => {
+      if (i % 3 === 2) return;
+      dossier.observaties.push(...genereerThuismetingen(dossier, this.praktijk.peildatum, 27000 + i));
+    });
   }
 
   herstelBeginstand(): void { this.bouwOp(); }
@@ -531,6 +646,28 @@ export class InMemoryRepository implements DossierRepository {
   }
   spreekuur(datum: string): Appointment[] {
     return this.afspraken.filter((a) => a.start.startsWith(datum));
+  }
+  aanloop(): Appointment[] { return this.aanloopAfspraken; }
+
+  afnames(patientId?: string): Vragenlijstafname[] {
+    return patientId
+      ? this.afnameLijst.filter((a) => a.patientId === patientId)
+      : this.afnameLijst;
+  }
+
+  /**
+   * Overnemen is een handeling met een naam eraan.
+   *
+   * Zolang dit niet is gebeurd, zijn de antwoorden van de patiënt; daarna staat de
+   * praktijk ervoor in. Dat onderscheid vastleggen kost één veld en is het verschil
+   * tussen een dossier dat je kunt verantwoorden en een dossier dat vol staat met
+   * waarden waarvan niemand meer weet wie ze heeft gezien (ADR-0012).
+   */
+  neemAfnameOver(id: string, door: string): void {
+    const afname = this.afnameLijst.find((a) => a.id === id);
+    if (!afname || !afname.ingevuldOp) return;
+    afname.overgenomenOp = new Date().toISOString();
+    afname.overgenomenDoor = door;
   }
   taken(): Task[] { return this.taakLijst; }
   voegTaakToe(taak: Task): void { this.taakLijst.push(taak); }

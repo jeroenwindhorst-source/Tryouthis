@@ -102,8 +102,11 @@ uitwisseling. Dat filter zit in de datalaag (`isKlinischGeldig`), niet in beleid
 
 - **Dagstart** — "het systeem heeft dit vandaag al voor je gedaan", met het percentage
   logistiek werk en het aantal punten dat op een mens wacht.
-- **Voorbereiden** — per patiënt de twee tot drie gespreksonderwerpen die uit de
-  klinische regels volgen, vóór het consult.
+- **Aanloop** — per geplande controle of de voorbereiding op schema ligt, met het advies
+  dat bij het aantal resterende dagen hoort.
+- **Spreekuur** — per patiënt van vandaag de twee tot drie gespreksonderwerpen die uit de
+  klinische regels volgen, met de ingevulde vragenlijst erboven.
+- **Opvolgen** — wat binnenkwam bij mensen zonder afspraak, met een voorstel per regel.
 - **Monitoren** — per patiënt uitklapbaar de suggesties, direct af te handelen.
 - **Consult** — bovenaan de klinische suggesties (jouw beslissing), daaronder een groen
   blok met wat het systeem zelf heeft geregeld.

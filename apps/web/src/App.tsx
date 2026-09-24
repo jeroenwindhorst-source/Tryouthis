@@ -5,7 +5,8 @@ import { Icoon } from './iconen';
 import { Woordmerk } from './logo';
 import { Inloggen } from './schermen/Inloggen';
 import { Dagstart } from './schermen/Dagstart';
-import { Voorbereiden } from './schermen/Voorbereiden';
+import { Aanloop } from './schermen/Aanloop';
+import { Opvolgen } from './schermen/Opvolgen';
 import { Monitoren } from './schermen/Monitoren';
 import { Instroom } from './schermen/Instroom';
 import { Afronden } from './schermen/Afronden';
@@ -38,8 +39,9 @@ const WERKPROCES: Record<string, Ingang[]> = {
   'poh-s': [
     { id: 'dagstart', label: 'Dagstart', icoon: 'zon' },
     { id: 'acuut', label: 'Acuut', icoon: 'waarschuwing' },
-    { id: 'voorbereiden', label: 'Voorbereiden', icoon: 'klembord' },
+    { id: 'aanloop', label: 'Aanloop', icoon: 'klembord' },
     { id: 'spreekuur', label: 'Spreekuur', icoon: 'agenda' },
+    { id: 'opvolgen', label: 'Opvolgen', icoon: 'bliksem' },
     { id: 'monitoren', label: 'Monitoren', icoon: 'radar' },
     { id: 'groepen', label: 'Groepsconsulten', icoon: 'persoon' },
     { id: 'overleg', label: 'Overleg', icoon: 'persoon' },
@@ -237,7 +239,7 @@ function Werkplek({
               startTab={voorkeuren.dossierStart} />
           )}
           {scherm === 'spreekuur' && !patientId && gebruiker.rol === 'poh-s' && (
-            <Spreekuur openPatient={opOpen} gaNaar={opGa} />
+            <Spreekuur openPatient={opOpen} />
           )}
           {scherm === 'spreekuur' && !patientId && gebruiker.rol === 'assistent' && (
             <Dossierzoeker opOpen={opOpen} />
@@ -247,7 +249,8 @@ function Werkplek({
           )}
 
           {scherm === 'dagstart' && <Dagstart gaNaar={opGa} openPatient={opOpen} />}
-          {scherm === 'voorbereiden' && <Voorbereiden openPatient={opOpen} toonUitleg={voorkeuren.toonUitleg} />}
+          {scherm === 'aanloop' && <Aanloop openPatient={opOpen} />}
+          {scherm === 'opvolgen' && <Opvolgen openPatient={opOpen} />}
           {scherm === 'monitoren' && <Monitoren openPatient={opOpen} />}
           {scherm === 'afronden' && <Afronden />}
 

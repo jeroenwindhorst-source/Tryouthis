@@ -291,3 +291,58 @@ export function journaal(dossier: Dossier, filterEpisodeId?: string): JournaalRe
     .filter((r) => !filterEpisodeId || r.episodeId === filterEpisodeId)
     .sort((a, b) => `${b.datum}${b.tijd ?? ''}`.localeCompare(`${a.datum}${a.tijd ?? ''}`));
 }
+
+/**
+ * Thuismetingen: wat de patiënt zelf doorgeeft.
+ *
+ * Bij bloeddruk is de thuismeting inhoudelijk beter dan de spreekkamermeting — geen
+ * wittejasseneffect, en een reeks in plaats van één moment. Toch komt hij in de meeste
+ * systemen niet verder dan een bericht in de postbus, waar hij als tekst blijft liggen.
+ *
+ * Hier landt hij als Observation, met de patiënt als bron. Dat is het verschil: de
+ * waarde telt mee in het beeld en kan een signaal laten afgaan, maar vult geen
+ * ketenindicator tot een zorgverlener hem heeft overgenomen (ADR-0012).
+ */
+export function genereerThuismetingen(
+  dossier: Dossier, peildatum: Date, zaad: number,
+): Observation[] {
+  const willekeurig = rng(zaad);
+  const heeft = (icpc: string) => dossier.episodes.some(
+    (e) => e.status === 'active' && (e.code.coding ?? []).some((c) => c.code.startsWith(icpc)),
+  );
+  if (!heeft('K86') && !heeft('K87')) return [];
+
+  // Eén op de drie meet thuis structureel te hoog; dat is de reeks die om een besluit vraagt.
+  const teHoog = willekeurig() < 0.45;
+  const basis = teHoog ? 152 + willekeurig() * 12 : 128 + willekeurig() * 8;
+
+  const metingen: Observation[] = [];
+  for (let dagen = 9; dagen >= 0; dagen -= 1) {
+    if (willekeurig() < 0.25) continue; // niet elke dag gemeten — zo gaat dat thuis
+    const op = new Date(peildatum.getTime() - dagen * 86_400_000);
+    op.setHours(7, 40, 0, 0);
+    const systolisch = Math.round(basis + (willekeurig() - 0.5) * 11);
+    for (const [code, waarde] of [
+      [CODE.rrSys, systolisch],
+      [CODE.rrDia, Math.round(systolisch * 0.58 + (willekeurig() - 0.5) * 6)],
+    ] as const) {
+      metingen.push({
+        resourceType: 'Observation',
+        id: `${dossier.patient.id}-thuis-${code}-${dagen}`,
+        patientId: dossier.patient.id,
+        code: { coding: [{ system: 'http://loinc.org', code }] },
+        effectief: op.toISOString(),
+        waarde: { value: waarde, unit: 'mmHg' },
+        status: 'final',
+        herkomst: {
+          bron: 'patient',
+          vastgelegdOp: op.toISOString(),
+          auteurId: dossier.patient.id,
+          auteurRol: 'patient',
+          systeem: { naam: 'Cadans patiëntportaal' },
+        },
+      });
+    }
+  }
+  return metingen;
+}

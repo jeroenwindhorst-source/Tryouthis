@@ -23,6 +23,8 @@ export interface Vraag {
   tekst: string;
   /** Formulering voor de patiënt: B1-niveau. Ontbreekt die, dan wordt `tekst` gebruikt. */
   patientTekst?: string;
+  /** Rubriek waaronder de vraag in de lijst staat — de kopjes van het papieren formulier. */
+  rubriek?: string;
   type: VraagType;
   opties?: Keuzeoptie[];
   schaal?: { min: number; max: number; minLabel?: string; maxLabel?: string };
@@ -31,6 +33,17 @@ export interface Vraag {
   observatieCode?: string;
   /** Conditionele weergave (FHIR enableWhen). */
   toonAls?: Voorwaarde;
+  /**
+   * Vraag die alleen bij bepaalde aandoeningen hoort.
+   *
+   * In de vragenlijst staat dit in de kantlijn als "Alleen bij DM" of "Alleen bij
+   * COPD / Astma". Dat is geen conditie op een eerder antwoord maar op het dossier, en
+   * daarom een eigen veld: wie hem op papier uitprint laat de regel staan, wie hem
+   * digitaal uitzet laat hem weg bij wie hij niet over gaat.
+   */
+  alleenBijModules?: string[];
+  /** De kantlijntekst zoals hij op papier staat, voor wie de lijst naast het origineel legt. */
+  kantlijn?: string;
   verplicht?: boolean;
   toelichting?: string;
 }

@@ -3,7 +3,7 @@ import { Icoon, icoonVanModule } from './iconen';
 import {
   MODULE_NAAM,
   type AgendaRegel, type Beleidsafspraak, type Ernst, type ModuleChip, type Signaal,
-  type Suggestie, type WachtkamerIntake,
+  type Suggestie, type Vragenlijstinzage, type WachtkamerIntake,
 } from './api';
 
 export function Kaart({ titel, icoon, telling, extra, strak, children }: {
@@ -400,6 +400,138 @@ export function IntakeKaart({ intake, bezig, opBevestig, opBewaarAlsMelding }: {
             uitwisseling. Per meting kun je de bron daarna nog wijzigen in het
             registratieblok.
           </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * DE INGEVULDE VRAGENLIJST
+ *
+ * Eén onderdeel voor drie plekken: in de voorbereiding van het spreekuur (samengevat),
+ * in het consult (helemaal, met de knop om over te nemen) en in het dossier (als
+ * terugblik). Dat is geen zuinigheid maar een eis: de POH moet op alle drie de plekken
+ * hetzelfde zien, anders gaat ze zoeken naar welk scherm de echte antwoorden toont.
+ *
+ * De samengevatte vorm laat zien wat de patiënt zelf inbracht en welke regels afgingen.
+ * De volledige vorm laat elke vraag zien zoals hij aan de patiënt gesteld is — want een
+ * antwoord zonder de vraag erbij is in een gesprek waardeloos.
+ */
+export function Vragenlijstkaart({ inzage, uitgeklapt, opUitklappen, opOvernemen, bezig }: {
+  inzage: Vragenlijstinzage;
+  uitgeklapt?: boolean;
+  opUitklappen?: () => void;
+  opOvernemen?: () => void;
+  bezig?: boolean;
+}) {
+  const open = inzage.status === 'open';
+
+  return (
+    <div className="vragenlijst" data-status={inzage.status}>
+      <div className="kop">
+        <span style={{ color: 'var(--merk)' }}><Icoon naam="gesprek" /></span>
+        <h3>{inzage.naam}</h3>
+        <span className="merkje" data-toon="neutraal">versie {inzage.versie}</span>
+        {open
+          ? <span className="merkje" data-toon="aandacht">
+              niet ingevuld{inzage.openDagen !== undefined && ` · ${inzage.openDagen} dagen open`}
+            </span>
+          : <span className="merkje" data-toon="ok">ingevuld {inzage.ingevuldOp?.slice(0, 10)}</span>}
+        {inzage.overgenomenOp && (
+          <span className="merkje" data-toon="informatief">
+            overgenomen door {inzage.overgenomenDoor}
+          </span>
+        )}
+        <span className="mini" style={{ marginLeft: 'auto' }}>{inzage.kanaal}</span>
+      </div>
+
+      {open ? (
+        <div className="anamnese">
+          De uitnodiging is verstuurd op {inzage.uitgezetOp.slice(0, 10)}, maar er is nog niets
+          ingevuld. Vraag het in het consult zelf uit, of zet de lijst in de wachtkamer klaar.
+        </div>
+      ) : (
+        <>
+          {/*
+            Wat de patiënt zelf inbracht staat bovenaan en in zijn eigen woorden. In een
+            consult dat door het protocol wordt geleid, komt dit anders als laatste —
+            en meestal helemaal niet.
+          */}
+          {inzage.overname.eigenOnderwerp && (
+            <div className="citaat">“{inzage.overname.eigenOnderwerp}”</div>
+          )}
+
+          {inzage.scores.length > 0 && (
+            <div className="chips" style={{ marginTop: 9 }}>
+              {inzage.scores.map((s) => (
+                <span key={s.naam} className="merkje" data-toon="informatief">
+                  {s.naam} {s.waarde}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {inzage.signalen.length > 0 && (
+            <div style={{ display: 'grid', gap: 7, marginTop: 11 }}>
+              {inzage.signalen.map((sg) => (
+                <div key={sg.tekst} style={{ fontSize: 12.5 }}>
+                  <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
+                    <ErnstMerk ernst={sg.ernst} />
+                    <strong>{sg.tekst}</strong>
+                  </div>
+                  <div className="reden">{sg.onderbouwing}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {uitgeklapt && (
+            <div className="antwoorden">
+              {inzage.rubrieken.map((rubriek) => (
+                <div key={rubriek.naam} className="rubriek">
+                  <h4>{rubriek.naam}</h4>
+                  {rubriek.regels.map((regel) => (
+                    <div key={regel.vraagId} className="regel" data-opvallend={regel.opvallend}>
+                      <div className="vraag">
+                        {regel.patientTekst ?? regel.tekst}
+                        {regel.kantlijn && <span className="kantlijn">{regel.kantlijn}</span>}
+                      </div>
+                      <div className="antwoord">
+                        {regel.antwoord || <span className="mini">niet ingevuld</span>}
+                        {regel.antwoord && regel.eenheid ? ` ${regel.eenheid}` : ''}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+              {inzage.licentie && (
+                <div className="mini" style={{ marginTop: 10 }}>Bron: {inzage.licentie}</div>
+              )}
+            </div>
+          )}
+
+          <div className="knop-rij" style={{ marginTop: 12 }}>
+            {opUitklappen && (
+              <button className="knop" onClick={opUitklappen}>
+                <Icoon naam="lijst" grootte={13} />
+                {uitgeklapt ? ' Antwoorden inklappen' : ' Hele vragenlijst bekijken'}
+              </button>
+            )}
+            {opOvernemen && !inzage.overgenomenOp && (
+              <button className="knop" data-toon="primair" disabled={bezig} onClick={opOvernemen}>
+                <Icoon naam="vink" grootte={13} /> Overnemen in mijn dossier
+              </button>
+            )}
+          </div>
+
+          {opOvernemen && !inzage.overgenomenOp && (
+            <div className="reden" style={{ marginTop: 7 }}>
+              Overnemen zet deze tekst onder de S van de SOEP en de waarden als
+              patiëntgerapporteerde metingen in het dossier. Tot dat moment zijn het
+              antwoorden van de patiënt, geen registratie van de praktijk.
+            </div>
+          )}
         </>
       )}
     </div>

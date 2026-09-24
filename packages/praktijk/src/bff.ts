@@ -30,6 +30,7 @@ import {
   buitenBandbreedte, verrichtingsoorten, vindVerrichting, type Beoordelaar,
   type Verrichtinguitslag,
 } from './verrichtingen.js';
+import { bouwInzage, type Vragenlijstinzage } from './vragenlijstinzage.js';
 import { vindGebruiker } from './gebruikers.js';
 import { gesprekkenVoor, naamVanGebruiker, ongelezenVoor } from './berichten.js';
 import {
@@ -44,7 +45,7 @@ import { PLANROUTE_UITLEG, teplannen, type NieuwAfspraakverzoek, type Planroute 
  * maakt er schermen van. Bevat zelf geen klinische regels — die staan in care-engine.
  *
  * De indeling volgt het werkproces van de POH, niet de structuur van het dossier:
- * voorbereiden → spreekuur → monitoren → afronden.
+ * aanloop → spreekuur → opvolgen → monitoren → afronden.
  */
 
 export function volledigeNaam(dossier: Dossier): string {
@@ -126,8 +127,28 @@ export function signalen(dossier: Dossier, peildatum: Date): Signaal[] {
 
 // ── 1. Dagstart: het werkproces in één blik ─────────────────────────────────
 
+/**
+ * DE DAG VAN DE POH IN VIJF BLOKKEN
+ *
+ * De eerste indeling had 'voorbereiden' en 'spreekuur' naast elkaar staan, en dat liep
+ * door elkaar heen: voorbereiden ging over de patiënten van vandaag, en dat is precies
+ * wat je in het spreekuur doet, vlak voordat je iemand binnenroept. Twee tegels voor
+ * één handeling.
+ *
+ * Wat er wél ontbrak, was de tijdshorizon. De blokken hieronder staan op volgorde van
+ * hoe ver het moment ligt waarop er iets gebeurt:
+ *
+ *   Aanloop    — de komende weken: afspraken waarvan de voorbereiding niet op schema ligt.
+ *   Spreekuur  — vandaag: de mensen die komen, met hun voorbereiding erbij.
+ *   Opvolgen   — nu: wat er binnenkwam en waar vandaag iets mee kan, zonder afspraak.
+ *   Monitoren  — doorlopend: de groep die op afstand wordt gevolgd.
+ *   Afronden   — straks: wat de dag sluitend maakt.
+ *
+ * Elk blok beantwoordt een andere vraag, en die vragen stelt een POH op verschillende
+ * momenten van de dag. Dat is wat een tegel rechtvaardigt.
+ */
 export interface Processtap {
-  id: 'voorbereiden' | 'spreekuur' | 'monitoren' | 'afronden';
+  id: 'aanloop' | 'spreekuur' | 'opvolgen' | 'monitoren' | 'afronden';
   naam: string;
   omschrijving: string;
   /** Wat zie ik hier, als POH. */
@@ -156,6 +177,8 @@ export function dagstart(repo: DossierRepository): Dagstart {
   const afspraken = repo.spreekuur(datum);
 
   const voorbereidingen = consultvoorbereiding(repo);
+  const aanloopregels = aanloop(repo);
+  const opvolgregels = opvolgen(repo);
   const monitoring = monitoringCohort(repo);
   const afronden = dagafsluiting(repo);
 
@@ -184,6 +207,18 @@ export function dagstart(repo: DossierRepository): Dagstart {
    */
   const urgent: Dagstart['urgent'] = [];
   const gezien = new Set<string>();
+
+  // Wat vanochtend binnenkwam en scherp is, staat vooraan: een thuisreeks van 160 of een
+  // eGFR van 40 is concreter dan welke suggestie dan ook, en het is nieuw.
+  for (const regel of opvolgregels.filter((o) => o.ernst === 'urgent')) {
+    if (gezien.has(regel.patientId)) continue;
+    gezien.add(regel.patientId);
+    urgent.push({
+      patientId: regel.patientId, naam: regel.naam,
+      titel: regel.titel, bevinding: regel.bevinding,
+    });
+  }
+
   for (const patientId of relevante) {
     const dossier = repo.dossier(patientId);
     if (!dossier) continue;
@@ -215,16 +250,25 @@ export function dagstart(repo: DossierRepository): Dagstart {
     agenda: agenda(repo, 'poh-s'),
     stappen: [
       {
-        id: 'voorbereiden', naam: 'Voorbereiden', omschrijving: 'Spreekuur van vandaag klaarzetten',
-        watZieIk: 'Per patiënt wat er binnen is, wat ontbreekt en wat er besproken moet worden.',
-        aantal: voorbereidingen.length,
-        aandacht: voorbereidingen.filter((v) => !v.compleet).length,
+        id: 'aanloop', naam: 'Aanloop', omschrijving: 'Komende afspraken die nog niet rond zijn',
+        watZieIk: 'Wie over een paar dagen komt terwijl het bloedonderzoek of de vragenlijst '
+          + 'nog niet binnen is — nu bellen of de afspraak verzetten.',
+        aantal: aanloopregels.length,
+        aandacht: aanloopregels.filter((a) => a.status === 'bellen' || a.status === 'verzetten').length,
       },
       {
-        id: 'spreekuur', naam: 'Spreekuur', omschrijving: 'Consulten voeren en registreren',
-        watZieIk: 'Het plan van deze patiënt, de suggesties, en registratie in één scherm.',
+        id: 'spreekuur', naam: 'Spreekuur', omschrijving: 'Mijn patiënten van vandaag',
+        watZieIk: 'Per patiënt de voorbereiding: wat er binnen is, wat de vragenlijst zegt '
+          + 'en waar dit consult over moet gaan.',
         aantal: afspraken.length,
         aandacht: voorbereidingen.filter((v) => v.signalen.some((s) => s.ernst !== 'informatief')).length,
+      },
+      {
+        id: 'opvolgen', naam: 'Opvolgen', omschrijving: 'Binnengekomen, vraagt nu een besluit',
+        watZieIk: 'Labuitslagen, ingevulde vragenlijsten en thuismetingen van mensen zonder '
+          + 'afspraak — vaak genoeg met een bericht of een recept afgehandeld.',
+        aantal: opvolgregels.length,
+        aandacht: opvolgregels.filter((o) => o.ernst !== 'informatief').length,
       },
       {
         id: 'monitoren', naam: 'Monitoren', omschrijving: 'Patiënten die ik op afstand volg',
@@ -262,7 +306,13 @@ export interface Voorbereiding {
   modules: { id: string; naam: string; icoon: string }[];
   compleet: boolean;
   binnen: string[];
+  /**
+   * Wat vóór dit consult binnen had moeten zijn en er niet is. Alleen dát is een
+   * tekort; wat in de spreekkamer gemeten wordt, hoort in `tijdensConsult`.
+   */
   ontbreekt: string[];
+  /** Wat de POH zo meteen zelf doet: voetonderzoek, spirometrie, rookstatus. */
+  tijdensConsult: string[];
   signalen: Signaal[];
   /** De twee tot drie dingen die dit consult echt moeten opleveren. */
   gespreksonderwerpen: { titel: string; bevinding: string; ernst: string }[];
@@ -270,6 +320,8 @@ export interface Voorbereiding {
   zelfredzaamheid?: { gemiddelde: number; niveau: string; knelpunten: string[] };
   /** Voorbereiding uit de wachtkamer, geleverd door een ingebedde partnerapp. */
   intake?: WachtkamerIntake;
+  /** De consultvoorbereidende vragenlijst met de antwoorden van de patiënt. */
+  vragenlijst?: Vragenlijstinzage;
 }
 
 export function consultvoorbereiding(repo: DossierRepository): Voorbereiding[] {
@@ -283,15 +335,35 @@ export function consultvoorbereiding(repo: DossierRepository): Voorbereiding[] {
     const eerste = plan.contacten[0];
     const lijst = suggestiesVoor(repo, dossier, plan);
 
+    /*
+     * Drie stapels, niet twee.
+     *
+     * 'Ontbreekt' betekende hier alles wat nog geen recente waarde had — en dus stond er
+     * bij vrijwel iedereen 'voetonderzoek' en 'rookstatus' bij, terwijl dat nu juist de
+     * dingen zijn die de POH straks in de spreekkamer doet. Daarmee las de kaart als een
+     * achterstand terwijl het gewoon de agenda van het consult was.
+     *
+     * Wat écht ontbreekt, is wat vooraf geregeld had moeten zijn: labuitslagen en de
+     * vragenlijst. Blijft dat leeg, dan is het consult niet af te maken, en dan hoort
+     * deze patiënt niet vandaag maar in de aanloop thuis.
+     */
     const binnen: string[] = [];
     const ontbreekt: string[] = [];
+    const tijdensConsult: string[] = [];
     for (const meting of eerste?.metingen ?? []) {
-      if (meting.laatsteOp && meting.vervaltOp > datum) binnen.push(`${meting.naam} ${meting.laatsteWaarde ?? ''}`.trim());
-      else ontbreekt.push(meting.naam);
+      if (meting.laatsteOp && meting.vervaltOp > datum) {
+        binnen.push(`${meting.naam} ${meting.laatsteWaarde ?? ''}`.trim());
+      } else if (meting.labVooraf) {
+        ontbreekt.push(meting.naam);
+      } else {
+        tijdensConsult.push(meting.naam);
+      }
     }
-    if ((eerste?.vragenlijsten.length ?? 0) > 0 && dossier.patient.id.charCodeAt(6) % 3 === 0) {
-      ontbreekt.push('voorbereidingsvragenlijst');
-    }
+
+    const afname = repo.afnames(dossier.patient.id)
+      .find((a) => a.vragenlijstId === 'vl-consultvoorbereiding');
+    const vragenlijst = afname ? bouwInzage(afname, peildatum) : undefined;
+    if (vragenlijst && vragenlijst.status === 'open') ontbreekt.push(vragenlijst.naam.toLowerCase());
 
     return [{
       tijd: afspraak.start.slice(11, 16),
@@ -303,6 +375,7 @@ export function consultvoorbereiding(repo: DossierRepository): Voorbereiding[] {
       compleet: ontbreekt.length === 0,
       binnen,
       ontbreekt,
+      tijdensConsult,
       signalen: signalen(dossier, peildatum),
       gespreksonderwerpen: lijst
         .filter((s) => s.klasse === 'klinisch')
@@ -317,11 +390,361 @@ export function consultvoorbereiding(repo: DossierRepository): Voorbereiding[] {
           }
         : undefined,
       intake: repo.intakes().find((i) => i.patientId === dossier.patient.id),
+      vragenlijst,
     }];
   });
 }
 
-// ── 3. Monitoring ───────────────────────────────────────────────────────────
+// ── 3. Aanloop ──────────────────────────────────────────────────────────────
+
+/**
+ * DE AANLOOP NAAR EEN CONTROLE
+ *
+ * Wat hier zichtbaar wordt, is nu bij iedere praktijk onzichtbaar. Drie weken voor een
+ * chronische controle gaat er automatisch een uitnodiging uit om bloed te laten prikken.
+ * Bij de meeste mensen gebeurt dat ook. Bij een deel niet, en dat merkt de praktijk pas
+ * op het moment dat de patiënt in de spreekkamer zit — waarna het consult over niets
+ * gaat en er een nieuwe afspraak gemaakt moet worden.
+ *
+ * Het systeem weet dit allemaal ruim van tevoren. Het weet wanneer de afspraak staat,
+ * wat er vooraf binnen moet zijn, wat er binnen is en hoeveel dagen er nog over zijn.
+ * Het enige dat ontbrak, was een plek waar dat bij elkaar staat met een advies erbij.
+ *
+ * De kern is dat hetzelfde feit een ander gevolg heeft naarmate de afspraak dichterbij
+ * komt. 'Nog niet geprikt' is over drie weken een herinnering, over acht dagen een
+ * telefoontje, en over drie dagen een reden om de afspraak te verzetten.
+ */
+
+export type Aanloopstatus = 'op-schema' | 'herinnering-loopt' | 'bellen' | 'verzetten';
+
+export const AANLOOPSTATUS_LABEL: Record<Aanloopstatus, string> = {
+  'op-schema': 'Op schema',
+  'herinnering-loopt': 'Herinnering loopt',
+  bellen: 'Bellen',
+  verzetten: 'Verzetten',
+};
+
+export interface Aanloopregel {
+  afspraakId: string;
+  patientId: string;
+  naam: string;
+  leeftijd: number;
+  datum: string;
+  tijd: string;
+  /** Aantal dagen tot de afspraak. */
+  dagenTot: number;
+  modules: { id: string; naam: string; icoon: string }[];
+  /** Wat vóór het consult binnen moet zijn, met de stand van zaken per onderdeel. */
+  vooraf: { naam: string; binnen: boolean; op?: string }[];
+  vragenlijst?: { naam: string; status: 'ingevuld' | 'open'; openDagen?: number };
+  status: Aanloopstatus;
+  /** Wat de POH nu zou doen. Eén zin, geen keuzemenu. */
+  advies: string;
+  toelichting: string;
+}
+
+const AANLOOPGEWICHT: Record<Aanloopstatus, number> = {
+  verzetten: 0, bellen: 1, 'herinnering-loopt': 2, 'op-schema': 3,
+};
+
+export function aanloop(repo: DossierRepository): Aanloopregel[] {
+  const peildatum = repo.peildatum();
+  const vandaag = peildatum.toISOString().slice(0, 10);
+
+  const regels = repo.aanloop().flatMap((afspraak): Aanloopregel[] => {
+    const dossier = repo.dossier(afspraak.patientId);
+    if (!dossier) return [];
+    const plan = planVoor(repo, dossier);
+    const datum = afspraak.start.slice(0, 10);
+    const dagenTot = Math.round(
+      (new Date(datum).getTime() - new Date(vandaag).getTime()) / 86_400_000,
+    );
+
+    /*
+     * 'Binnen' is niet 'ooit geprikt'. Een LDL van vorig jaar staat in het dossier maar
+     * zegt niets over de vraag of deze controle door kan gaan; daarvoor telt alleen of de
+     * uitslag nog geldig is op het moment van de afspraak.
+     */
+    const vooraf = (plan.contacten[0]?.metingen ?? [])
+      .filter((m) => m.labVooraf)
+      .map((m) => ({
+        naam: m.naam,
+        binnen: Boolean(m.laatsteOp) && m.vervaltOp > datum,
+        op: m.laatsteOp,
+      }));
+
+    const afname = repo.afnames(dossier.patient.id)
+      .find((a) => a.vragenlijstId === 'vl-jaarscreening');
+    const inzage = afname ? bouwInzage(afname, peildatum) : undefined;
+
+    const openLab = vooraf.filter((v) => !v.binnen);
+    const openLijst = inzage?.status === 'open';
+    const ietsOpen = openLab.length > 0 || openLijst;
+
+    /*
+     * De grens ligt op vijf dagen. Dat is geen willekeurig getal: bloed prikken en de
+     * uitslag terugkrijgen kost in deze regio twee tot drie werkdagen, dus onder de vijf
+     * dagen is het niet meer te halen en is verzetten eerlijker dan hopen.
+     */
+    const status: Aanloopstatus = !ietsOpen
+      ? 'op-schema'
+      : dagenTot <= 5 ? 'verzetten'
+      : dagenTot <= 10 ? 'bellen'
+      : 'herinnering-loopt';
+
+    // Opsomming met komma's en één 'en' aan het eind. Drie keer 'en' in één zin leest
+    // als een foutmelding, en dat is precies niet de indruk die dit blok moet wekken.
+    const delen = [...openLab.map((v) => v.naam), ...(openLijst ? ['de vragenlijst'] : [])];
+    const wat = delen.length <= 1
+      ? delen.join('')
+      : `${delen.slice(0, -1).join(', ')} en ${delen.at(-1)}`;
+
+    const advies = {
+      'op-schema': 'Niets te doen — alles is binnen.',
+      'herinnering-loopt': `Herinnering staat uit voor ${wat}. Nog ${dagenTot} dagen.`,
+      bellen: `Bellen: ${wat} nog niet binnen, en er zijn nog ${dagenTot} dagen.`,
+      verzetten: `Verzetten: ${wat} komt in ${dagenTot} dagen niet meer op tijd binnen.`,
+    }[status];
+
+    const toelichting = {
+      'op-schema': 'De voorbereiding is compleet; dit consult kan doorgaan zoals gepland.',
+      'herinnering-loopt': 'De automatische uitnodiging is verstuurd. Er is nog ruim tijd; '
+        + 'ingrijpen is nu niet nodig.',
+      bellen: 'De uitnodiging heeft niet gewerkt. Een telefoontje nu houdt de afspraak heel; '
+        + 'wachten betekent dat de afspraak straks alsnog verzet moet worden.',
+      verzetten: 'Prikken en de uitslag terugkrijgen kost twee tot drie werkdagen. Dit consult '
+        + 'gaat zonder uitslag over niets; een week later verzetten kost minder dan het dubbel doen.',
+    }[status];
+
+    return [{
+      afspraakId: afspraak.id,
+      patientId: dossier.patient.id,
+      naam: volledigeNaam(dossier),
+      leeftijd: leeftijd(dossier, peildatum),
+      datum,
+      tijd: afspraak.start.slice(11, 16),
+      dagenTot,
+      modules: plan.modules.map((m) => ({ id: m.id, naam: m.naam, icoon: m.icoon })),
+      vooraf,
+      vragenlijst: inzage
+        ? { naam: inzage.naam, status: inzage.status, openDagen: inzage.openDagen }
+        : undefined,
+      status,
+      advies,
+      toelichting,
+    }];
+  });
+
+  return regels.sort((a, b) =>
+    AANLOOPGEWICHT[a.status] - AANLOOPGEWICHT[b.status] || a.dagenTot - b.dagenTot);
+}
+
+// ── 4. Opvolgen ─────────────────────────────────────────────────────────────
+
+/**
+ * WAT ER BINNENKWAM EN OM EEN BESLUIT VRAAGT
+ *
+ * Tussen het spreekuur en het monitoren zit een categorie die in geen enkel scherm
+ * thuishoorde: dingen die zijn binnengekomen sinds de vorige keer dat je keek, en waar
+ * je nu iets mee kunt zonder dat er een afspraak voor nodig is.
+ *
+ * Een labuitslag die buiten de streefwaarde ligt. Een vragenlijst waarin iemand
+ * geldzorgen aankruist. Tien dagen thuisgemeten bloeddrukken die structureel te hoog
+ * zijn. Stuk voor stuk dingen waar een bericht, een recept of een telefoontje het
+ * antwoord op is — en waarvoor de patiënt nu drie maanden moet wachten omdat de volgende
+ * controle nu eenmaal in de agenda staat.
+ *
+ * Monitoren beantwoordt de vraag 'hoe gaat het met deze groep'. Opvolgen beantwoordt
+ * 'waar kan ik vandaag iets doen'. Dat zijn twee verschillende vragen en dus twee blokken.
+ */
+
+export type Opvolgbron = 'labuitslag' | 'vragenlijst' | 'thuismeting';
+
+export const OPVOLGBRON_LABEL: Record<Opvolgbron, string> = {
+  labuitslag: 'Labuitslag binnen',
+  vragenlijst: 'Vragenlijst ingevuld',
+  thuismeting: 'Thuismetingen',
+};
+
+export interface Opvolgregel {
+  id: string;
+  patientId: string;
+  naam: string;
+  leeftijd: number;
+  bron: Opvolgbron;
+  /** Wanneer het binnenkwam. */
+  binnenOp: string;
+  titel: string;
+  bevinding: string;
+  ernst: 'informatief' | 'aandacht' | 'urgent';
+  /** Wat het systeem voorstelt te doen — de POH beslist. */
+  voorstel: string;
+}
+
+const ERNSTGEWICHT = { urgent: 0, aandacht: 1, informatief: 2 } as const;
+
+export function opvolgen(repo: DossierRepository): Opvolgregel[] {
+  const peildatum = repo.peildatum();
+  const vandaag = peildatum.toISOString().slice(0, 10);
+  // Wie vandaag komt, hoort in het spreekuur; hier staat alleen wie geen afspraak heeft.
+  const vandaagOpSpreekuur = new Set(repo.spreekuur(vandaag).map((a) => a.patientId));
+  const regels: Opvolgregel[] = [];
+
+  for (const dossier of repo.alleDossiers()) {
+    const patientId = dossier.patient.id;
+    if (vandaagOpSpreekuur.has(patientId)) continue;
+    const naam = volledigeNaam(dossier);
+    const jaren = leeftijd(dossier, peildatum);
+
+    // 1. Labuitslagen die de afgelopen twee weken binnenkwamen en afwijken.
+    const recentLab = dossier.observaties
+      .filter((o) => o.herkomst.bron === 'extern-systeem' && o.herkomst.opEigenAanvraag
+        && (peildatum.getTime() - new Date(o.effectief).getTime()) / 86_400_000 <= 14);
+    for (const uitslag of recentLab) {
+      const code = uitslag.code.coding?.[0]?.code;
+      const waarde = numeriekeWaarde(uitslag);
+      if (!code || waarde === undefined) continue;
+      const grens = LABGRENS[code];
+      if (!grens || !grens.buiten(waarde)) continue;
+      regels.push({
+        id: `opv-lab-${uitslag.id}`,
+        patientId, naam, leeftijd: jaren,
+        bron: 'labuitslag',
+        binnenOp: uitslag.effectief.slice(0, 10),
+        titel: `${metingNaam(code)} ${waarde} ${uitslag.waarde && 'unit' in uitslag.waarde ? uitslag.waarde.unit ?? '' : ''}`.trim(),
+        bevinding: grens.bevinding,
+        ernst: grens.ernst,
+        voorstel: grens.voorstel,
+      });
+    }
+
+    // 2. Ingevulde vragenlijsten waar een regel op afging.
+    for (const afname of repo.afnames(patientId)) {
+      if (!afname.ingevuldOp || afname.overgenomenOp) continue;
+      const inzage = bouwInzage(afname, peildatum);
+      const zwaarste = inzage?.signalen.find((sg) => sg.ernst !== 'informatief');
+      if (!inzage || !zwaarste) continue;
+      regels.push({
+        id: `opv-vl-${afname.id}`,
+        patientId, naam, leeftijd: jaren,
+        bron: 'vragenlijst',
+        binnenOp: afname.ingevuldOp.slice(0, 10),
+        titel: inzage.kernzin ? `“${inzage.kernzin}”` : zwaarste.tekst,
+        bevinding: `${inzage.naam}, ingevuld ${inzage.kanaal}. ${zwaarste.onderbouwing}`,
+        ernst: zwaarste.ernst,
+        voorstel: `${zwaarste.tekst.replace(/[.\s]*$/, '')}. Antwoorden lezen en overnemen; `
+          + 'bellen als het niet tot de volgende afspraak kan wachten.',
+      });
+    }
+
+    // 3. Thuisgemeten bloeddruk: niet één waarde maar het gemiddelde van de reeks.
+    const thuis = dossier.observaties.filter((o) => o.herkomst.bron === 'patient'
+      && o.code.coding?.[0]?.code === CODE.rrSys);
+    if (thuis.length >= 5) {
+      const waarden = thuis.map((o) => numeriekeWaarde(o)).filter((w): w is number => w !== undefined);
+      const gemiddelde = Math.round(waarden.reduce((a, b) => a + b, 0) / waarden.length);
+      const laatste = thuis.map((o) => o.effectief).sort().at(-1)!.slice(0, 10);
+      if (gemiddelde >= 140) {
+        regels.push({
+          id: `opv-thuis-${patientId}`,
+          patientId, naam, leeftijd: jaren,
+          bron: 'thuismeting',
+          binnenOp: laatste,
+          titel: `Thuisbloeddruk gemiddeld ${gemiddelde} mmHg over ${waarden.length} metingen`,
+          bevinding: 'De thuisreeks ligt boven de streefwaarde van 135 mmHg. Bij thuismeting '
+            + 'telt het gemiddelde, niet de hoogste waarde.',
+          ernst: gemiddelde >= 160 ? 'urgent' : 'aandacht',
+          voorstel: 'Medicatie aanpassen of een kort belcontact plannen; hiervoor is geen '
+            + 'spreekkamerbezoek nodig.',
+        });
+      }
+    }
+  }
+
+  /*
+   * Hoogstens vier per bron. Zonder die grens vult de bron met de meeste rijen het hele
+   * blok — vandaag de vragenlijsten, morgen het lab — en verdwijnt juist de ene
+   * thuismeting die om een besluit vroeg onder aan de lijst.
+   */
+  const perBron = new Map<Opvolgbron, number>();
+  return regels
+    .sort((a, b) => ERNSTGEWICHT[a.ernst] - ERNSTGEWICHT[b.ernst]
+      || b.binnenOp.localeCompare(a.binnenOp))
+    .filter((regel) => {
+      const aantal = (perBron.get(regel.bron) ?? 0) + 1;
+      perBron.set(regel.bron, aantal);
+      return aantal <= 4;
+    })
+    .slice(0, 12);
+}
+
+/**
+ * Wanneer een uitslag om een besluit vraagt.
+ *
+ * Bewust ruimer dan de streefwaarde: niet elke waarde net buiten de norm hoeft vandaag
+ * behandeld te worden. Wat hier staat is de grens waarboven wachten tot de volgende
+ * controle niet meer uit te leggen is.
+ */
+const LABGRENS: Record<string, {
+  buiten: (waarde: number) => boolean;
+  ernst: 'informatief' | 'aandacht' | 'urgent';
+  bevinding: string;
+  voorstel: string;
+}> = {
+  [CODE.hba1c]: {
+    buiten: (w) => w >= 64,
+    ernst: 'aandacht',
+    bevinding: 'HbA1c boven 64 mmol/mol. De glucoseregulatie is onvoldoende.',
+    voorstel: 'Medicatie intensiveren of het consult naar voren halen.',
+  },
+  [CODE.egfr]: {
+    buiten: (w) => w < 45,
+    ernst: 'urgent',
+    bevinding: 'eGFR onder 45 ml/min. Dit raakt de dosering van meerdere middelen.',
+    voorstel: 'Overleggen met de huisarts en de medicatie op nierfunctie nalopen.',
+  },
+  [CODE.ldl]: {
+    buiten: (w) => w >= 3.5,
+    ernst: 'aandacht',
+    bevinding: 'LDL boven 3,5 mmol/l bij een verhoogd vaatrisico.',
+    voorstel: 'Statine starten of ophogen; overleggen met de huisarts.',
+  },
+  [CODE.acr]: {
+    buiten: (w) => w >= 3,
+    ernst: 'aandacht',
+    bevinding: 'Albumine-creatinineratio verhoogd — aanwijzing voor nierschade.',
+    voorstel: 'Herhalen en de bloeddrukbehandeling opnieuw wegen.',
+  },
+};
+
+/** Alle vragenlijsten van één patiënt, nieuwste eerst. */
+export function vragenlijstenVoor(
+  repo: DossierRepository, patientId: string,
+): Vragenlijstinzage[] {
+  const peildatum = repo.peildatum();
+  return repo.afnames(patientId)
+    .map((afname) => bouwInzage(afname, peildatum))
+    .filter((x): x is Vragenlijstinzage => x !== undefined)
+    .sort((a, b) => (b.ingevuldOp ?? b.uitgezetOp).localeCompare(a.ingevuldOp ?? a.uitgezetOp));
+}
+
+/**
+ * Overnemen: van 'wat de patiënt zei' naar 'wat er in het dossier staat'.
+ *
+ * De antwoorden waren al zichtbaar — daar was geen handeling voor nodig. Wat hier
+ * gebeurt is het aanvaarden ervan: vanaf nu staat de praktijk ervoor in, en dus staat
+ * eronder wie dat heeft gedaan en wanneer. Dat is geen administratieve formaliteit maar
+ * de grens tussen een patiëntmelding en een klinische registratie (ADR-0012).
+ */
+export function neemVragenlijstOver(
+  repo: DossierRepository, afnameId: string, door: string,
+): Vragenlijstinzage | undefined {
+  repo.neemAfnameOver(afnameId, door);
+  const afname = repo.afnames().find((a) => a.id === afnameId);
+  return afname ? bouwInzage(afname, repo.peildatum()) : undefined;
+}
+
+// ── 5. Monitoring ───────────────────────────────────────────────────────────
 
 export interface MonitoringRegel {
   patientId: string;
@@ -331,6 +754,15 @@ export interface MonitoringRegel {
   signalen: Signaal[];
   suggesties: Suggestie[];
   zelfredzaamheid?: { gemiddelde: number; niveau: string; richting?: string };
+  /**
+   * De laatst ingevulde vragenlijst.
+   *
+   * Monitoren op afstand betekent nu kijken naar meetwaarden, en meetwaarden zeggen niet
+   * of iemand het volhoudt. Wie in de vragenlijst aangeeft dat hij zijn medicijnen niet
+   * meer ophaalt, verdient eerder aandacht dan wie een HbA1c van 59 heeft. Daarom staat
+   * hij ook hier, niet alleen bij de mensen die toevallig een afspraak hebben.
+   */
+  vragenlijst?: Vragenlijstinzage;
 }
 
 export function monitoringCohort(repo: DossierRepository): MonitoringRegel[] {
@@ -341,12 +773,17 @@ export function monitoringCohort(repo: DossierRepository): MonitoringRegel[] {
     const plan = planVoor(repo, dossier);
     const sig = signalen(dossier, peildatum);
     if (plan.modules.length === 0) return [];
+    const afname = repo.afnames(dossier.patient.id)
+      .filter((a) => a.ingevuldOp)
+      .sort((a, b) => (a.ingevuldOp ?? '').localeCompare(b.ingevuldOp ?? ''))
+      .at(-1);
     return [{
       patientId: dossier.patient.id,
       naam: volledigeNaam(dossier),
       leeftijd: leeftijd(dossier, peildatum),
       modules: plan.modules.map((m) => ({ id: m.id, naam: m.naam, icoon: m.icoon })),
       signalen: sig,
+      vragenlijst: afname ? bouwInzage(afname, peildatum) : undefined,
       suggesties: suggestiesVoor(repo, dossier, plan).filter((s) => s.klasse === 'klinisch').slice(0, 3),
       zelfredzaamheid: plan.zelfredzaamheid && plan.zelfredzaamheid.gemiddelde > 0
         ? {
@@ -372,7 +809,7 @@ export function monitoringCohort(repo: DossierRepository): MonitoringRegel[] {
   return regels.sort((a, b) => gewicht(b) - gewicht(a));
 }
 
-// ── 4. Instroom ─────────────────────────────────────────────────────────────
+// ── 6. Instroom ─────────────────────────────────────────────────────────────
 
 export function instroom(repo: DossierRepository) {
   return instroomOverzicht(
@@ -383,7 +820,7 @@ export function instroom(repo: DossierRepository) {
   );
 }
 
-// ── 5. Dagafsluiting ────────────────────────────────────────────────────────
+// ── 7. Dagafsluiting ────────────────────────────────────────────────────────
 
 export interface Afsluititem {
   id: string;

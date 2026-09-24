@@ -284,6 +284,55 @@ export function genereerSpreekuur(praktijk: Praktijk, zaad = 42): Appointment[] 
 }
 
 /**
+ * Het spreekuur van de komende weken — de aanloop.
+ *
+ * Deze afspraken staan al gepland, en daar zit precies het werk dat nu onzichtbaar is.
+ * Voor elk van deze consulten is drie weken geleden een uitnodiging uitgegaan om bloed
+ * te laten prikken. Een deel van de mensen doet dat. Een deel niet, en daar hoort de
+ * praktijk vóór de afspraak achter te komen, niet erna: een controle zonder uitslag
+ * kost twintig minuten en levert niets op.
+ *
+ * De dagen zijn met opzet gespreid van vlakbij tot ver weg, zodat zichtbaar wordt dat
+ * hetzelfde feit ("nog niet geprikt") een heel ander gevolg heeft bij een afspraak over
+ * drie dagen dan bij een afspraak over drie weken.
+ */
+export function genereerAanloop(
+  praktijk: Praktijk, uitgesloten: Set<string>, zaad = 77,
+): Appointment[] {
+  const willekeurig = rng(zaad);
+  const kandidaten = praktijk.dossiers.filter(
+    (d) => d.episodes.length >= 1 && !uitgesloten.has(d.patient.id),
+  );
+  const dagenVooruit = [3, 4, 5, 6, 8, 9, 11, 12, 14, 16, 18, 21, 23, 26];
+  const tijden = ['09:00', '09:40', '10:20', '11:00', '13:30', '14:10', '14:50'];
+
+  const afspraken: Appointment[] = [];
+  for (let i = 0; i < dagenVooruit.length; i++) {
+    const dossier = kandidaten[Math.floor(willekeurig() * kandidaten.length)];
+    if (!dossier || afspraken.some((a) => a.patientId === dossier.patient.id)) continue;
+    const dag = new Date(praktijk.peildatum);
+    dag.setDate(dag.getDate() + dagenVooruit[i]);
+    // Geen controles in het weekend: dat valt in een demo meteen op.
+    if (dag.getDay() === 6) dag.setDate(dag.getDate() + 2);
+    if (dag.getDay() === 0) dag.setDate(dag.getDate() + 1);
+
+    afspraken.push({
+      resourceType: 'Appointment',
+      id: `afs-aanloop-${i + 1}`,
+      patientId: dossier.patient.id,
+      start: `${dag.toISOString().slice(0, 10)}T${tijden[i % tijden.length]}:00+02:00`,
+      eindeMinuten: 20,
+      soort: 'consult',
+      afspraakType: 'chronische-controle',
+      uitvoerder: { id: 'zv-poh-1', naam: 'Sanne Bakker', rol: 'poh-s' },
+      status: 'booked',
+      reden: 'Chronische controle',
+    });
+  }
+  return afspraken.sort((a, b) => a.start.localeCompare(b.start));
+}
+
+/**
  * Zelfredzaamheid per patiënt, deterministisch afgeleid.
  *
  * Bewust gecorreleerd met leeftijd, aantal aandoeningen en polyfarmacie: wie meer

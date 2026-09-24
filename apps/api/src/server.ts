@@ -5,12 +5,13 @@ import {
   type CatalogusSoort, type PersoonlijkPlan,
 } from '@zpe/care-engine';
 import {
-  agenda, assistentOverzicht, beheer, berichten, consultvoorbereiding, controleerTweefactor,
+  aanloop, agenda, assistentOverzicht, beheer, berichten, consultvoorbereiding, controleerTweefactor,
   dagafsluiting, dagstart, dossierHistorie, gebruikersoverzicht, huisartsOverzicht, instroom,
   acuteInstroom, beantwoordPatientbericht, contactdossier, contactvormen, groepsconsulten, handelAcuutAf,
   medicatieoverzicht, medicatievoorbeeld, wijzigMedicatie,
   maakGroepsconsult, media, rapport, rapportExport, samenvatting,
   InMemoryRepository, intakes, legVerrichtingVast, meetreeksen, meldAan, monitoringCohort,
+  neemVragenlijstOver, opvolgen, vragenlijstenVoor,
   orderOverzicht, orderVoorstellen, overleg, pakAcuutOp, patientOverzicht, plaatsLosseOrders,
   planbord, planbordPraktijk, praktijkrapportage, praktijkSamenvatting, registreerConsult,
   terminologie, verrichtingen, verwerkVragenlijst, vraagAfspraakAan, zetOpBespreeklijst,
@@ -35,7 +36,16 @@ app.options('/*', async (_req, reply) => reply.code(204).send());
 
 app.get('/api/poh/dagstart', async () => dagstart(repo));
 app.get('/api/poh/voorbereiding', async () => consultvoorbereiding(repo));
+app.get('/api/poh/aanloop', async () => aanloop(repo));
+app.get('/api/poh/opvolgen', async () => opvolgen(repo));
 app.get('/api/poh/monitoring', async () => monitoringCohort(repo));
+
+app.get<{ Params: { id: string } }>('/api/patient/:id/vragenlijsten', async (req) =>
+  vragenlijstenVoor(repo, req.params.id));
+
+app.post<{ Params: { id: string }; Body: { door: string } }>(
+  '/api/vragenlijst/:id/overnemen', async (req) =>
+    ({ inzage: neemVragenlijstOver(repo, req.params.id, req.body.door) }));
 app.get('/api/poh/instroom', async () => instroom(repo));
 app.get('/api/poh/afronden', async () => dagafsluiting(repo));
 app.get('/api/praktijk/samenvatting', async () => praktijkSamenvatting(repo));
@@ -624,7 +634,7 @@ const poort = Number(process.env.PORT ?? 3000);
 app.listen({ port: poort, host: '0.0.0.0' })
   .then(() => {
     console.log(`API luistert op http://localhost:${poort}`);
-    console.log(`  Werkproces : /api/poh/dagstart, /voorbereiding, /monitoring, /instroom, /afronden`);
+    console.log(`  Werkproces : /api/poh/dagstart, /aanloop, /voorbereiding, /opvolgen, /monitoring, /instroom, /afronden`);
     console.log(`  Protocol   : /api/protocol  (${modules.length} aandachtsgebieden, regelset ${REGELSET_VERSIE})`);
     console.log(`  FHIR       : /fhir/metadata, /fhir/CarePlan?patient=...`);
     console.log(`  LET OP     : ${DEMO_SEED_WAARSCHUWING}`);
