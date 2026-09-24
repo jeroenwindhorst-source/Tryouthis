@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
-  api, type Afspraakverzoek, type Gebruiker, type Praktijkplanbord, type Slot, type Zoektreffer,
+  api, type Afspraakverzoek, type Gebruiker, type Praktijkplanbord, type Slot,
+  type Taakregel, type Werkblok, type Zoektreffer,
 } from '../api';
 import { useData } from '../gebruik';
 import { Icoon } from '../iconen';
@@ -17,7 +18,20 @@ const ROUTE_MERK: Record<string, string> = {
 /** Wat er aan de muis hangt, of wat er geselecteerd is bij toetsenbordgebruik. */
 type Sleep =
   | { soort: 'verzoek'; verzoek: Afspraakverzoek }
-  | { soort: 'patient'; patientId: string; naam: string; reden: string; duurMinuten: number };
+  | { soort: 'patient'; patientId: string; naam: string; reden: string; duurMinuten: number }
+  /*
+   * Een uitgezette taak. Die hoort hier omdat hij tijd kost en dus een plek in de dag
+   * verdient — terugbellen is geen 'tussendoortje' maar werk met een duur.
+   */
+  | { soort: 'taak'; taak: Taakregel }
+  /*
+   * Eigen werk zonder patiënt.
+   *
+   * Een agenda die alleen patiënten kent, liegt: uitslagen nalopen, terugbellen en
+   * administratie kosten evenveel tijd als een consult maar zijn onzichtbaar. Het gevolg
+   * is bekend — de dag zit vol en er is niets gepland voor wat er ook nog moet.
+   */
+  | { soort: 'blok'; blok: Werkblok };
 
 /**
  * HET PLANBORD
@@ -41,6 +55,7 @@ export function Plannen({ gebruiker, openPatient }: {
   openPatient: (id: string) => void;
 }) {
   const { data, fout, bezig, setData } = useData(() => api.planbordPraktijk());
+  const taken = useData(() => api.taken(gebruiker.id), [gebruiker.id]);
   const [gekozen, setGekozen] = useState<Sleep | undefined>();
   const [bezigMet, setBezigMet] = useState<string | undefined>();
 
@@ -53,6 +68,12 @@ export function Plannen({ gebruiker, openPatient }: {
     try {
       if (gekozen.soort === 'verzoek') {
         setData(await api.planAfspraak(gekozen.verzoek.id, slot.start));
+      } else if (gekozen.soort === 'taak') {
+        await api.planTaak(gekozen.taak.id, slot.start);
+        setData(await api.planbordPraktijk());
+        taken.herlaad();
+      } else if (gekozen.soort === 'blok') {
+        setData(await api.planWerkblok(gekozen.blok.id, slot.rol, slot.start));
       } else {
         setData(await api.planLosseAfspraak({
           patientId: gekozen.patientId, rol: slot.rol, start: slot.start,
@@ -62,6 +83,9 @@ export function Plannen({ gebruiker, openPatient }: {
       setGekozen(undefined);
     } finally { setBezigMet(undefined); }
   };
+
+  const openTaken = (taken.data?.mijn ?? []).filter((t) => t.status === 'open');
+  const uitgezet = (taken.data?.uitgezet ?? []).filter((t) => t.status !== 'afgerond');
 
   // De assistent plant voor iedereen; voor haar is geen enkele agenda 'de eigen agenda'.
   const eigenRol = gebruiker.rol === 'assistent' ? undefined : gebruiker.rol;
@@ -81,6 +105,9 @@ export function Plannen({ gebruiker, openPatient }: {
           </div>
         </div>
         <div className="acties">
+          <span className="merkje" data-toon={openTaken.length > 0 ? 'aandacht' : 'ok'}>
+            {openTaken.length} {openTaken.length === 1 ? 'eigen taak' : 'eigen taken'}
+          </span>
           <span className="merkje" data-toon={data.teplannen.length > 0 ? 'aandacht' : 'ok'}>
             {data.teplannen.length} nog in te plannen
           </span>
@@ -91,12 +118,19 @@ export function Plannen({ gebruiker, openPatient }: {
         <div className="selectiebalk">
           <Icoon naam="agenda" grootte={15} />
           <strong>
-            {gekozen.soort === 'verzoek' ? gekozen.verzoek.naam : gekozen.naam}
+            {gekozen.soort === 'verzoek' ? gekozen.verzoek.naam
+              : gekozen.soort === 'taak' ? gekozen.taak.titel
+              : gekozen.soort === 'blok' ? gekozen.blok.titel
+              : gekozen.naam}
           </strong>
           <span className="mini">
             {gekozen.soort === 'verzoek'
               ? `${gekozen.verzoek.reden} · ${gekozen.verzoek.duurMinuten} min · bij de ${ROL_LABEL[gekozen.verzoek.voorRol] ?? gekozen.verzoek.voorRol}`
-              : `${gekozen.reden} · ${gekozen.duurMinuten} min`}
+              : gekozen.soort === 'taak'
+                ? `${gekozen.taak.aanleiding} · ${gekozen.taak.duurMinuten} min`
+                : gekozen.soort === 'blok'
+                  ? `${gekozen.blok.reden} · ${gekozen.blok.duurMinuten} min`
+                  : `${gekozen.reden} · ${gekozen.duurMinuten} min`}
           </span>
           <span className="mini" style={{ marginLeft: 'auto' }}>
             Klik nu op een vrije plek, of sleep hem erheen.
@@ -109,6 +143,96 @@ export function Plannen({ gebruiker, openPatient }: {
 
       <div className="planbord">
         <div className="planzijde">
+          {/*
+            De eigen werklijst hoort op het planbord en niet in een apart scherm: 'wat
+            moet ik nog doen' en 'waar past dat' zijn dezelfde vraag, en die beantwoord je
+            door ze naast elkaar te zetten.
+          */}
+          <Kaart titel="Mijn werklijst" icoon="bliksem" telling={openTaken.length}>
+            {openTaken.length === 0 && (
+              <Leeg tekst="Niets uitgezet bij jou. Wat je in Aanloop of Opvolgen uitzet, komt hier." />
+            )}
+            {openTaken.map((t) => (
+              <div key={t.id} className="planverzoek" draggable
+                data-gekozen={gekozen?.soort === 'taak' && gekozen.taak.id === t.id}
+                onDragStart={() => setGekozen({ soort: 'taak', taak: t })}
+                onClick={() => setGekozen({ soort: 'taak', taak: t })}>
+                <div className="kop">
+                  <Icoon naam={t.icoon} grootte={13} />
+                  <strong style={{ fontSize: 13 }}>{t.titel}</strong>
+                  {t.dringend && <span className="merkje" data-toon="urgent">vandaag</span>}
+                </div>
+                <div className="reden">{t.aanleiding}</div>
+                <div className="mini">
+                  {t.soortLabel} · {t.duurMinuten} min · uitgezet door {t.aangemaaktDoor}
+                  {t.uiterlijkOp && ` · uiterlijk ${t.uiterlijkOp}`}
+                </div>
+                <div className="knop-rij" style={{ marginTop: 7 }}>
+                  {t.patientId && (
+                    <button className="knop" data-toon="stil"
+                      onClick={(e) => { e.stopPropagation(); openPatient(t.patientId!); }}>
+                      <Icoon naam="klembord" grootte={12} /> Dossier
+                    </button>
+                  )}
+                  <button className="knop" data-toon="stil" disabled={bezigMet === t.id}
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      setBezigMet(t.id);
+                      try {
+                        await api.rondTaakAf(t.id, gebruiker.id, 'direct afgehandeld');
+                        taken.herlaad();
+                      } finally { setBezigMet(undefined); }
+                    }}>
+                    <Icoon naam="vink" grootte={12} /> Direct gedaan
+                  </button>
+                </div>
+              </div>
+            ))}
+          </Kaart>
+
+          {/*
+            Voorgedefinieerde blokken. Twintig minuten vrij is geen gat maar ruimte — en
+            die is meer waard als je hem kunt vullen met het werk dat er toch al ligt.
+          */}
+          <Kaart titel="Eigen werk inplannen" icoon="klembord">
+            <div className="chips" style={{ padding: '2px 0 8px' }}>
+              {(taken.data?.werkblokken ?? []).map((b) => (
+                <button key={b.id} className="merkje"
+                  data-toon={gekozen?.soort === 'blok' && gekozen.blok.id === b.id ? 'informatief' : 'neutraal'}
+                  draggable
+                  onDragStart={() => setGekozen({ soort: 'blok', blok: b })}
+                  onClick={() => setGekozen(
+                    gekozen?.soort === 'blok' && gekozen.blok.id === b.id
+                      ? undefined
+                      : { soort: 'blok', blok: b },
+                  )}>
+                  {b.titel} <span className="mini">{b.duurMinuten} min</span>
+                </button>
+              ))}
+            </div>
+            <p className="mini" style={{ margin: 0 }}>
+              Kies een blok en klik op een vrije plek. Zo staat er in de agenda dat de tijd
+              bezet is, en waarvoor — in plaats van dat hij er voor de buitenwereld vrij
+              uitziet.
+            </p>
+          </Kaart>
+
+          {uitgezet.length > 0 && (
+            <Kaart titel="Uitgezet bij een ander" icoon="persoon" telling={uitgezet.length}>
+              {uitgezet.map((t) => (
+                <div key={t.id} className="planverzoek" style={{ cursor: 'default' }}>
+                  <div className="kop">
+                    <strong style={{ fontSize: 13 }}>{t.titel}</strong>
+                    <span className="merkje" data-toon={t.status === 'gepland' ? 'ok' : 'informatief'}>
+                      {t.standLabel}
+                    </span>
+                  </div>
+                  <div className="mini">bij {t.voorNaam} · {t.soortLabel}</div>
+                </div>
+              ))}
+            </Kaart>
+          )}
+
           <Kaart titel="Nog in te plannen" icoon="klembord" telling={data.teplannen.length}>
             {data.teplannen.length === 0 && (
               <Leeg tekst="Niets openstaand. Alles wat aangevraagd is, staat in de agenda." />
@@ -196,11 +320,16 @@ function Dagkolom({ kolom, gekozen, eigen, bezigMet, opPlan, openPatient }: {
     ...kolom.slots.map((s) => ({ tijd: s.tijd, soort: 'vrij' as const, slot: s })),
   ].sort((a, b) => a.tijd.localeCompare(b.tijd));
 
-  const past = (slot: Slot) =>
-    !gekozen
-    || (gekozen.soort === 'verzoek'
-      ? gekozen.verzoek.voorRol === slot.rol && gekozen.verzoek.duurMinuten <= slot.duurMinuten
-      : true);
+  const past = (slot: Slot) => {
+    if (!gekozen) return true;
+    if (gekozen.soort === 'verzoek') {
+      return gekozen.verzoek.voorRol === slot.rol
+        && gekozen.verzoek.duurMinuten <= slot.duurMinuten;
+    }
+    // Een taak hoort in de agenda van wie hem oppakt, niet in de eerste vrije plek.
+    if (gekozen.soort === 'taak') return gekozen.taak.voorRol === slot.rol;
+    return true;
+  };
 
   return (
     <div className="dagkolom" data-eigen={eigen}>

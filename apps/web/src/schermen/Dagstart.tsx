@@ -1,7 +1,7 @@
 import { api, type AgendaRegel, type Processtap } from '../api';
 import { useData } from '../gebruik';
 import { Icoon } from '../iconen';
-import { Agenda, Fout, Kaart, Laden } from '../onderdelen';
+import { Agenda, Fout, Kaart, Laden, Werklijst } from '../onderdelen';
 
 const STAP_ICOON: Record<Processtap['id'], string> = {
   aanloop: 'klembord', spreekuur: 'agenda', opvolgen: 'bliksem', afronden: 'afvinken',
@@ -44,7 +44,8 @@ function Wachtkamerstand({ regels }: { regels: AgendaRegel[] }) {
   );
 }
 
-export function Dagstart({ gaNaar, openPatient }: {
+export function Dagstart({ gebruiker, gaNaar, openPatient }: {
+  gebruiker: { id: string };
   gaNaar: (scherm: string) => void;
   openPatient: (id: string) => void;
 }) {
@@ -92,6 +93,13 @@ export function Dagstart({ gaNaar, openPatient }: {
           </button>
         ))}
       </div>
+
+      {/*
+        De werklijst staat vóór de agenda, want hij is nieuw sinds je laatst keek. De
+        agenda verandert niet van zichzelf; wat een collega bij jou heeft neergelegd wel.
+      */}
+      <Werklijst gebruiker={gebruiker} naarPlannen={() => gaNaar('plannen')}
+        openPatient={openPatient} />
 
       <div className="raster2">
         <Kaart titel="Mijn dag" icoon="agenda" telling={`${data.agenda.length} in de agenda`}

@@ -250,14 +250,14 @@ function Werkplek({
             <HuisartsWerkplek scherm="overzicht" gaNaar={opGa} openPatient={opOpen} />
           )}
 
-          {scherm === 'dagstart' && <Dagstart gaNaar={opGa} openPatient={opOpen} />}
-          {scherm === 'aanloop' && <Aanloop openPatient={opOpen} />}
-          {scherm === 'opvolgen' && <Opvolgen openPatient={opOpen} />}
+          {scherm === 'dagstart' && <Dagstart gebruiker={gebruiker} gaNaar={opGa} openPatient={opOpen} />}
+          {scherm === 'aanloop' && <Aanloop gebruiker={gebruiker} openPatient={opOpen} />}
+          {scherm === 'opvolgen' && <Opvolgen gebruiker={gebruiker} openPatient={opOpen} />}
           {scherm === 'cohort' && <Monitoren openPatient={opOpen} />}
           {scherm === 'afronden' && <Afronden />}
 
-          {scherm === 'as-overzicht' && <AssistentWerkplek scherm="overzicht" gaNaar={opGa} openPatient={opOpen} />}
-          {scherm === 'as-triage' && <AssistentWerkplek scherm="triage" gaNaar={opGa} openPatient={opOpen} />}
+          {scherm === 'as-overzicht' && <AssistentWerkplek gebruiker={gebruiker} scherm="overzicht" gaNaar={opGa} openPatient={opOpen} />}
+          {scherm === 'as-triage' && <AssistentWerkplek gebruiker={gebruiker} scherm="triage" gaNaar={opGa} openPatient={opOpen} />}
 
           {scherm === 'ha-overzicht' && <HuisartsWerkplek scherm="overzicht" gaNaar={opGa} openPatient={opOpen} />}
           {scherm === 'ha-autoriseren' && <HuisartsWerkplek scherm="autoriseren" gaNaar={opGa} openPatient={opOpen} />}

@@ -606,7 +606,8 @@ export interface Vragenlijstinzage {
 
 // ── Aanloop en opvolgen ─────────────────────────────────────────────────────
 
-export type Aanloopstatus = 'op-schema' | 'herinnering-loopt' | 'bellen' | 'verzetten';
+export type Aanloopstatus =
+  | 'op-schema' | 'herinnering-loopt' | 'bellen' | 'verzetten' | 'opgepakt';
 
 export interface Aanloopregel {
   afspraakId: string; patientId: string; naam: string; leeftijd: number;
@@ -618,6 +619,7 @@ export interface Aanloopregel {
   }[];
   vragenlijst?: { naam: string; status: 'ingevuld' | 'open'; openDagen?: number };
   status: Aanloopstatus; advies: string; toelichting: string;
+  taak?: Taakstand;
 }
 
 export type Opvolgbron = 'labuitslag' | 'vragenlijst' | 'thuismeting' | 'signaal';
@@ -629,6 +631,7 @@ export interface Opvolgregel {
   modules: ModuleChip[];
   zelfredzaamheid?: { gemiddelde: number; niveau: string; richting?: string };
   suggesties: Suggestie[];
+  taak?: Taakstand;
 }
 
 export const AANLOOPSTATUS_LABEL: Record<Aanloopstatus, string> = {
@@ -636,6 +639,7 @@ export const AANLOOPSTATUS_LABEL: Record<Aanloopstatus, string> = {
   'herinnering-loopt': 'Herinnering loopt',
   bellen: 'Bellen',
   verzetten: 'Verzetten',
+  opgepakt: 'Opgepakt',
 };
 
 export const OPVOLGBRON_LABEL: Record<Opvolgbron, string> = {
@@ -769,6 +773,58 @@ export interface Praktijksamenvatting {
   modules: { naam: string; aantal: number }[];
 }
 
+// ── Werktaken ───────────────────────────────────────────────────────────────
+
+export type Taaksoort =
+  | 'bellen' | 'inplannen' | 'voorbereiden' | 'uitslag-bespreken'
+  | 'bericht-sturen' | 'administratie';
+
+export interface Taakontvanger { id?: string; naam: string; rol: string; uitleg: string }
+
+export interface Taakkeuze {
+  id: Taaksoort; label: string; uitleg: string; icoon: string;
+  duurMinuten: number; standaardRol: string; rollen: string[];
+  ontvangers: Taakontvanger[];
+}
+
+export interface Taakregel {
+  id: string; soort: Taaksoort; titel: string; aanleiding: string;
+  patientId?: string; patientNaam?: string;
+  bron: { soort: string; verwijzing?: string };
+  voorRol: string; voorGebruikerId?: string; voorNaam: string;
+  duurMinuten: number; uiterlijkOp?: string;
+  aangemaaktDoor: string; aangemaaktOp: string;
+  status: 'open' | 'gepland' | 'afgerond';
+  agendaItemId?: string; geplandOp?: string;
+  afgerondOp?: string; afgerondDoor?: string; uitkomst?: string;
+  soortLabel: string; icoon: string; dringend: boolean; standLabel: string;
+}
+
+export interface Werkblok { id: string; titel: string; duurMinuten: number; reden: string }
+
+export interface Takenoverzicht {
+  mijn: Taakregel[];
+  uitgezet: Taakregel[];
+  open: number;
+  gepland: number;
+  soorten: Taakkeuze[];
+  werkblokken: Werkblok[];
+}
+
+export interface NieuweTaak {
+  soort: Taaksoort; titel: string; aanleiding: string;
+  patientId?: string; patientNaam?: string;
+  bron: { soort: 'aanloop' | 'opvolgen' | 'consult' | 'handmatig'; verwijzing?: string };
+  voorRol: string; voorGebruikerId?: string; voorNaam?: string;
+  duurMinuten?: number; uiterlijkOp?: string;
+}
+
+/** Korte stand van een uitgezette taak, zoals hij bij een aanloop- of opvolgregel staat. */
+export interface Taakstand {
+  id: string; titel: string; voorNaam: string;
+  status: string; standLabel: string; soortLabel: string;
+}
+
 export interface Protocolafwijking { reden: string; door: string; op: string }
 
 export interface Protocolwaarden {
@@ -866,6 +922,15 @@ const httpApi = {
     stuur<HuisartsOverzicht>(`/api/autorisatie/${id}/afwijzen`, { reden }),
   bevestigIntake: (id: string) =>
     stuur<{ intake: WachtkamerIntake }>(`/api/intake/${id}/bevestig`, {}),
+  taken: (gebruikerId: string) => haal<Takenoverzicht>(`/api/taken/${gebruikerId}`),
+  zetTaakUit: (nieuw: NieuweTaak, door: string) =>
+    stuur<{ taak?: Taakregel; melding: string }>('/api/taken', { ...nieuw, door }),
+  planTaak: (id: string, start: string) =>
+    stuur<{ taak?: Taakregel }>(`/api/taken/${id}/plannen`, { start }),
+  rondTaakAf: (id: string, door: string, uitkomst: string) =>
+    stuur<{ taak?: Taakregel }>(`/api/taken/${id}/afronden`, { door, uitkomst }),
+  planWerkblok: (blokId: string, rol: string, start: string) =>
+    stuur<Praktijkplanbord>('/api/werkblok', { blokId, rol, start }),
   protocol: (gebruikerId?: string) =>
     haal<Protocol>(`/api/protocol${gebruikerId ? `?gebruiker=${gebruikerId}` : ''}`),
   wijzigProtocol: (wijziging: Protocolwijziging, door: string) =>

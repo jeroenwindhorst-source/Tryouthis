@@ -73,3 +73,23 @@ afspraak zelf op afgerond.
 - **Dubbelboekingen en overlap** worden voorkomen doordat het raster op bezette tijden
   kijkt, maar er is geen vergrendeling: twee mensen die tegelijk plannen kunnen dezelfde
   plek pakken.
+
+
+## Eigen werk in de agenda
+
+Het planbord kende alleen patiënten. Een agenda die alleen patiënten kent, liegt:
+uitslagen nalopen, terugbellen en administratie kosten evenveel tijd als een consult en
+zijn onzichtbaar. Het gevolg is bekend — de dag zit vol en er is niets gepland voor wat er
+ook nog moet.
+
+Naast de patiënten en de afspraakverzoeken staan daarom twee dingen in de linkerkolom:
+
+- **Mijn werklijst** — de taken die bij jou zijn neergelegd, met de aanleiding erbij. Kies
+  er een en klik op een vrije plek; hij komt als blok in jouw agenda te staan, met de
+  reden zichtbaar.
+- **Eigen werk inplannen** — voorgedefinieerde blokken: patiënten terugbellen,
+  voorbereiding spreekuur, uitslagen nalopen, administratie, overleg, pauze. Een korte
+  gesloten lijst en geen vrij tekstveld, want vijftien varianten van 'patiënt bellen'
+  maken elke rapportage erover zinloos.
+
+Zie [ADR-0019](adr/ADR-0019-een-knop-levert-werk-op.md).

@@ -24,6 +24,7 @@ export * from './acuut.js';
 export * from './samenvatting.js';
 export * from './media.js';
 export * from './medicatie.js';
+export * from './taken.js';
 export * from './laboratorium.js';
 export * from './vragenlijstafnames.js';
 export * from './vragenlijstinzage.js';

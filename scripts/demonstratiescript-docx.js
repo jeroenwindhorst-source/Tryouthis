@@ -295,6 +295,10 @@ K(p('Bovenaan staat **Fatima Bos, over vier dagen**, met de melding **Verzetten*
 K(zeg('“Zij komt maandag, en het bloed is niet geprikt. Prikken en de uitslag terugkrijgen kost twee tot drie werkdagen. Dus dat consult gaat over niets: twintig minuten, en daarna moet ze terugkomen. Het systeem zegt niet ‘er ontbreekt iets’ — het zegt: verzet deze afspraak.”'));
 K(p('Daaronder **Greetje de Vries, over zes dagen**, met de melding **Bellen**.'));
 K(zeg('“Precies hetzelfde feit — niet geprikt — maar er zijn nog zes dagen. Dan is bellen de juiste actie, niet verzetten. Hetzelfde signaal, een ander advies, omdat de tijd anders ligt.”'));
+K(doe('Klik bij Greetje de Vries op **Bellen en herinneren**.'));
+K(zeg('“En hier zit de tussenstap die in de meeste systemen ontbreekt. Er opent een paneel, net als bij het bestellen van een order, en de vraag is: wie doet dit? Bellen dat de uitslag ontbreekt kan de assistent prima. Dus ik leg het bij haar neer — met de reden erbij, want zij moet weten waarover ze belt.”'));
+K(doe('Klik op **Uitzetten bij De assistent**.'));
+K(zeg('“En nu verandert de regel van stand: ‘opgepakt, ligt bij de assistent’. Hij blijft niet schreeuwen terwijl er iemand mee bezig is — dat is precies waarom mensen zulke lijsten gaan negeren.”'));
 K(doe('Wijs bij Fatima Bos de merkjes onder het advies aan.'));
 K(zeg('“En let op het verschil tussen die twee regels. Het lab lukt niet meer — dat kost vijf dagen. De vragenlijst kan nog wel, die kan tot de dag ervoor. Dus de reden om te verzetten is het bloedonderzoek, niet de vragenlijst. Die doorlooptijden zijn geen aanname van ons: ze staan in het protocol, en de praktijk kan ze aanpassen als het prikpunt hier trager is.”'));
 K(zeg('“Dit is nu onzichtbaar. Iedere praktijk ontdekt dit op het moment dat de patiënt al in de stoel zit.”'));
@@ -348,6 +352,14 @@ K(zeg('“Uit de jaarlijkse screening. Geen meetwaarde, gewoon wat ze opschreef.
 K(zeg('“Voor geen van deze drie is een consult nodig. Een bericht, een aangepast recept, een telefoontje. Zonder dit blok wachten ze tot de afspraak die toevallig in de agenda staat.”'));
 
 // ── 7
+K(h1('6b · Waar dat werk terechtkomt'));
+K(doe('Klik op **Plannen**.'));
+K(zeg('“Links staat mijn eigen werklijst: wat er bij mij is neergelegd, met de aanleiding erbij. Ik kies er een en klik op een vrije plek — en dan staat het in mijn agenda, met de reden zichtbaar. Want terugbellen is geen tussendoortje, het kost tien minuten.”'));
+K(doe('Wijs daaronder **Eigen werk inplannen** aan en zet een blok in een vrije plek.'));
+K(zeg('“En dit miste ik het meest. Mijn agenda kende alleen patiënten. Maar uitslagen nalopen en administratie kosten evenveel tijd als een consult, en als die tijd er niet in staat, ziet mijn dag er voor de buitenwereld leeg uit terwijl hij vol zit.”'));
+K(p('Als je de tijd hebt: log uit en weer in als `ilse` (assistent).'));
+K(zeg('“En daar staat hij. Op háár dagstart, met wie hem heeft uitgezet en waarom. Dat is het verschil tussen een knop en een werkproces.”'));
+
 K(h1('7 · Mijn cohort — en wie juist niet hoeft te komen'));
 K(doe('Klik onder **Praktijk** op **Mijn cohort**. 23 mensen, 7 met een signaal, 16 stabiel.'));
 K(zeg('“Dit is geen werklijst maar een overzicht. Zestien mensen hoeven niets. Dat is ook een uitkomst, en het scheelt zestien oproepen.”'));
@@ -387,6 +399,7 @@ K(tabel(
     ['Opvolgen · aanleidingen', '5 labuitslagen · 5 vragenlijsten · 3 thuismetingen · 1 uit het beloop'],
     ['Mijn cohort', '23 gevolgd · 7 met een signaal · 16 stabiel'],
     ['Protocol', '8 aandachtsgebieden · 3 afwijkingen van de richtlijn'],
+    ['Werkblokken', 'terugbellen · voorbereiding · uitslagen · administratie · overleg · pauze'],
     ['Aanloop · verzetten', 'Fatima Bos, over 4 dagen'],
     ['Aanloop · bellen', 'Greetje de Vries, over 6 dagen'],
     ['Nu aan de beurt', 'Anneke Bos, 10:40 — cijfer 4, geldzorgen, haalt medicijnen niet op'],

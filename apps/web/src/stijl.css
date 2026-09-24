@@ -195,6 +195,51 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -.01em; }
   font-size: 12.5px; font-style: italic; color: var(--merk-diep);
 }
 
+/* ── Takenpaneel ──────────────────────────────────────────────────────────── */
+
+.taakkeuzes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.taakkeuze, .ontvanger {
+  display: flex; align-items: center; gap: 10px; text-align: left; width: 100%;
+  padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--rond-klein);
+  background: var(--vlak); cursor: pointer;
+}
+.taakkeuze:hover, .ontvanger:hover { border-color: var(--merk-lijn); background: var(--bg); }
+.taakkeuze[data-actief="true"], .ontvanger[data-actief="true"] {
+  border-color: var(--merk); background: var(--merk-zacht); color: var(--merk-diep);
+}
+.taakkeuze strong, .ontvanger strong { font-size: 12.5px; display: block; }
+.taakkeuze .ikoon, .ontvanger .ikoon { color: var(--merk); flex: none; }
+.ontvangers { display: grid; gap: 6px; }
+.ontvanger { align-items: flex-start; }
+/* De tekst neemt de ruimte; het vinkje staat rechts. Zonder dit duwt het vinkje de
+   naam naar rechts zodra hij verschijnt, en springt de lijst bij elke keuze. */
+.ontvanger > div { flex: 1 1 auto; }
+.ontvanger > svg { margin-left: auto; color: var(--merk); flex: none; }
+
+.taakveld {
+  width: 100%; padding: 8px 10px; font: inherit; font-size: 13px;
+  border: 1px solid var(--line); border-radius: var(--rond-klein);
+  background: var(--vlak); resize: vertical;
+}
+
+/* Eén regel op de werklijst: wat, waarom, en wat je ermee kunt. */
+.werktaak {
+  display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px;
+  align-items: start; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: var(--rond-klein); background: var(--vlak);
+}
+.werktaak[data-dringend="true"] { border-left: 3px solid var(--aandacht); }
+.werktaak .ikoon { color: var(--merk); }
+.werktaak .acties { display: grid; gap: 6px; justify-items: end; }
+
+/* Een uitgezette taak, zoals hij bij de regel staat die hem veroorzaakte. */
+.taakstand {
+  display: flex; gap: 9px; align-items: center; flex-wrap: wrap;
+  padding: 8px 11px; margin-top: 10px;
+  border-left: 3px solid var(--merk); background: var(--merk-zacht);
+  border-radius: 0 6px 6px 0; color: var(--merk-diep); font-size: 12.5px;
+}
+
 /* ── Protocol aanpassen ───────────────────────────────────────────────────── */
 
 /*

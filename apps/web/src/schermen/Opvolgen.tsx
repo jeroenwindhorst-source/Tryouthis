@@ -1,10 +1,34 @@
 import { useState } from 'react';
-import { api, OPVOLGBRON_LABEL, type Opvolgbron, type Opvolgregel, type Suggestie } from '../api';
+import {
+  api, OPVOLGBRON_LABEL,
+  type Gebruiker, type NieuweTaak, type Opvolgbron, type Opvolgregel, type Suggestie,
+  type Taaksoort,
+} from '../api';
 import { useData } from '../gebruik';
 import { Icoon } from '../iconen';
 import {
   ErnstMerk, Fout, Kaart, Laden, Leeg, ModuleChips, SuggestieKaart, Zelfredzaamheidsmeter,
 } from '../onderdelen';
+import { Takenpaneel } from './Takenpaneel';
+
+type Voorstel = {
+  soort: Taaksoort; titel: string; aanleiding: string;
+  patientId?: string; patientNaam?: string;
+  bron: NieuweTaak['bron']; uiterlijkOp?: string;
+};
+
+/**
+ * Welk soort werk een aanleiding meestal oplevert.
+ *
+ * Een voorstel, geen regel: in het paneel kies je alsnog. Maar de meest voorkomende keuze
+ * vooraf invullen scheelt bij elke regel een handeling, en de verkeerde gok kost één klik.
+ */
+const STANDAARDSOORT: Record<Opvolgbron, Taaksoort> = {
+  labuitslag: 'uitslag-bespreken',
+  vragenlijst: 'bellen',
+  thuismeting: 'uitslag-bespreken',
+  signaal: 'voorbereiden',
+};
 
 /**
  * OPVOLGEN — alles wat aandacht vraagt bij wie vandaag niet komt
@@ -34,17 +58,30 @@ const WAAROM: Record<Opvolgbron, string> = {
   signaal: 'Er kwam niets binnen; het beloop in het dossier wijkt af.',
 };
 
-export function Opvolgen({ openPatient }: { openPatient: (id: string) => void }) {
-  const { data, fout, bezig, setData } = useData(() => api.opvolgen());
-  const [gedaan, setGedaan] = useState<Record<string, string>>({});
+export function Opvolgen({ gebruiker, openPatient }: {
+  gebruiker: Gebruiker;
+  openPatient: (id: string) => void;
+}) {
+  const { data, fout, bezig, setData, herlaad } = useData(() => api.opvolgen());
   const [uitgeklapt, setUitgeklapt] = useState<string | undefined>();
   const [bezigMet, setBezigMet] = useState<string | undefined>();
   const [filter, setFilter] = useState<Opvolgbron | undefined>();
+  const [paneel, setPaneel] = useState<Voorstel | undefined>();
+  const [melding, setMelding] = useState<string | undefined>();
 
   if (fout) return <Fout boodschap={fout} />;
   if (bezig || !data) return <Laden wat="Opvolgen" />;
 
-  const open = data.filter((o) => !gedaan[o.id]);
+  const open = data.filter((o) => !o.taak);
+
+  const voorstelVoor = (o: Opvolgregel, soort: Taaksoort): Voorstel => ({
+    soort,
+    titel: `${o.naam}: ${o.titel}`.slice(0, 90),
+    aanleiding: `${o.titel} — ${o.bevinding} Voorstel: ${o.voorstel}`,
+    patientId: o.patientId,
+    patientNaam: o.naam,
+    bron: { soort: 'opvolgen', verwijzing: o.id },
+  });
   const zichtbaar = filter ? data.filter((o) => o.bron === filter) : data;
   const aanwezig = [...new Set(data.map((o) => o.bron))];
 
@@ -63,9 +100,18 @@ export function Opvolgen({ openPatient }: { openPatient: (id: string) => void })
           <h1>Opvolgen</h1>
           <div className="onder">
             {open.length} vragen aandacht · {open.filter((o) => o.ernst === 'urgent').length} urgent
+            {data.length - open.length > 0 && ` · ${data.length - open.length} opgepakt`}
           </div>
         </div>
       </div>
+
+      {melding && (
+        <div className="notitie" data-toon="merk" style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
+          <Icoon naam="vink" grootte={14} /> {melding}
+          <button className="knop" data-toon="stil" style={{ marginLeft: 'auto' }}
+            onClick={() => setMelding(undefined)}>Sluiten</button>
+        </div>
+      )}
 
       <div className="notitie">
         <strong>Zonder afspraak af te handelen.</strong> Alles hieronder gaat over patiënten die
@@ -103,7 +149,7 @@ export function Opvolgen({ openPatient }: { openPatient: (id: string) => void })
         {zichtbaar.map((o) => {
           const uit = uitgeklapt === o.id;
           return (
-            <section key={o.id} className="kaart" style={{ opacity: gedaan[o.id] ? 0.6 : 1 }}>
+            <section key={o.id} className="kaart" style={{ opacity: o.taak ? 0.72 : 1 }}>
               <header>
                 <span style={{ color: 'var(--merk)' }}><Icoon naam={ICOON[o.bron]} grootte={15} /></span>
                 <h2 style={{ fontSize: 15 }}>{o.naam}</h2>
@@ -111,8 +157,8 @@ export function Opvolgen({ openPatient }: { openPatient: (id: string) => void })
                 <span className="merkje" data-toon="neutraal">{OPVOLGBRON_LABEL[o.bron]}</span>
                 <span className="mini">{o.binnenOp}</span>
                 <span style={{ marginLeft: 'auto' }}>
-                  {gedaan[o.id]
-                    ? <span className="merkje" data-toon="ok">{gedaan[o.id]}</span>
+                  {o.taak
+                    ? <span className="merkje" data-toon="ok">opgepakt</span>
                     : <ErnstMerk ernst={o.ernst} />}
                 </span>
               </header>
@@ -158,7 +204,18 @@ export function Opvolgen({ openPatient }: { openPatient: (id: string) => void })
                   </div>
                 )}
 
-                {!gedaan[o.id] && (
+                {o.taak && (
+                  <div className="taakstand">
+                    <Icoon naam="vink" grootte={14} />
+                    <strong>{o.taak.soortLabel}</strong>
+                    <span>ligt bij {o.taak.voorNaam}</span>
+                    <span className="merkje" data-toon={o.taak.status === 'gepland' ? 'ok' : 'informatief'}>
+                      {o.taak.standLabel}
+                    </span>
+                  </div>
+                )}
+
+                {!o.taak && (
                   <div className="knop-rij" style={{ marginTop: 13 }}>
                     <button className="knop" data-toon="primair" onClick={() => openPatient(o.patientId)}>
                       <Icoon naam="klembord" grootte={13} /> Openen en afhandelen
@@ -172,13 +229,18 @@ export function Opvolgen({ openPatient }: { openPatient: (id: string) => void })
                           : ` ${o.suggesties.length} suggestie${o.suggesties.length === 1 ? '' : 's'} hier afhandelen`}
                       </button>
                     )}
+                    {/*
+                      Uitzetten in plaats van 'afvinken'. De vorige versie zette alleen
+                      een merkje in dit scherm, en dan was er na het verversen niets
+                      gebeurd — de patiënt was niet gebeld en niemand wist ervan.
+                    */}
                     <button className="knop"
-                      onClick={() => setGedaan((g) => ({ ...g, [o.id]: 'bericht gestuurd' }))}>
-                      <Icoon naam="gesprek" grootte={13} /> Bericht sturen
+                      onClick={() => setPaneel(voorstelVoor(o, STANDAARDSOORT[o.bron]))}>
+                      <Icoon naam="bliksem" grootte={13} /> Taak uitzetten
                     </button>
                     <button className="knop"
-                      onClick={() => setGedaan((g) => ({ ...g, [o.id]: 'bij volgende controle' }))}>
-                      <Icoon naam="agenda" grootte={13} /> Kan wachten tot de controle
+                      onClick={() => setPaneel(voorstelVoor(o, 'bericht-sturen'))}>
+                      <Icoon naam="gesprek" grootte={13} /> Bericht sturen
                     </button>
                   </div>
                 )}
@@ -187,6 +249,12 @@ export function Opvolgen({ openPatient }: { openPatient: (id: string) => void })
           );
         })}
       </div>
+
+      {paneel && (
+        <Takenpaneel gebruiker={gebruiker} voorstel={paneel}
+          opSluit={() => setPaneel(undefined)}
+          opUitgezet={(tekst) => { setPaneel(undefined); setMelding(tekst); herlaad(); }} />
+      )}
 
       <Kaart titel="Wie hier niet staat" icoon="vink">
         <p className="mini" style={{ margin: 0 }}>

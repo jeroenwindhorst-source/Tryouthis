@@ -13,6 +13,7 @@ import {
   InMemoryRepository, intakes, legVerrichtingVast, meetreeksen, meldAan, monitoringCohort,
   neemVragenlijstOver, opvolgen, vragenlijstenVoor,
   protocoloverzicht, wijzigProtocol, herstelProtocol, type Protocolwijziging,
+  takenoverzicht, zetTaakUit, planTaak, rondTaakAf, planWerkblok, type NieuweTaak,
   orderOverzicht, orderVoorstellen, overleg, pakAcuutOp, patientOverzicht, plaatsLosseOrders,
   planbord, planbordPraktijk, praktijkrapportage, praktijkSamenvatting, registreerConsult,
   terminologie, verrichtingen, verwerkVragenlijst, vraagAfspraakAan, zetOpBespreeklijst,
@@ -488,6 +489,27 @@ app.post<{ Params: { id: string } }>('/api/intake/:id/bevestig', async (req, rep
 app.get('/api/beheer', async () => beheer());
 
 // ── Protocol en verantwoording ──────────────────────────────────────────────
+
+app.get<{ Params: { id: string } }>('/api/taken/:id', async (req) =>
+  takenoverzicht(repo, req.params.id));
+
+app.post<{ Body: NieuweTaak & { door: string } }>('/api/taken', async (req) => {
+  const { door, ...nieuw } = req.body;
+  return zetTaakUit(repo, nieuw, door);
+});
+
+app.post<{ Params: { id: string }; Body: { start: string } }>(
+  '/api/taken/:id/plannen', async (req) =>
+    ({ taak: planTaak(repo, req.params.id, req.body.start) }));
+
+app.post<{ Params: { id: string }; Body: { door: string; uitkomst: string } }>(
+  '/api/taken/:id/afronden', async (req) =>
+    ({ taak: rondTaakAf(repo, req.params.id, req.body.door, req.body.uitkomst) }));
+
+app.post<{ Body: { blokId: string; rol: string; start: string } }>('/api/werkblok', async (req) => {
+  planWerkblok(repo, req.body);
+  return planbordPraktijk(repo);
+});
 
 app.get<{ Querystring: { gebruiker?: string } }>('/api/protocol', async (req) =>
   protocoloverzicht(repo, req.query.gebruiker));

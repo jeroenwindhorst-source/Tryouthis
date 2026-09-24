@@ -12,6 +12,7 @@ import { genereerVoorafLab } from './laboratorium.js';
 import {
   genereerAfnames, type Afnameopdracht, type Vragenlijstafname,
 } from './vragenlijstafnames.js';
+import { maakWerktaak, vindTaaksoort, type NieuweTaak, type Werktaak } from './taken.js';
 import { appsVoor } from './configuratie-demo.js';
 import { bouwHistorie, genereerThuismetingen } from './historie.js';
 import { genereerGesprekken, genereerPatientgesprekken, type Gesprek } from './berichten.js';
@@ -79,6 +80,22 @@ export interface DossierRepository {
   /** Uitgezette en ingevulde vragenlijsten; zonder patientId die van de hele praktijk. */
   afnames(patientId?: string): Vragenlijstafname[];
   neemAfnameOver(id: string, door: string): void;
+
+  /**
+   * De werkvoorraad: taken die zijn uitgezet en nog moeten gebeuren.
+   *
+   * Hier komt terecht wat een knop als 'bellen en herinneren' in gang zet. Zonder deze
+   * lijst verandert zo'n knop alleen het scherm waarin je hem indrukt.
+   */
+  werktaken(): Werktaak[];
+  maakTaak(nieuw: NieuweTaak, door: string): Werktaak;
+  /** Een taak een plek in de agenda geven. */
+  planTaak(id: string, start: string): Werktaak | undefined;
+  rondTaakAf(id: string, door: string, uitkomst: string): Werktaak | undefined;
+  /** Een blok eigen werk in de agenda zetten, zonder patiënt. */
+  planWerkblok(gegevens: {
+    rol: Rol; start: string; duurMinuten: number; titel: string; reden: string;
+  }): AgendaItem | undefined;
 
   /** Waar deze praktijk van de landelijke richtlijn afwijkt, en waarom. */
   protocolaanpassingen(): Protocolaanpassing[];
@@ -188,6 +205,7 @@ export class InMemoryRepository implements DossierRepository {
   private praktijk!: Praktijk;
   private afspraken!: Appointment[];
   private protocolLijst: Protocolaanpassing[] = [];
+  private taakvoorraad: Werktaak[] = [];
   private aanloopAfspraken!: Appointment[];
   private afnameLijst: Vragenlijstafname[] = [];
   private taakLijst: Task[] = [];
@@ -240,6 +258,7 @@ export class InMemoryRepository implements DossierRepository {
     this.mediaLijst = new Map();
     this.groepen = [];
     this.afnameLijst = [];
+    this.taakvoorraad = [];
 
     /*
      * Beginstand van de protocolafwijkingen.
@@ -685,6 +704,74 @@ export class InMemoryRepository implements DossierRepository {
     return this.afspraken.filter((a) => a.start.startsWith(datum));
   }
   aanloop(): Appointment[] { return this.aanloopAfspraken; }
+
+  werktaken(): Werktaak[] { return this.taakvoorraad; }
+
+  maakTaak(nieuw: NieuweTaak, door: string): Werktaak {
+    const taak = maakWerktaak(nieuw, door, this.taakvoorraad.length + 1, new Date());
+    this.taakvoorraad.unshift(taak);
+    return taak;
+  }
+
+  /**
+   * Een taak in de agenda zetten.
+   *
+   * De taak blijft de taak — hij verhuist niet naar de agenda maar krijgt er een plek
+   * bij. Anders raak je bij het verzetten van het blok het spoor kwijt naar waar de taak
+   * vandaan kwam, en dat spoor is juist waar het om gaat.
+   */
+  planTaak(id: string, start: string): Werktaak | undefined {
+    const taak = this.taakvoorraad.find((t) => t.id === id);
+    if (!taak) return undefined;
+    const soort = vindTaaksoort(taak.soort);
+    const item: AgendaItem = {
+      id: `ag-taak-${taak.id}`,
+      start,
+      duurMinuten: taak.duurMinuten,
+      rol: taak.voorRol,
+      patientId: taak.patientId,
+      naam: taak.patientNaam,
+      soort: 'blok',
+      titel: taak.titel,
+      reden: taak.aanleiding,
+      status: 'gepland',
+    };
+    this.agendaItems = [...this.agendaItems.filter((a) => a.id !== item.id), item]
+      .sort((a, b) => a.start.localeCompare(b.start));
+    taak.status = 'gepland';
+    taak.agendaItemId = item.id;
+    taak.geplandOp = start;
+    taak.duurMinuten = taak.duurMinuten || soort.duurMinuten;
+    return taak;
+  }
+
+  rondTaakAf(id: string, door: string, uitkomst: string): Werktaak | undefined {
+    const taak = this.taakvoorraad.find((t) => t.id === id);
+    if (!taak) return undefined;
+    taak.status = 'afgerond';
+    taak.afgerondOp = new Date().toISOString();
+    taak.afgerondDoor = door;
+    taak.uitkomst = uitkomst;
+    return taak;
+  }
+
+  planWerkblok(gegevens: {
+    rol: Rol; start: string; duurMinuten: number; titel: string; reden: string;
+  }): AgendaItem | undefined {
+    const item: AgendaItem = {
+      id: `ag-blok-${this.agendaItems.length + 1}-${Date.now()}`,
+      start: gegevens.start,
+      duurMinuten: gegevens.duurMinuten,
+      rol: gegevens.rol,
+      soort: 'blok',
+      titel: gegevens.titel,
+      reden: gegevens.reden,
+      status: 'gepland',
+    };
+    this.agendaItems.push(item);
+    this.agendaItems.sort((a, b) => a.start.localeCompare(b.start));
+    return item;
+  }
 
   protocolaanpassingen(): Protocolaanpassing[] { return this.protocolLijst; }
 

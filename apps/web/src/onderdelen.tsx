@@ -1,9 +1,10 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Icoon, icoonVanModule } from './iconen';
 import {
+  api,
   MODULE_NAAM,
   type AgendaRegel, type Beleidsafspraak, type Ernst, type ModuleChip, type Signaal,
-  type Suggestie, type Vragenlijstinzage, type WachtkamerIntake,
+  type Suggestie, type Takenoverzicht, type Vragenlijstinzage, type WachtkamerIntake,
 } from './api';
 
 export function Kaart({ titel, icoon, telling, extra, strak, children }: {
@@ -535,5 +536,82 @@ export function Vragenlijstkaart({ inzage, uitgeklapt, opUitklappen, opOvernemen
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * MIJN WERKLIJST
+ *
+ * Waar uitgezette taken terechtkomen. Hetzelfde onderdeel bij de POH en bij de
+ * assistent, want het is dezelfde vraag: wat ligt er voor mij klaar?
+ *
+ * Bewust géén eigen ingang in de linkerbalk. Een werklijst die je moet gaan opzoeken,
+ * wordt niet bekeken; deze staat op de dagstart, naast de agenda, waar je toch al kijkt.
+ * Inplannen doe je op het planbord — daar ligt de vrije tijd.
+ */
+export function Werklijst({ gebruiker, naarPlannen, openPatient }: {
+  gebruiker: { id: string };
+  naarPlannen?: () => void;
+  openPatient?: (id: string) => void;
+}) {
+  const [data, setData] = useState<Takenoverzicht | undefined>();
+  const [bezigMet, setBezigMet] = useState<string | undefined>();
+
+  useEffect(() => {
+    let geldig = true;
+    api.taken(gebruiker.id).then((o) => { if (geldig) setData(o); });
+    return () => { geldig = false; };
+  }, [gebruiker.id]);
+
+  const open = (data?.mijn ?? []).filter((t) => t.status !== 'afgerond');
+  if (!data || open.length === 0) return null;
+
+  const rondAf = async (id: string) => {
+    setBezigMet(id);
+    try {
+      await api.rondTaakAf(id, gebruiker.id, 'afgehandeld');
+      setData(await api.taken(gebruiker.id));
+    } finally { setBezigMet(undefined); }
+  };
+
+  return (
+    <Kaart titel="Mijn werklijst" icoon="bliksem" telling={`${data.open} in te plannen`}>
+      <div style={{ display: 'grid', gap: 9 }}>
+        {open.map((taak) => (
+          <div key={taak.id} className="werktaak" data-dringend={taak.dringend}>
+            <span className="ikoon"><Icoon naam={taak.icoon} grootte={14} /></span>
+            <div>
+              <strong style={{ fontSize: 13 }}>{taak.titel}</strong>
+              <div className="reden">{taak.aanleiding}</div>
+              <div className="mini">
+                {taak.soortLabel} · {taak.duurMinuten} min · uitgezet door {taak.aangemaaktDoor}
+                {taak.uiterlijkOp && ` · uiterlijk ${taak.uiterlijkOp}`}
+              </div>
+            </div>
+            <div className="acties">
+              <span className="merkje" data-toon={taak.status === 'gepland' ? 'ok' : 'aandacht'}>
+                {taak.standLabel}
+              </span>
+              <div className="knop-rij">
+                {taak.patientId && openPatient && (
+                  <button className="knop" data-toon="stil" onClick={() => openPatient(taak.patientId!)}>
+                    <Icoon naam="klembord" grootte={12} /> Dossier
+                  </button>
+                )}
+                {taak.status === 'open' && naarPlannen && (
+                  <button className="knop" data-toon="stil" onClick={naarPlannen}>
+                    <Icoon naam="agenda" grootte={12} /> Inplannen
+                  </button>
+                )}
+                <button className="knop" data-toon="stil" disabled={bezigMet === taak.id}
+                  onClick={() => rondAf(taak.id)}>
+                  <Icoon naam="vink" grootte={12} /> Gedaan
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Kaart>
   );
 }

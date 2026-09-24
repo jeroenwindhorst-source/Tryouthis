@@ -32,7 +32,11 @@ import {
   type Verrichtinguitslag,
 } from './verrichtingen.js';
 import { bouwInzage, type Vragenlijstinzage } from './vragenlijstinzage.js';
-import { vindGebruiker } from './gebruikers.js';
+import {
+  takenVoor, TAAKSOORTEN, vindTaaksoort,
+  type NieuweTaak, type Taaksoort, type Taaksoortdefinitie, type Werktaak,
+} from './taken.js';
+import { gebruikers, vindGebruiker } from './gebruikers.js';
 import { gesprekkenVoor, naamVanGebruiker, ongelezenVoor } from './berichten.js';
 import {
   groepeerAutorisaties, STATUSLABEL,
@@ -420,13 +424,15 @@ export function consultvoorbereiding(repo: DossierRepository): Voorbereiding[] {
  * telefoontje, en over drie dagen een reden om de afspraak te verzetten.
  */
 
-export type Aanloopstatus = 'op-schema' | 'herinnering-loopt' | 'bellen' | 'verzetten';
+export type Aanloopstatus =
+  | 'op-schema' | 'herinnering-loopt' | 'bellen' | 'verzetten' | 'opgepakt';
 
 export const AANLOOPSTATUS_LABEL: Record<Aanloopstatus, string> = {
   'op-schema': 'Op schema',
   'herinnering-loopt': 'Herinnering loopt',
   bellen: 'Bellen',
   verzetten: 'Verzetten',
+  opgepakt: 'Opgepakt',
 };
 
 export interface Aanloopregel {
@@ -455,15 +461,37 @@ export interface Aanloopregel {
   /** Wat de POH nu zou doen. Eén zin, geen keuzemenu. */
   advies: string;
   toelichting: string;
+  /**
+   * De taak die hiervoor is uitgezet, als die er is.
+   *
+   * Zonder dit veld blijft dezelfde regel na 'bellen en herinneren' onveranderd staan, en
+   * dan is de knop een demonstratie van een knop. Nu verandert de stand en staat erbij
+   * wie het oppakt.
+   */
+  taak?: {
+    id: string; titel: string; voorNaam: string;
+    status: string; standLabel: string; soortLabel: string;
+  };
 }
 
 const AANLOOPGEWICHT: Record<Aanloopstatus, number> = {
-  verzetten: 0, bellen: 1, 'herinnering-loopt': 2, 'op-schema': 3,
+  verzetten: 0, bellen: 1, 'herinnering-loopt': 2, opgepakt: 3, 'op-schema': 4,
 };
+
+/** Korte weergave van een taak, voor een regel die alleen de stand hoeft te tonen. */
+function taakstand(taak: Werktaak, vandaag: string): Aanloopregel['taak'] {
+  const regel = verrijkTaak(taak, vandaag);
+  return {
+    id: regel.id, titel: regel.titel, voorNaam: regel.voorNaam,
+    status: regel.status, standLabel: regel.standLabel, soortLabel: regel.soortLabel,
+  };
+}
 
 export function aanloop(repo: DossierRepository): Aanloopregel[] {
   const peildatum = repo.peildatum();
   const vandaag = peildatum.toISOString().slice(0, 10);
+
+  const openTaken = repo.werktaken().filter((t) => t.status !== 'afgerond');
 
   const regels = repo.aanloop().flatMap((afspraak): Aanloopregel[] => {
     const dossier = repo.dossier(afspraak.patientId);
@@ -568,6 +596,15 @@ export function aanloop(repo: DossierRepository): Aanloopregel[] {
           + 'gaat zonder uitslag over niets; een week later verzetten kost minder dan het dubbel doen.',
     }[status];
 
+    /*
+     * Is er al iets voor deze afspraak uitgezet? Dan is de stand 'opgepakt', ongeacht wat
+     * er nog ontbreekt. Anders blijft dezelfde regel schreeuwen terwijl er iemand mee
+     * bezig is — en dat is precies waarom mensen zulke lijsten gaan negeren.
+     */
+    const taak = openTaken.find(
+      (t) => t.bron.soort === 'aanloop' && t.bron.verwijzing === afspraak.id,
+    );
+
     return [{
       afspraakId: afspraak.id,
       patientId: dossier.patient.id,
@@ -581,9 +618,14 @@ export function aanloop(repo: DossierRepository): Aanloopregel[] {
       vragenlijst: inzage
         ? { naam: inzage.naam, status: inzage.status, openDagen: inzage.openDagen }
         : undefined,
-      status,
-      advies,
-      toelichting,
+      status: taak ? 'opgepakt' : status,
+      advies: taak
+        ? `${taak.titel} — ligt bij ${taak.voorNaam}.`
+        : advies,
+      toelichting: taak
+        ? `Uitgezet door ${taak.aangemaaktDoor}: ${taak.aanleiding}`
+        : toelichting,
+      taak: taak ? taakstand(taak, vandaag) : undefined,
     }];
   });
 
@@ -649,6 +691,11 @@ export interface Opvolgregel {
    * tweede scherm dat over grotendeels dezelfde mensen ging.
    */
   suggesties: Suggestie[];
+  /** De taak die hiervoor is uitgezet, als die er is. */
+  taak?: {
+    id: string; titel: string; voorNaam: string;
+    status: string; standLabel: string; soortLabel: string;
+  };
 }
 
 const ERNSTGEWICHT = { urgent: 0, aandacht: 1, informatief: 2 } as const;
@@ -799,9 +846,19 @@ export function opvolgen(repo: DossierRepository): Opvolgregel[] {
    * rijen het hele blok — vandaag de signalen, morgen het lab — en verdwijnt juist de
    * ene thuismeting die om een besluit vroeg onder aan de lijst.
    */
+  const openTaken = repo.werktaken().filter((t) => t.status !== 'afgerond');
+  const metTaak = regels.map((regel): Opvolgregel => {
+    const taak = openTaken.find(
+      (t) => t.bron.soort === 'opvolgen' && t.bron.verwijzing === regel.id,
+    );
+    return taak ? { ...regel, taak: taakstand(taak, vandaag) } : regel;
+  });
+
   const perBron = new Map<Opvolgbron, number>();
-  return regels
-    .sort((a, b) => ERNSTGEWICHT[a.ernst] - ERNSTGEWICHT[b.ernst]
+  return metTaak
+    // Wat is opgepakt zakt naar beneden: het staat er nog, maar het vraagt niets meer.
+    .sort((a, b) => Number(Boolean(a.taak)) - Number(Boolean(b.taak))
+      || ERNSTGEWICHT[a.ernst] - ERNSTGEWICHT[b.ernst]
       || b.binnenOp.localeCompare(a.binnenOp))
     .filter((regel) => {
       const aantal = (perBron.get(regel.bron) ?? 0) + 1;
@@ -875,6 +932,202 @@ export function neemVragenlijstOver(
   repo.neemAfnameOver(afnameId, door);
   const afname = repo.afnames().find((a) => a.id === afnameId);
   return afname ? bouwInzage(afname, repo.peildatum()) : undefined;
+}
+
+// ── 4b. Werktaken ───────────────────────────────────────────────────────────
+
+/**
+ * WAT ER GEBEURT NA EEN KNOP
+ *
+ * 'Bellen en herinneren' was een knop die een merkje veranderde. Bij de volgende keer
+ * inloggen stond dezelfde regel er weer, en niemand was gebeld. Dat is precies het soort
+ * scherm dat bestaande systemen ook hebben: je ziet het probleem, maar er komt geen werk
+ * uit voort.
+ *
+ * De tussenstap die ontbrak is de vraag *wie doet het?* — en die is niet vanzelfsprekend.
+ * Bellen dat de uitslag ontbreekt kan de assistent prima; diezelfde uitslag bespreken
+ * niet. Daarom gaat elke actie door hetzelfde paneel als een order: kies wat het is, kies
+ * bij wie het terechtkomt, geef de aanleiding mee, en volg hem tot hij af is (ADR-0009).
+ */
+
+/** Hoe een rol in een zin heet. Niet 'poh-s' maar 'de praktijkondersteuner'. */
+const ROL_LABEL: Record<string, string> = {
+  huisarts: 'De huisarts',
+  'poh-s': 'De praktijkondersteuner',
+  'poh-ggz': 'De POH-GGZ',
+  assistent: 'De assistent',
+};
+
+export interface Taakregel extends Werktaak {
+  soortLabel: string;
+  icoon: string;
+  /** Hoe dringend, afgeleid van de uiterlijke datum — niet apart in te stellen. */
+  dringend: boolean;
+  /** Leesbare stand voor in de lijst. */
+  standLabel: string;
+}
+
+export interface Taakkeuze extends Taaksoortdefinitie {
+  /** Bij wie dit soort werk terecht kan komen, met de uitleg erbij. */
+  ontvangers: { id?: string; naam: string; rol: Rol; uitleg: string }[];
+}
+
+export interface Takenoverzicht {
+  /** Wat bij mij terechtkomt. */
+  mijn: Taakregel[];
+  /** Wat ik heb uitgezet bij een ander, zodat je kunt zien of het is opgepakt. */
+  uitgezet: Taakregel[];
+  open: number;
+  gepland: number;
+  /** De soorten werk, elk met de mogelijke ontvangers — het paneel heeft allebei nodig. */
+  soorten: Taakkeuze[];
+  werkblokken: typeof WERKBLOKKEN;
+}
+
+function verrijkTaak(taak: Werktaak, vandaag: string): Taakregel {
+  const soort = vindTaaksoort(taak.soort);
+  return {
+    ...taak,
+    soortLabel: soort.label,
+    icoon: soort.icoon,
+    dringend: taak.status !== 'afgerond' && Boolean(taak.uiterlijkOp && taak.uiterlijkOp <= vandaag),
+    standLabel: taak.status === 'afgerond'
+      ? `afgerond door ${taak.afgerondDoor}`
+      : taak.status === 'gepland'
+        ? `ingepland ${taak.geplandOp?.slice(11, 16) ?? ''}`
+        : 'nog in te plannen',
+  };
+}
+
+export function takenoverzicht(repo: DossierRepository, gebruikerId: string): Takenoverzicht {
+  const gebruiker = vindGebruiker(gebruikerId);
+  const vandaag = repo.peildatum().toISOString().slice(0, 10);
+  const alle = repo.werktaken();
+
+  const mijn = gebruiker
+    ? takenVoor(alle, { id: gebruiker.id, rol: gebruiker.rol as Rol })
+        .map((t) => verrijkTaak(t, vandaag))
+    : [];
+  const uitgezet = alle
+    .filter((t) => t.aangemaaktDoor === gebruiker?.naam
+      && !mijn.some((m) => m.id === t.id))
+    .map((t) => verrijkTaak(t, vandaag));
+
+  return {
+    mijn,
+    uitgezet,
+    open: mijn.filter((t) => t.status === 'open').length,
+    gepland: mijn.filter((t) => t.status === 'gepland').length,
+    soorten: TAAKSOORTEN.map((s) => ({ ...s, ontvangers: taakontvangers(s.id) })),
+    werkblokken: WERKBLOKKEN,
+  };
+}
+
+/**
+ * Wie kan dit oppakken?
+ *
+ * De lijst hangt aan de soort werk en niet aan een rechtenmatrix: een uitslag bespreken
+ * hoort bij wie hem kan duiden, en dat is geen kwestie van autorisatie maar van vak.
+ * 'De assistent' (zonder naam) en 'Ilse' zijn allebei geldig en betekenen iets anders.
+ */
+export function taakontvangers(soort: Taaksoort): {
+  id?: string; naam: string; rol: Rol; uitleg: string;
+}[] {
+  const definitie = vindTaaksoort(soort);
+  const ontvangers: { id?: string; naam: string; rol: Rol; uitleg: string }[] = [];
+  for (const rol of definitie.rollen) {
+    const persoon = gebruikers.find((g) => g.actief && (g.rol as Rol) === rol);
+    ontvangers.push({
+      rol,
+      naam: ROL_LABEL[rol] ?? rol,
+      uitleg: `Komt op de werklijst van wie er die dag is.`,
+    });
+    if (persoon) {
+      ontvangers.push({
+        id: persoon.id, rol, naam: persoon.naam,
+        uitleg: 'Persoonlijk, dus niet door een collega op te pakken.',
+      });
+    }
+  }
+  return ontvangers;
+}
+
+export function zetTaakUit(
+  repo: DossierRepository, nieuw: Omit<NieuweTaak, 'voorNaam'> & { voorNaam?: string },
+  doorId: string,
+): { taak?: Werktaak; melding: string } {
+  const gebruiker = vindGebruiker(doorId);
+  if (!gebruiker) return { melding: 'Onbekende gebruiker.' };
+  if (nieuw.aanleiding.trim().length < 3) {
+    return {
+      melding: 'Een taak zonder aanleiding is een opdracht zonder context. Vul in waarom '
+        + 'dit nodig is — degene die hem oppakt heeft dat nodig.',
+    };
+  }
+
+  const ontvangerNaam = nieuw.voorNaam
+    ?? (nieuw.voorGebruikerId
+      ? vindGebruiker(nieuw.voorGebruikerId)?.naam ?? ROL_LABEL[nieuw.voorRol]
+      : ROL_LABEL[nieuw.voorRol] ?? nieuw.voorRol);
+
+  const taak = repo.maakTaak({ ...nieuw, voorNaam: ontvangerNaam }, gebruiker.naam);
+  const bijZichzelf = taak.voorGebruikerId === gebruiker.id
+    || (!taak.voorGebruikerId && taak.voorRol === gebruiker.rol);
+
+  return {
+    taak,
+    melding: bijZichzelf
+      ? 'Staat op je eigen werklijst. Plan hem in bij Plannen, of handel hem daar af.'
+      : `Uitgezet bij ${ontvangerNaam}. Je ziet bij Plannen of hij is opgepakt.`,
+  };
+}
+
+export function planTaak(repo: DossierRepository, id: string, start: string) {
+  return repo.planTaak(id, start);
+}
+
+export function rondTaakAf(
+  repo: DossierRepository, id: string, doorId: string, uitkomst: string,
+) {
+  const gebruiker = vindGebruiker(doorId);
+  return repo.rondTaakAf(id, gebruiker?.naam ?? doorId, uitkomst);
+}
+
+/**
+ * Eigen werk in de agenda zetten, zonder patiënt.
+ *
+ * Een agenda die alleen patiënten kent, liegt: uitslagen nalopen, terugbellen en
+ * administratie kosten evenveel tijd als een consult maar zijn onzichtbaar. Het gevolg is
+ * bekend — de dag zit vol en er is niets gepland voor wat er ook nog moet.
+ */
+export const WERKBLOKKEN: { id: string; titel: string; duurMinuten: number; reden: string }[] = [
+  { id: 'bellen', titel: 'Patiënten terugbellen', duurMinuten: 20,
+    reden: 'Belafspraken en openstaande terugbelverzoeken' },
+  { id: 'voorbereiding', titel: 'Voorbereiding spreekuur', duurMinuten: 30,
+    reden: 'Uitslagen, vragenlijsten en intakes nalopen' },
+  { id: 'uitslagen', titel: 'Uitslagen nalopen', duurMinuten: 20,
+    reden: 'Binnengekomen lab beoordelen en opvolgen' },
+  { id: 'administratie', titel: 'Administratie', duurMinuten: 20,
+    reden: 'Uitwerken, verantwoorden en registraties afronden' },
+  { id: 'overleg', titel: 'Overleg', duurMinuten: 15,
+    reden: 'Kort overleg met een collega' },
+  { id: 'pauze', titel: 'Pauze', duurMinuten: 15,
+    reden: 'Geblokkeerd, niet inplanbaar' },
+];
+
+export function planWerkblok(
+  repo: DossierRepository,
+  gegevens: { blokId: string; rol: string; start: string; duurMinuten?: number },
+) {
+  const blok = WERKBLOKKEN.find((b) => b.id === gegevens.blokId);
+  if (!blok) return undefined;
+  return repo.planWerkblok({
+    rol: gegevens.rol as Rol,
+    start: gegevens.start,
+    duurMinuten: gegevens.duurMinuten ?? blok.duurMinuten,
+    titel: blok.titel,
+    reden: blok.reden,
+  });
 }
 
 // ── 5. Monitoring ───────────────────────────────────────────────────────────

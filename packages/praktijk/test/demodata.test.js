@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { InMemoryRepository } from '../dist/store.js';
 import {
   aanloop, consultvoorbereiding, dagstart, dossierHistorie, herstelProtocol, opvolgen, overleg,
-  patientOverzicht, protocoloverzicht, wijzigProtocol, PATIENTBRON, PATIENTSOORTEN,
+  patientOverzicht, planTaak, planWerkblok, protocoloverzicht, rondTaakAf, takenoverzicht,
+  wijzigProtocol, zetTaakUit, PATIENTBRON, PATIENTSOORTEN,
 } from '../dist/bff.js';
 
 /**
@@ -444,4 +445,101 @@ test('protocol: een aanpassing werkt door in het zorgplan van de patiënt', () =
   herstelProtocol(eigen, 'medicatieveiligheid', 'medicatiebeoordeling', 'zv-poh-1');
   assert.equal(intervalVan(eigen, patientId), voor,
     'terugzetten herstelt het oorspronkelijke interval niet');
+});
+
+// ── Werktaken ───────────────────────────────────────────────────────────────
+
+test('taken: een knop levert werk op dat blijft bestaan', () => {
+  /*
+   * De aanleiding voor dit hele mechanisme: 'bellen en herinneren' veranderde alleen een
+   * merkje in het scherm. Bij het volgende bezoek stond dezelfde regel er weer en was er
+   * niemand gebeld. Deze test bewaakt dat een actie nu ergens landt.
+   */
+  const eigen = new InMemoryRepository();
+  const regel = aanloop(eigen).find((a) => a.status !== 'op-schema');
+  assert.ok(regel, 'geen enkele aanloopregel vraagt actie');
+  assert.equal(regel.taak, undefined);
+
+  const uitkomst = zetTaakUit(eigen, {
+    soort: 'bellen',
+    titel: 'Bellen over het bloedonderzoek',
+    aanleiding: 'Lab niet geprikt en de afspraak staat over vier dagen.',
+    patientId: regel.patientId,
+    patientNaam: regel.naam,
+    bron: { soort: 'aanloop', verwijzing: regel.afspraakId },
+    voorRol: 'assistent',
+    uiterlijkOp: regel.datum,
+  }, 'zv-poh-1');
+  assert.ok(uitkomst.taak, uitkomst.melding);
+
+  const na = aanloop(eigen).find((a) => a.afspraakId === regel.afspraakId);
+  assert.equal(na.status, 'opgepakt');
+  assert.ok(na.taak, 'de regel draagt de taak niet');
+  assert.match(na.advies, /ligt bij/);
+});
+
+test('taken: zonder aanleiding komt er niets', () => {
+  const eigen = new InMemoryRepository();
+  const uitkomst = zetTaakUit(eigen, {
+    soort: 'bellen', titel: 'Bellen', aanleiding: '  ',
+    bron: { soort: 'handmatig' }, voorRol: 'assistent',
+  }, 'zv-poh-1');
+  assert.equal(uitkomst.taak, undefined);
+  assert.match(uitkomst.melding, /aanleiding/i);
+  assert.equal(eigen.werktaken().length, 0);
+});
+
+test('taken: op rol komt bij iedereen van die rol, op naam alleen bij die persoon', () => {
+  const eigen = new InMemoryRepository();
+  zetTaakUit(eigen, {
+    soort: 'bellen', titel: 'Voor de rol', aanleiding: 'Kan door wie er die dag is.',
+    bron: { soort: 'handmatig' }, voorRol: 'assistent',
+  }, 'zv-poh-1');
+  zetTaakUit(eigen, {
+    soort: 'voorbereiden', titel: 'Voor Sanne', aanleiding: 'Persoonlijk uitzoekwerk.',
+    bron: { soort: 'handmatig' }, voorRol: 'poh-s', voorGebruikerId: 'zv-poh-1',
+  }, 'zv-huisarts-1');
+
+  const assistent = takenoverzicht(eigen, 'zv-assistent-1');
+  assert.deepEqual(assistent.mijn.map((t) => t.titel), ['Voor de rol']);
+
+  const poh = takenoverzicht(eigen, 'zv-poh-1');
+  assert.deepEqual(poh.mijn.map((t) => t.titel), ['Voor Sanne']);
+  // Wat de POH bij een ander neerlegde, blijft zichtbaar — anders weet je niet of het is opgepakt.
+  assert.deepEqual(poh.uitgezet.map((t) => t.titel), ['Voor de rol']);
+});
+
+test('taken: inplannen zet een blok in de agenda van wie hem oppakt', () => {
+  const eigen = new InMemoryRepository();
+  const { taak } = zetTaakUit(eigen, {
+    soort: 'bellen', titel: 'Terugbellen', aanleiding: 'Uitslag doorgeven.',
+    bron: { soort: 'handmatig' }, voorRol: 'assistent',
+  }, 'zv-poh-1');
+
+  const dag = eigen.peildatum().toISOString().slice(0, 10);
+  const gepland = planTaak(eigen, taak.id, `${dag}T15:20:00+02:00`);
+  assert.equal(gepland.status, 'gepland');
+
+  const inAgenda = eigen.agenda('assistent').find((a) => a.id === gepland.agendaItemId);
+  assert.ok(inAgenda, 'de taak staat niet in de agenda van de assistent');
+  assert.equal(inAgenda.titel, 'Terugbellen');
+  assert.ok(!eigen.agenda('poh-s').some((a) => a.id === gepland.agendaItemId),
+    'de taak staat ook in de agenda van de POH');
+
+  const na = rondTaakAf(eigen, taak.id, 'zv-assistent-1', 'gebeld, komt volgende week');
+  assert.equal(na.status, 'afgerond');
+  assert.equal(na.afgerondDoor, 'Ilse Hendriks');
+  assert.equal(takenoverzicht(eigen, 'zv-assistent-1').open, 0);
+});
+
+test('taken: eigen werk krijgt een plek in de agenda, zonder patiënt', () => {
+  const eigen = new InMemoryRepository();
+  const dag = eigen.peildatum().toISOString().slice(0, 10);
+  const voor = eigen.agenda('poh-s').length;
+
+  const item = planWerkblok(eigen, { blokId: 'uitslagen', rol: 'poh-s', start: `${dag}T15:40:00+02:00` });
+  assert.ok(item, 'het blok is niet geplaatst');
+  assert.equal(item.patientId, undefined, 'een werkblok hoort geen patiënt te hebben');
+  assert.equal(eigen.agenda('poh-s').length, voor + 1);
+  assert.equal(planWerkblok(eigen, { blokId: 'bestaat-niet', rol: 'poh-s', start: `${dag}T16:00:00+02:00` }), undefined);
 });

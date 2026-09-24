@@ -53,6 +53,14 @@ Dit blok stond eerst naast een apart blok *Monitoren*, en die twee gingen over g
 dezelfde mensen. Het volledige cohort dat op afstand wordt gevolgd, inclusief iedereen die
 stabiel is, staat nu onder **Praktijk › Mijn cohort**: een overzicht, geen werklijst.
 
+**Wat er uit een blok voortkomt, is werk.** Elke actieknop in Aanloop en Opvolgen opent
+een paneel — dezelfde vorm als het orderpaneel — waarin je kiest wát er moet gebeuren en
+bij wíé het terechtkomt. Dat levert een **werktaak** op met een aanleiding, een ontvanger
+en een status, die op de dagstart van de ontvanger verschijnt en op het planbord een plek
+in de agenda kan krijgen. De regel die hem veroorzaakte verandert daarbij van stand, zodat
+hij niet blijft schreeuwen terwijl er iemand mee bezig is
+([ADR-0019](adr/ADR-0019-een-knop-levert-werk-op.md)).
+
 Zie [ADR-0017](adr/ADR-0017-werkproces-op-tijdshorizon.md).
 
 ### 1.1 Dagstart (het startscherm — niet "zoek een patiënt")

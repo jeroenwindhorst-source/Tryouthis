@@ -1,8 +1,12 @@
 import { useState } from 'react';
-import { api, AANLOOPSTATUS_LABEL, type Aanloopstatus } from '../api';
+import {
+  api, AANLOOPSTATUS_LABEL, type Aanloopregel, type Aanloopstatus, type Gebruiker,
+  type NieuweTaak, type Taaksoort,
+} from '../api';
 import { useData } from '../gebruik';
 import { Icoon } from '../iconen';
 import { Fout, Laden, Leeg, ModuleChips } from '../onderdelen';
+import { Takenpaneel } from './Takenpaneel';
 
 /**
  * DE AANLOOP
@@ -20,12 +24,48 @@ import { Fout, Laden, Leeg, ModuleChips } from '../onderdelen';
  */
 
 const TOON: Record<Aanloopstatus, string> = {
-  'op-schema': 'ok', 'herinnering-loopt': 'informatief', bellen: 'aandacht', verzetten: 'urgent',
+  'op-schema': 'ok', 'herinnering-loopt': 'informatief', bellen: 'aandacht',
+  verzetten: 'urgent', opgepakt: 'neutraal',
 };
 
-export function Aanloop({ openPatient }: { openPatient: (id: string) => void }) {
-  const { data, fout, bezig } = useData(() => api.aanloop());
-  const [afgehandeld, setAfgehandeld] = useState<Record<string, string>>({});
+/** Wat er in het takenpaneel komt te staan als je op een knop drukt. */
+type Voorstel = {
+  soort: Taaksoort; titel: string; aanleiding: string;
+  patientId?: string; patientNaam?: string;
+  bron: NieuweTaak['bron']; uiterlijkOp?: string;
+};
+
+function voorstelVoor(regel: Aanloopregel, soort: Taaksoort): Voorstel {
+  const open = [
+    ...regel.vooraf.filter((v) => !v.binnen).map((v) => v.naam),
+    ...(regel.vragenlijst?.status === 'open' ? ['de vragenlijst'] : []),
+  ];
+  return {
+    soort,
+    titel: soort === 'bellen'
+      ? `Bellen over ${open.join(' en ') || 'de voorbereiding'}`
+      : `Afspraak van ${regel.datum} verzetten`,
+    // De aanleiding komt uit het scherm zelf: wie de taak oppakt, hoeft niet te raden
+    // waarom hij belt. Dat is precies wat er in een papieren briefje misgaat.
+    aanleiding: soort === 'bellen'
+      ? `${open.join(' en ') || 'De voorbereiding'} is nog niet binnen; de afspraak staat `
+        + `over ${regel.dagenTot} dagen (${regel.datum} om ${regel.tijd}).`
+      : `${regel.advies} Verzetten naar een moment waarop de uitslagen er wél zijn.`,
+    patientId: regel.patientId,
+    patientNaam: regel.naam,
+    bron: { soort: 'aanloop', verwijzing: regel.afspraakId },
+    // Na de afspraak heeft bellen geen zin meer; dat is de horizon van deze taak.
+    uiterlijkOp: regel.datum,
+  };
+}
+
+export function Aanloop({ gebruiker, openPatient }: {
+  gebruiker: Gebruiker;
+  openPatient: (id: string) => void;
+}) {
+  const { data, fout, bezig, herlaad } = useData(() => api.aanloop());
+  const [paneel, setPaneel] = useState<Voorstel | undefined>();
+  const [melding, setMelding] = useState<string | undefined>();
 
   if (fout) return <Fout boodschap={fout} />;
   if (bezig || !data) return <Laden wat="Aanloop" />;
@@ -33,18 +73,14 @@ export function Aanloop({ openPatient }: { openPatient: (id: string) => void }) 
   const teDoen = data.filter((a) => a.status === 'bellen' || a.status === 'verzetten');
   const rest = data.filter((a) => a.status !== 'bellen' && a.status !== 'verzetten');
 
-  const regel = (a: (typeof data)[number]) => {
-    const besluit = afgehandeld[a.afspraakId];
-    return (
+  const regel = (a: (typeof data)[number]) => (
       <section key={a.afspraakId} className="kaart">
         <header>
           <span className="tijd">{a.datum.slice(8, 10)}-{a.datum.slice(5, 7)}</span>
           <h2 style={{ fontSize: 15 }}>{a.naam}</h2>
           <span className="mini">{a.leeftijd} jaar · over {a.dagenTot} dagen om {a.tijd}</span>
           <span style={{ marginLeft: 'auto' }}>
-            {besluit
-              ? <span className="merkje" data-toon="ok">{besluit}</span>
-              : <span className="merkje" data-toon={TOON[a.status]}>{AANLOOPSTATUS_LABEL[a.status]}</span>}
+            <span className="merkje" data-toon={TOON[a.status]}>{AANLOOPSTATUS_LABEL[a.status]}</span>
           </span>
         </header>
 
@@ -83,15 +119,30 @@ export function Aanloop({ openPatient }: { openPatient: (id: string) => void }) 
             )}
           </div>
 
-          {!besluit && a.status !== 'op-schema' && (
+          {/*
+            Een uitgezette taak staat bij de regel die hem veroorzaakte. Zonder dat zou je
+            na het uitzetten dezelfde regel weer zien schreeuwen — en dat is precies
+            waarom mensen zulke lijsten gaan negeren.
+          */}
+          {a.taak && (
+            <div className="taakstand">
+              <Icoon naam="vink" grootte={14} />
+              <strong>{a.taak.soortLabel}</strong>
+              <span>ligt bij {a.taak.voorNaam}</span>
+              <span className="merkje" data-toon={a.taak.status === 'gepland' ? 'ok' : 'informatief'}>
+                {a.taak.standLabel}
+              </span>
+            </div>
+          )}
+
+          {!a.taak && a.status !== 'op-schema' && (
             <div className="knop-rij" style={{ marginTop: 13 }}>
               <button className="knop" data-toon="primair"
-                onClick={() => setAfgehandeld((g) => ({ ...g, [a.afspraakId]: 'gebeld' }))}>
+                onClick={() => setPaneel(voorstelVoor(a, 'bellen'))}>
                 <Icoon naam="gesprek" grootte={13} /> Bellen en herinneren
               </button>
-              <button className="knop"
-                onClick={() => setAfgehandeld((g) => ({ ...g, [a.afspraakId]: 'verzet' }))}>
-                <Icoon naam="agenda" grootte={13} /> Afspraak later plannen
+              <button className="knop" onClick={() => setPaneel(voorstelVoor(a, 'inplannen'))}>
+                <Icoon naam="agenda" grootte={13} /> Afspraak verzetten
               </button>
               <button className="knop" onClick={() => openPatient(a.patientId)}>
                 <Icoon naam="klembord" grootte={13} /> Dossier openen
@@ -100,8 +151,7 @@ export function Aanloop({ openPatient }: { openPatient: (id: string) => void }) 
           )}
         </div>
       </section>
-    );
-  };
+  );
 
   return (
     <>
@@ -113,6 +163,14 @@ export function Aanloop({ openPatient }: { openPatient: (id: string) => void }) 
           </div>
         </div>
       </div>
+
+      {melding && (
+        <div className="notitie" data-toon="merk" style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
+          <Icoon naam="vink" grootte={14} /> {melding}
+          <button className="knop" data-toon="stil" style={{ marginLeft: 'auto' }}
+            onClick={() => setMelding(undefined)}>Sluiten</button>
+        </div>
+      )}
 
       <div className="notitie">
         <strong>Waarom dit blok bestaat.</strong> Iedereen hier kreeg automatisch bericht om bloed
@@ -135,6 +193,12 @@ export function Aanloop({ openPatient }: { openPatient: (id: string) => void }) 
           <h2 className="sectiekop">Loopt zoals het hoort</h2>
           <div style={{ display: 'grid', gap: 12 }}>{rest.map(regel)}</div>
         </>
+      )}
+
+      {paneel && (
+        <Takenpaneel gebruiker={gebruiker} voorstel={paneel}
+          opSluit={() => setPaneel(undefined)}
+          opUitgezet={(tekst) => { setPaneel(undefined); setMelding(tekst); herlaad(); }} />
       )}
     </>
   );

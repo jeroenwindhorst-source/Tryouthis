@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { api } from '../api';
 import { useData } from '../gebruik';
 import { Icoon } from '../iconen';
-import { Agenda, Fout, Kaart, Laden, Leeg } from '../onderdelen';
+import { Agenda, Fout, Kaart, Laden, Leeg, Werklijst } from '../onderdelen';
 
 const KANAAL_ICOON: Record<string, string> = {
   telefoon: 'gesprek', portaal: 'huis', balie: 'persoon', 'e-consult': 'gesprek',
@@ -20,7 +20,8 @@ const URGENTIE_TOON: Record<string, string> = {
  * moet het heen. Telefonisch en digitaal lopen door één triagemodel — in de procesplaat
  * komen die twee routes samen bij dezelfde gestructureerde zorgvraag (docs/12 §2.2).
  */
-export function AssistentWerkplek({ scherm, gaNaar, openPatient }: {
+export function AssistentWerkplek({ gebruiker, scherm, gaNaar, openPatient }: {
+  gebruiker: { id: string };
   scherm: 'overzicht' | 'triage';
   /** Ook hier zijn de tegels knoppen: elke tegel brengt je naar het scherm waar dat werk staat. */
   gaNaar: (scherm: string) => void;
@@ -111,6 +112,13 @@ export function AssistentWerkplek({ scherm, gaNaar, openPatient }: {
             <div className="wat">Recepten, uitslagen en post die jij hebt klaargezet.</div>
           </button>
         </div>
+
+        {/*
+          Wat de POH of de huisarts bij haar heeft neergelegd. Zonder deze lijst is
+          'uitzetten bij de assistent' een zin in een ander scherm en gebeurt er niets.
+        */}
+        <Werklijst gebruiker={gebruiker} naarPlannen={() => gaNaar('plannen')}
+          openPatient={openPatient} />
 
         <div className="raster2">
           <Kaart titel="Mijn dag" icoon="agenda" telling={data.agenda.length}>

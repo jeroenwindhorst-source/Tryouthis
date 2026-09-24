@@ -7,6 +7,7 @@ import {
   InMemoryRepository, intakes, legVerrichtingVast, meetreeksen, meldAan, monitoringCohort,
   neemVragenlijstOver, opvolgen, vragenlijstenVoor,
   protocoloverzicht, wijzigProtocol, herstelProtocol, type Protocolwijziging,
+  takenoverzicht, zetTaakUit, planTaak, rondTaakAf, planWerkblok, type NieuweTaak,
   orderOverzicht, orderVoorstellen, overleg, pakAcuutOp, patientOverzicht, plaatsLosseOrders,
   planbord, planbordPraktijk, praktijkrapportage, praktijkSamenvatting, registreerConsult,
   terminologie, verrichtingen, vraagAfspraakAan, zetOpBespreeklijst, zoekOrders, zoekPatient,
@@ -213,6 +214,16 @@ export const lokaleApi = {
   bevestigIntake: (id: string) => {
     repo.bevestigIntake(id);
     return traag({ intake: repo.intakes().find((i) => i.id === id)! });
+  },
+
+  taken: (gebruikerId: string) => traag(takenoverzicht(repo, gebruikerId)),
+  zetTaakUit: (nieuw: NieuweTaak, door: string) => traag(zetTaakUit(repo, nieuw, door)),
+  planTaak: (id: string, start: string) => traag({ taak: planTaak(repo, id, start) }),
+  rondTaakAf: (id: string, door: string, uitkomst: string) =>
+    traag({ taak: rondTaakAf(repo, id, door, uitkomst) }),
+  planWerkblok: (blokId: string, rol: string, start: string) => {
+    planWerkblok(repo, { blokId, rol, start });
+    return traag(planbordPraktijk(repo));
   },
 
   protocol: (gebruikerId?: string) => traag(protocoloverzicht(repo, gebruikerId)),
