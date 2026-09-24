@@ -159,6 +159,36 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -.01em; }
 }
 .sectiekop:first-of-type { margin-top: 4px; }
 
+/*
+ * Filterrij boven een lijst.
+ *
+ * Bewust merkjes en geen selectievakjes: het zijn dezelfde labels als in de lijst
+ * eronder, en dan hoort er hetzelfde aan af te lezen te zijn. Uitgezet is niet
+ * verdwenen maar grijs — je moet kunnen zien wát je hebt weggeklikt.
+ */
+.tijdlijnfilter {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  padding: 0 0 12px; margin-bottom: 2px;
+}
+.tijdlijnfilter .merkje {
+  display: inline-flex; align-items: center; gap: 6px;
+  cursor: pointer; border: 1px solid transparent; padding: 3px 9px;
+}
+/*
+ * Uitzetten en kiezen zien er anders uit, want ze betekenen iets anders.
+ *
+ * In het journaal zet je soorten úít: doorgestreept en grijs, want je hebt ze zelf
+ * weggeklikt en dat moet je kunnen zien. In een keuzefilter is niet-gekozen gewoon
+ * niet-gekozen — daar zou doorstrepen lezen als 'niet beschikbaar'.
+ */
+.tijdlijnfilter .merkje[data-aan="false"] { opacity: .5; text-decoration: line-through; }
+.tijdlijnfilter[data-stijl="keuze"] .merkje[data-aan="false"] {
+  opacity: 1; text-decoration: none;
+}
+.tijdlijnfilter[data-stijl="keuze"] .merkje:hover { border-color: var(--line); }
+.tijdlijnfilter .merkje[data-aan="true"] { border-color: currentColor; }
+.tijdlijnfilter .merkje .mini { font-variant-numeric: tabular-nums; opacity: .7; }
+
 /* Eén zin van de patiënt, tussen de signalen. Zachter dan een signaal, harder dan mini. */
 .citaatregel {
   display: flex; gap: 6px; align-items: baseline; margin-top: 7px;
@@ -191,8 +221,8 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -.01em; }
 
 /* ── Processtappen ────────────────────────────────────────────────────────── */
 
-/* Vijf blokken naast elkaar op een normaal scherm: de dag past in één oogopslag. */
-.stappen { display: grid; grid-template-columns: repeat(auto-fit, minmax(198px, 1fr)); gap: 12px; margin-bottom: 18px; }
+/* Vier blokken naast elkaar op een normaal scherm: de dag past in één oogopslag. */
+.stappen { display: grid; grid-template-columns: repeat(auto-fit, minmax(232px, 1fr)); gap: 12px; margin-bottom: 18px; }
 .stap {
   position: relative; text-align: left;
   background: var(--vlak); border: 1px solid var(--line); border-radius: var(--rond);
@@ -738,7 +768,7 @@ body {
 }
 .knop[data-toon="primair"]:hover { background: linear-gradient(180deg, var(--merk), var(--merk-diep)); }
 
-/* De vijf processtappen krijgen elk een eigen tint. Ze zijn het startscherm en
+/* De vier processtappen krijgen elk een eigen tint. Ze zijn het startscherm en
    het enige moment waarop kleur gewoon mag opvrolijken — het zijn vier vaste
    stappen, dus de kleur is te leren en dus betekenisvol. */
 .stap { overflow: hidden; }
@@ -755,7 +785,6 @@ body {
 .stap[data-stap="aanloop"]   { --stapkleur: #0e7aa8; --stapzacht: #e8f5fc; }
 .stap[data-stap="spreekuur"] { --stapkleur: #0f5f6e; --stapzacht: #e3f0f2; }
 .stap[data-stap="opvolgen"]  { --stapkleur: #7b3fa0; --stapzacht: #f4ecfa; }
-.stap[data-stap="monitoren"] { --stapkleur: #0d7d6e; --stapzacht: #e7f6f3; }
 .stap[data-stap="afronden"]  { --stapkleur: #b96708; --stapzacht: #fdf4e6; }
 
 /* ── Demo herstellen ──────────────────────────────────────────────────────── */

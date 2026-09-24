@@ -63,20 +63,26 @@ Wijs drie dingen aan, meer niet:
 
 ---
 
-## 2. De vijf tegels — mijn werk op volgorde van tijd (1 min)
+## 2. De vier tegels — mijn werk op volgorde van tijd (1 min)
 
-> *"Deze vijf blokken zijn niet vijf lijsten. Ze staan op volgorde van hoe ver het moment
+> *"Deze vier blokken zijn niet vier lijsten. Ze staan op volgorde van hoe ver het moment
 > ligt waarop er iets gebeurt."*
 
 | Tegel | Horizon | De vraag die hij beantwoordt |
 |---|---|---|
 | **Aanloop** | de komende weken | wie komt er straks terwijl de voorbereiding niet rond is? |
 | **Spreekuur** | vandaag | wie komt er, en wat weet ik van deze mens? |
-| **Opvolgen** | nu | wat is er binnengekomen waar ik vandaag iets mee kan? |
-| **Monitoren** | doorlopend | hoe gaat het met de groep die ik op afstand volg? |
+| **Opvolgen** | nu | wat vraagt aandacht bij iemand die géén afspraak heeft? |
 | **Afronden** | straks | wat blijft er liggen als ik naar huis ga? |
 
 > *"En het zijn knoppen. Ik klik erop en ik zit in het werk."*
+
+Als iemand vraagt waar het monitoren gebleven is:
+
+> *"Dat zat hier eerst als vijfde blok naast Opvolgen, en dat werkte niet. Dezelfde eGFR
+> van 40 stond in het ene blok als binnengekomen uitslag en in het andere als afwijkende
+> waarde. Wat aandacht vraagt staat nu op één plek. Wie ik volg en wie het goed doet — dat
+> overzicht staat er nog, onder Praktijk, maar dat is geen werklijst."*
 
 ---
 
@@ -143,7 +149,7 @@ Klik op **Hele vragenlijst bekijken**.
 
 ---
 
-## 5. Het consult — overnemen in mijn dossier (2 min)
+## 5. Het consult — overnemen, en terugvinden in het journaal (3 min)
 
 Klik op **Open consultscherm**, en dan op de tab **Consult**.
 
@@ -167,6 +173,29 @@ En dan de regel die eronder staat:
 > maar het is geen registratie van de praktijk tot iemand dat zegt."*
 
 > *"Anders declareer je werk dat een ander gedaan heeft."*
+
+Klik dan op de tab **Journaal**.
+
+> *"En hier staat hij terug. Niet als tekst die in een consult is geplakt, maar als eigen
+> regel op de dag dat zíj hem invulde — drie dagen voor dit gesprek. Met erbij dat ik hem
+> zojuist heb overgenomen, met mijn naam en de datum."*
+
+Klik op **Alle antwoorden tonen**.
+
+> *"En de hele lijst is er nog, ook de vragen die niet in de samenvatting pasten."*
+
+Wijs dan de filterrij boven de tijdlijn aan, en links het blok **Van de patiënt zelf**.
+
+> *"Het journaal laat alles zien — dat is het punt van één tijdlijn. Maar bij iemand die
+> elke dag zijn bloeddruk doorgeeft wil je ook even zonder die metingen kunnen kijken. Dus
+> ik kan soorten uitzetten, en wat ik heb weggeklikt blijft zichtbaar als doorgestreept
+> merkje: ik moet kunnen zien waarom de lijst korter is."*
+
+Klik op **Alleen wat de patiënt aanleverde**.
+
+> *"En dit is de vraag die ik nu nooit kan stellen: laat me eens alles zien wat deze mens
+> zélf heeft doorgegeven. Thuismetingen, vragenlijsten, de voorbereiding uit de wachtkamer
+> — over alle episodes heen."*
 
 ---
 
@@ -194,11 +223,12 @@ Loop de eerste drie langs:
 
 ---
 
-## 7. Monitoren — en wie juist niet hoeft te komen (1 min)
+## 7. Mijn cohort — en wie juist niet hoeft te komen (1 min)
 
-Klik op **Monitoren**. 23 mensen, 7 met een signaal, 16 stabiel.
+Klik onder **Praktijk** op **Mijn cohort**. 23 mensen, 7 met een signaal, 16 stabiel.
 
-> *"Zestien mensen hoeven niets. Dat is ook een uitkomst, en het scheelt zestien oproepen."*
+> *"Dit is geen werklijst maar een overzicht. Zestien mensen hoeven niets. Dat is ook een
+> uitkomst, en het scheelt zestien oproepen."*
 
 Wijs bij **Fatima Vermeulen** en **Dirk Mulder** de regel in cursief aan, onder het signaal.
 
@@ -206,10 +236,8 @@ Wijs bij **Fatima Vermeulen** en **Dirk Mulder** de regel in cursief aan, onder 
 > waar ik prik voelt hard en bobbelig aan.' Die zin verandert meer aan mijn dag dan zijn
 > HbA1c van 67."*
 
-Klap één regel uit.
-
-> *"En dan staat de hele vragenlijst er weer, op dezelfde manier. Overal hetzelfde beeld —
-> anders ga ik zoeken welk scherm de echte antwoorden laat zien."*
+> *"Wat van deze mensen vandaag om een besluit vraagt, stond net in Opvolgen. Hier staan
+> ze allemaal — ook degenen bij wie niets aan de hand is."*
 
 ---
 
@@ -222,10 +250,10 @@ Klik op **Afronden**.
 En dan terug naar waar je begon:
 
 > *"Eén systeem. Ik zag mijn werk op volgorde van tijd: wat over een week misgaat, wat
-> vandaag binnenkomt, wie ik nu spreek. Ik zag wat de patiënt zelf heeft opgeschreven, en ik
-> kon het met één klik in mijn dossier zetten — als patiëntgegeven, niet stiekem als mijn
-> eigen registratie. En bijna de helft van het logistieke werk was al gedaan voordat ik
-> inlogde."*
+> vandaag binnenkomt, wie ik nu spreek. Ik zag wat de patiënt zelf heeft opgeschreven, ik kon
+> het met één klik in mijn dossier zetten — als patiëntgegeven, niet stiekem als mijn eigen
+> registratie — en ik kon het daarna in het journaal terugvinden als precies dat. En bijna
+> de helft van het logistieke werk was al gedaan voordat ik inlogde."*
 
 ---
 
@@ -253,10 +281,12 @@ Getallen die kloppen bij een verse demo, op het moment dat je inlogt.
 
 | Waar | Wat |
 |---|---|
-| Tegels | Aanloop 12 (2) · Spreekuur 9 (4) · Opvolgen 11 (11) · Monitoren 23 (7) · Afronden 3 (0) |
+| Tegels | Aanloop 12 (2) · Spreekuur 9 (4) · Opvolgen 14 (2) · Afronden 3 (0) |
 | Agenda | 12 items · 3 afgerond · 1 niet verschenen · 1 aangemeld |
 | Automatisering | 49% · 19× labaanvraag · 21× vragenlijst · 42 punten blijven bij jou |
 | Eerste aandacht | Willem Hendriks (thuisbloeddruk 160) · Ruud Mulder (eGFR 40) |
+| Opvolgen · aanleidingen | 5 labuitslagen · 5 vragenlijsten · 3 thuismetingen · 1 uit het beloop |
+| Mijn cohort | 23 gevolgd · 7 met een signaal · 16 stabiel |
 | Aanloop · verzetten | Fatima Bos, over 4 dagen |
 | Aanloop · bellen | Greetje de Vries, over 6 dagen |
 | Nu aan de beurt | Anneke Bos, 10:40 — cijfer 4, geldzorgen, haalt medicijnen niet op |
@@ -300,5 +330,5 @@ receptverkeer. De velden en het werkproces zijn er; de transportlaag niet. Het e
 antwoord is: *"de order heeft een bestemming en een route — wat eronder zit is een
 koppeling die we nog moeten bouwen."*
 
-**Ga niet alle vijf de tegels uitputtend af.** Aanloop, Spreekuur en Opvolgen dragen het
-verhaal. Monitoren en Afronden zijn de afronding, niet het middenstuk.
+**Ga niet alle vier de tegels uitputtend af.** Aanloop, Spreekuur en Opvolgen dragen het
+verhaal. Afronden is de afsluiting, niet het middenstuk.

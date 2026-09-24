@@ -8,7 +8,7 @@ volgende stap voor de hand ligt — niet wat er bestaat.
 Dit is de rol waarop de eerste vertical slice is gebouwd.
 
 De werkplek is ingedeeld naar het **werkproces**, niet naar het dossier:
-dagstart → aanloop → spreekuur → opvolgen → monitoren → afronden. Per stap staat in het
+dagstart → aanloop → spreekuur → opvolgen → afronden. Per stap staat in het
 scherm letterlijk wát je daar ziet, want dat is wat in bestaande systemen ontbreekt: je
 moet er maar achter komen waar je werk staat.
 
@@ -22,8 +22,7 @@ avond tevoren in één ruk voor maar vlak voordat ze iemand binnenroept. Twee in
 |---|---|---|
 | **Aanloop** | de komende weken | wie komt er straks terwijl de voorbereiding niet rond is? |
 | **Spreekuur** | vandaag | wie komt er, en wat weet ik van deze mens? |
-| **Opvolgen** | nu | wat is er binnengekomen waar ik vandaag iets mee kan? |
-| **Monitoren** | doorlopend | hoe gaat het met de groep die ik op afstand volg? |
+| **Opvolgen** | nu | wat vraagt aandacht bij iemand die géén afspraak heeft? |
 | **Afronden** | straks | wat blijft er liggen als ik naar huis ga? |
 
 **Aanloop** bestaat omdat het systeem weken van tevoren weet wat er vóór een controle
@@ -32,10 +31,20 @@ drie weken een herinnering, over acht dagen een telefoontje en over drie dagen e
 om de afspraak te verzetten. Hetzelfde feit, een ander gevolg — en in bestaande systemen
 komt het pas aan het licht als de patiënt al in de stoel zit.
 
-**Opvolgen** bestaat omdat er een categorie tussen spreekuur en monitoring in valt: een
+**Opvolgen** verzamelt alles wat aandacht vraagt bij iemand zonder afspraak: een
 labuitslag die afwijkt, een ingevulde vragenlijst waarin iemand iets opschrijft dat niet
-kan wachten, een reeks thuisgemeten bloeddrukken. Voor geen daarvan is een consult nodig;
-zonder eigen plek wachten ze tot de afspraak die toevallig in de agenda staat.
+kan wachten, een reeks thuisgemeten bloeddrukken, of een beloop in het dossier dat de
+verkeerde kant op gaat. Voor geen daarvan is een consult nodig; zonder eigen plek wachten
+ze tot de afspraak die toevallig in de agenda staat.
+
+De **aanleiding** blijft zichtbaar en filterbaar — *labuitslag · vragenlijst · thuismeting
+· signaal uit het beloop* — want die bepaalt hoe je reageert. Maar er staat nooit meer dan
+één regel over hetzelfde: wie een concrete aanlevering heeft, krijgt daarnaast geen
+signaal over diezelfde waarde.
+
+Dit blok stond eerst naast een apart blok *Monitoren*, en die twee gingen over grotendeels
+dezelfde mensen. Het volledige cohort dat op afstand wordt gevolgd, inclusief iedereen die
+stabiel is, staat nu onder **Praktijk › Mijn cohort**: een overzicht, geen werklijst.
 
 Zie [ADR-0017](adr/ADR-0017-werkproces-op-tijdshorizon.md).
 

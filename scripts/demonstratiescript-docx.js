@@ -266,8 +266,8 @@ K(bullet('**Daaronder staat wat als eerste aandacht vraagt.** Vier mensen, met d
 K(zeg('“Bijna de helft van wat het systeem signaleerde, is logistiek en draait zonder mij. Wat overblijft zijn klinische beslissingen, en die blijven bij mij.”'));
 
 // ── 2
-K(h1('2 · De vijf tegels — mijn werk op volgorde van tijd'));
-K(zeg('“Deze vijf blokken zijn niet vijf lijsten. Ze staan op volgorde van hoe ver het moment ligt waarop er iets gebeurt.”'));
+K(h1('2 · De vier tegels — mijn werk op volgorde van tijd'));
+K(zeg('“Deze vier blokken zijn niet vier lijsten. Ze staan op volgorde van hoe ver het moment ligt waarop er iets gebeurt.”'));
 K(leeg(60));
 K(tabel(
   [
@@ -278,13 +278,14 @@ K(tabel(
   [
     ['**Aanloop**', 'de komende weken', 'wie komt er straks terwijl de voorbereiding niet rond is?'],
     ['**Spreekuur**', 'vandaag', 'wie komt er, en wat weet ik van deze mens?'],
-    ['**Opvolgen**', 'nu', 'wat is er binnengekomen waar ik vandaag iets mee kan?'],
-    ['**Monitoren**', 'doorlopend', 'hoe gaat het met de groep die ik op afstand volg?'],
+    ['**Opvolgen**', 'nu', 'wat vraagt aandacht bij iemand die géén afspraak heeft?'],
     ['**Afronden**', 'straks', 'wat blijft er liggen als ik naar huis ga?'],
   ],
 ));
 K(leeg(140));
 K(zeg('“En het zijn knoppen. Ik klik erop en ik zit in het werk.”'));
+K(p('Als iemand vraagt waar het monitoren gebleven is:'));
+K(zeg('“Dat zat hier eerst als vijfde blok naast Opvolgen, en dat werkte niet. Dezelfde eGFR van 40 stond in het ene blok als binnengekomen uitslag en in het andere als afwijkende waarde. Wat aandacht vraagt staat nu op één plek. Wie ik volg en wie het goed doet — dat overzicht staat er nog, onder Praktijk, maar dat is geen werklijst.”'));
 
 // ── 3
 K(h1('3 · Aanloop — voorkomen dat een consult over niets gaat'));
@@ -313,7 +314,7 @@ K(doe('Klik op **Hele vragenlijst bekijken**.'));
 K(zeg('“En ik kan de hele lijst gewoon teruglezen zoals zij hem gekregen heeft. Vraag voor vraag, in haar woorden. Geen samenvatting waarvan ik moet geloven dat hij klopt.”'));
 
 // ── 5
-K(h1('5 · Het consult — overnemen in mijn dossier'));
+K(h1('5 · Het consult — overnemen, en terugvinden in het journaal'));
 K(doe('Klik op **Open consultscherm**, en dan op de tab **Consult**.'));
 K(p('De vragenlijst staat er weer, nu met een knop.'));
 K(zeg('“En dan het stuk waar het mij om gaat. Ik wil dit niet overtypen.”'));
@@ -322,6 +323,14 @@ K(zeg('“Het staat onder de S van de SOEP. Dat is geen technische keuze: de S i
 K(p('En dan de regel die eronder staat:'));
 K(zeg('“Let op het verschil. De antwoorden stonden er al — daar was geen handeling voor nodig. Wat er nu gebeurt is dat ik ze aanvaard. Vanaf dit moment staat de praktijk ervoor in, en er staat bij wie dat gedaan heeft. Wat de patiënt zelf doorgeeft is echt en bruikbaar, maar het is geen registratie van de praktijk tot iemand dat zegt.”'));
 K(zeg('“Anders declareer je werk dat een ander gedaan heeft.”'));
+K(doe('Klik op de tab **Journaal**.'));
+K(zeg('“En hier staat hij terug. Niet als tekst die in een consult is geplakt, maar als eigen regel op de dag dat zíj hem invulde — drie dagen voor dit gesprek. Met erbij dat ik hem zojuist heb overgenomen, met mijn naam en de datum.”'));
+K(doe('Klik op **Alle antwoorden tonen**.'));
+K(zeg('“En de hele lijst is er nog, ook de vragen die niet in de samenvatting pasten.”'));
+K(doe('Wijs de filterrij boven de tijdlijn aan, en links het blok **Van de patiënt zelf**.'));
+K(zeg('“Het journaal laat alles zien — dat is het punt van één tijdlijn. Maar bij iemand die elke dag zijn bloeddruk doorgeeft wil je ook even zonder die metingen kunnen kijken. Dus ik kan soorten uitzetten, en wat ik heb weggeklikt blijft zichtbaar als doorgestreept merkje: ik moet kunnen zien waarom de lijst korter is.”'));
+K(doe('Klik op **Alleen wat de patiënt aanleverde**.'));
+K(zeg('“En dit is de vraag die ik nu nooit kan stellen: laat me eens alles zien wat deze mens zélf heeft doorgegeven. Thuismetingen, vragenlijsten, de voorbereiding uit de wachtkamer — over alle episodes heen.”'));
 
 // ── 6
 K(h1('6 · Opvolgen — wat vandaag al af kan'));
@@ -337,20 +346,21 @@ K(zeg('“Uit de jaarlijkse screening. Geen meetwaarde, gewoon wat ze opschreef.
 K(zeg('“Voor geen van deze drie is een consult nodig. Een bericht, een aangepast recept, een telefoontje. Zonder dit blok wachten ze tot de afspraak die toevallig in de agenda staat.”'));
 
 // ── 7
-K(h1('7 · Monitoren — en wie juist niet hoeft te komen'));
-K(doe('Klik op **Monitoren**. 23 mensen, 7 met een signaal, 16 stabiel.'));
-K(zeg('“Zestien mensen hoeven niets. Dat is ook een uitkomst, en het scheelt zestien oproepen.”'));
+K(h1('7 · Mijn cohort — en wie juist niet hoeft te komen'));
+K(doe('Klik onder **Praktijk** op **Mijn cohort**. 23 mensen, 7 met een signaal, 16 stabiel.'));
+K(zeg('“Dit is geen werklijst maar een overzicht. Zestien mensen hoeven niets. Dat is ook een uitkomst, en het scheelt zestien oproepen.”'));
 K(p('Wijs bij **Fatima Vermeulen** en **Dirk Mulder** de regel in cursief aan, onder het signaal.'));
 K(zeg('“En ook hier staat wat ze zelf hebben opgeschreven. Dirk Mulder: ‘de plek op mijn buik waar ik prik voelt hard en bobbelig aan.’ Die zin verandert meer aan mijn dag dan zijn HbA1c van 67.”'));
 K(doe('Klap één regel uit.'));
 K(zeg('“En dan staat de hele vragenlijst er weer, op dezelfde manier. Overal hetzelfde beeld — anders ga ik zoeken welk scherm de echte antwoorden laat zien.”'));
+K(zeg('“Wat van deze mensen vandaag om een besluit vraagt, stond net in Opvolgen. Hier staan ze allemaal — ook degenen bij wie niets aan de hand is.”'));
 
 // ── 8
 K(h1('8 · Afronden — en de zin waarmee je eindigt'));
 K(doe('Klik op **Afronden**.'));
 K(zeg('“Wat blijft er liggen, wat is er automatisch gedaan, en waar sta ik voor in.”'));
 K(p('En dan terug naar waar je begon:'));
-K(zeg('“Eén systeem. Ik zag mijn werk op volgorde van tijd: wat over een week misgaat, wat vandaag binnenkomt, wie ik nu spreek. Ik zag wat de patiënt zelf heeft opgeschreven, en ik kon het met één klik in mijn dossier zetten — als patiëntgegeven, niet stiekem als mijn eigen registratie. En bijna de helft van het logistieke werk was al gedaan voordat ik inlogde.”'));
+K(zeg('“Eén systeem. Ik zag mijn werk op volgorde van tijd: wat over een week misgaat, wat vandaag binnenkomt, wie ik nu spreek. Ik zag wat de patiënt zelf heeft opgeschreven, ik kon het met één klik in mijn dossier zetten — als patiëntgegeven, niet stiekem als mijn eigen registratie — en ik kon het daarna in het journaal terugvinden als precies dat. En bijna de helft van het logistieke werk was al gedaan voordat ik inlogde.”'));
 
 // ── Uitstapjes
 K(h1('Als er tijd over is'));
@@ -365,10 +375,12 @@ K(p('Getallen die kloppen bij een verse demo, op het moment dat je inlogt.'));
 K(tabel(
   [{ titel: 'Waar', breedte: 2600 }, { titel: 'Wat', breedte: BREEDTE - 2600 }],
   [
-    ['Tegels', 'Aanloop 12 (2) · Spreekuur 9 (4) · Opvolgen 11 (11) · Monitoren 23 (7) · Afronden 3 (0)'],
+    ['Tegels', 'Aanloop 12 (2) · Spreekuur 9 (4) · Opvolgen 14 (2) · Afronden 3 (0)'],
     ['Agenda', '12 items · 3 afgerond · 1 niet verschenen · 1 aangemeld'],
     ['Automatisering', '49% · 19× labaanvraag · 21× vragenlijst · 42 punten blijven bij jou'],
     ['Eerste aandacht', 'Willem Hendriks (thuisbloeddruk 160) · Ruud Mulder (eGFR 40)'],
+    ['Opvolgen · aanleidingen', '5 labuitslagen · 5 vragenlijsten · 3 thuismetingen · 1 uit het beloop'],
+    ['Mijn cohort', '23 gevolgd · 7 met een signaal · 16 stabiel'],
     ['Aanloop · verzetten', 'Fatima Bos, over 4 dagen'],
     ['Aanloop · bellen', 'Greetje de Vries, over 6 dagen'],
     ['Nu aan de beurt', 'Anneke Bos, 10:40 — cijfer 4, geldzorgen, haalt medicijnen niet op'],
@@ -402,7 +414,7 @@ K(p('**Gerrit Smit, 62, om 09:40.** HbA1c 78 — het enige urgente signaal van d
 K(h1('Wat je beter niet doet'));
 K(p('**Open geen willekeurig dossier via het zoekveld.** Neem iemand uit de agenda, uit Monitoren of uit de twee hierboven.'));
 K(p('**Beloof geen koppelingen.** Er is geen LSP, geen ZorgDomein, geen G-Standaard en geen receptverkeer. De velden en het werkproces zijn er; de transportlaag niet. Het eerlijkste antwoord is: *“de order heeft een bestemming en een route — wat eronder zit is een koppeling die we nog moeten bouwen.”*'));
-K(p('**Ga niet alle vijf de tegels uitputtend af.** Aanloop, Spreekuur en Opvolgen dragen het verhaal. Monitoren en Afronden zijn de afronding, niet het middenstuk.'));
+K(p('**Ga niet alle vier de tegels uitputtend af.** Aanloop, Spreekuur en Opvolgen dragen het verhaal. Afronden is de afsluiting, niet het middenstuk.'));
 K(p('**Klik de videobelknop niet aan alsof er beeld komt.** Hij opent een venster dat het werkproces toont en zet geen verbinding op. Dat is expres, en dat is ook het antwoord.'));
 K(p('**Reset tussen twee demo’s door.** Als je in de vorige ronde medicatie hebt gewijzigd of een consult hebt vastgelegd, staat dat er nog. **Demo herstellen** zet alles terug.'));
 

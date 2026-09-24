@@ -4,8 +4,7 @@ import { Icoon } from '../iconen';
 import { Agenda, Fout, Kaart, Laden } from '../onderdelen';
 
 const STAP_ICOON: Record<Processtap['id'], string> = {
-  aanloop: 'klembord', spreekuur: 'agenda', opvolgen: 'bliksem',
-  monitoren: 'radar', afronden: 'afvinken',
+  aanloop: 'klembord', spreekuur: 'agenda', opvolgen: 'bliksem', afronden: 'afvinken',
 };
 
 /**
@@ -139,17 +138,21 @@ export function Dagstart({ gaNaar, openPatient }: {
 
           <Kaart titel="Hoe dit scherm werkt" icoon="boek">
             <p style={{ marginTop: 0, color: 'var(--ink-2)', fontSize: 12.5 }}>
-              De vijf kaarten bovenaan zijn je werkproces. Ze staan niet op volgorde van de dag
+              De vier kaarten bovenaan zijn je werkproces. Ze staan niet op volgorde van de dag
               maar van de <em>tijdshorizon</em>: hoe ver het moment ligt waarop er iets gebeurt.
               Elke kaart zegt wat je er vindt, zodat je niet hoeft te zoeken waar je werk staat.
             </p>
             <ul className="uitleg">
               <li><strong>Aanloop</strong> — de komende weken: wie komt er straks terwijl het lab of de vragenlijst nog niet binnen is?</li>
               <li><strong>Spreekuur</strong> — vandaag: per patiënt de voorbereiding, en daarna het consult in één scherm.</li>
-              <li><strong>Opvolgen</strong> — nu: uitslagen, vragenlijsten en thuismetingen van mensen zonder afspraak.</li>
-              <li><strong>Monitoren</strong> — doorlopend: alleen wie afwijkt. Wie stabiel is, hoeft niet langs.</li>
+              <li><strong>Opvolgen</strong> — nu: alles wat aandacht vraagt bij wie géén afspraak heeft — uitslagen, vragenlijsten, thuismetingen en afwijkende beloopen.</li>
               <li><strong>Afronden</strong> — straks: wat er open staat en wat er automatisch is geregeld.</li>
             </ul>
+            <p style={{ color: 'var(--ink-2)', fontSize: 12.5 }}>
+              Wie je op afstand volgt maar bij wie niets afwijkt, staat hier niet — dat is de
+              uitkomst, niet een gat. Het volledige cohort vind je onder <strong>Praktijk ›
+              Mijn cohort</strong>.
+            </p>
             <p style={{ color: 'var(--ink-2)', fontSize: 12.5, marginBottom: 0 }}>
               Er staat nergens een zorgprogramma. Je werkt met aandachtsgebieden per mens; de
               koppeling naar ketenzorg en declaratie gebeurt automatisch op de achtergrond.

@@ -43,7 +43,7 @@ export interface Suggestie {
 }
 
 export interface Processtap {
-  id: 'aanloop' | 'spreekuur' | 'opvolgen' | 'monitoren' | 'afronden';
+  id: 'aanloop' | 'spreekuur' | 'opvolgen' | 'afronden';
   naam: string; omschrijving: string; watZieIk: string; aantal: number; aandacht: number;
 }
 
@@ -175,7 +175,25 @@ export type Tijdlijnitem =
   | { soort: 'extern'; datum: string; document: ExternDocument }
   | { soort: 'overleg'; datum: string; notitie: Overlegnotitie }
   | { soort: 'eigenmeting'; datum: string; meting: Eigenmetingdag }
+  | { soort: 'vragenlijst'; datum: string; inzage: Vragenlijstinzage }
   | { soort: 'intake'; datum: string; intake: WachtkamerIntake };
+
+export type Tijdlijnsoort = Tijdlijnitem['soort'];
+
+export const TIJDLIJNSOORT_LABEL: Record<Tijdlijnsoort, string> = {
+  contact: 'Contacten',
+  extern: 'Van buiten',
+  overleg: 'Overleg',
+  eigenmeting: 'Thuismetingen',
+  vragenlijst: 'Vragenlijsten',
+  intake: 'Wachtkamer',
+};
+
+/** De soorten die van de patiënt zelf komen (ADR-0012). */
+export const PATIENTSOORTEN: Tijdlijnsoort[] = ['eigenmeting', 'vragenlijst', 'intake'];
+
+/** Vaste id van de bron 'wat de patiënt zelf aanleverde'. */
+export const PATIENTBRON = 'bron-patient';
 
 export interface Bron {
   id: string; aard: string; titel: string; toelichting: string; aantal: number;
@@ -599,12 +617,15 @@ export interface Aanloopregel {
   status: Aanloopstatus; advies: string; toelichting: string;
 }
 
-export type Opvolgbron = 'labuitslag' | 'vragenlijst' | 'thuismeting';
+export type Opvolgbron = 'labuitslag' | 'vragenlijst' | 'thuismeting' | 'signaal';
 
 export interface Opvolgregel {
   id: string; patientId: string; naam: string; leeftijd: number;
   bron: Opvolgbron; binnenOp: string;
   titel: string; bevinding: string; ernst: Ernst; voorstel: string;
+  modules: ModuleChip[];
+  zelfredzaamheid?: { gemiddelde: number; niveau: string; richting?: string };
+  suggesties: Suggestie[];
 }
 
 export const AANLOOPSTATUS_LABEL: Record<Aanloopstatus, string> = {
@@ -618,6 +639,7 @@ export const OPVOLGBRON_LABEL: Record<Opvolgbron, string> = {
   labuitslag: 'Labuitslag binnen',
   vragenlijst: 'Vragenlijst ingevuld',
   thuismeting: 'Thuismetingen',
+  signaal: 'Uit het beloop',
 };
 
 export interface MonitoringRegel {

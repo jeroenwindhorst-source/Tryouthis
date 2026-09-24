@@ -8,9 +8,16 @@ import {
 } from '../onderdelen';
 
 /**
- * Monitoring als eigen processtap (docs/12 §2.4) — de stap die in geen enkel bestaand
- * HIS bestaat. Gesorteerd op afwijking, niet op alfabet, en met de suggestie er direct
- * naast zodat je per patiënt één klik nodig hebt in plaats van een dossier.
+ * MIJN COHORT — wie ik op afstand volg
+ *
+ * Dit scherm stond eerst als 'Monitoren' tussen de dagblokken, en dat klopte niet: het
+ * beantwoordt de vraag *wie volg ik*, niet *wat moet ik vandaag doen*. Wat vandaag
+ * aandacht vraagt, staat in Opvolgen — inclusief de afwijkende beloopen die hier eerder
+ * dubbel stonden.
+ *
+ * Wat hier overblijft is het overzicht, en dat is meer waard dan het lijkt: zestien van
+ * de drieëntwintig mensen hebben niets nodig. Dat is geen leegte maar een uitkomst, en
+ * het is precies wat een datadump met een Excel eroverheen niet laat zien.
  */
 export function Monitoren({ openPatient }: { openPatient: (id: string) => void }) {
   const { data, fout, bezig, herlaad } = useData(() => api.monitoring());
@@ -36,7 +43,7 @@ export function Monitoren({ openPatient }: { openPatient: (id: string) => void }
     <>
       <div className="paginakop">
         <div>
-          <h1>Monitoren</h1>
+          <h1>Mijn cohort</h1>
           <div className="onder">
             {data.length} patiënten op afstand gevolgd · {metSignaal.length} met een signaal ·
             {' '}{stabiel} stabiel
@@ -45,9 +52,10 @@ export function Monitoren({ openPatient }: { openPatient: (id: string) => void }
       </div>
 
       <div className="notitie">
-        <strong>Wat je hier kunt doen.</strong> Alleen wie afwijkt staat bovenaan, met de trend en
-        een voorgestelde vervolgactie. Wie stabiel is hoeft niets — dat is óók een uitkomst, en het
-        scheelt een oproep. Klap een regel uit om de onderbouwing te zien en direct te handelen.
+        <strong>Dit is een overzicht, geen werklijst.</strong> Iedereen die je op afstand volgt,
+        gesorteerd op afwijking in plaats van op alfabet. Wie stabiel is hoeft niets — dat is óók
+        een uitkomst, en het scheelt een oproep. Wat vandaag om een besluit vraagt, staat bij
+        <strong> Opvolgen</strong>; daar handel je het ook af.
       </div>
 
       <Kaart titel="Vraagt aandacht" icoon="radar" telling={metSignaal.length} strak>

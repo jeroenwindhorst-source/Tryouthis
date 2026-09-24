@@ -5,7 +5,8 @@ import {
   type Contactvorm, type Declaratiebeeld, type Eigenmetingdag, type JournaalRegel,
   type Meetreeks, type WachtkamerIntake,
   type NieuweOrder, type Overlegnotitie, type PatientOverzicht, type RegistratieUitkomst,
-  type Treffer, type Vragenlijstinzage,
+  PATIENTSOORTEN, TIJDLIJNSOORT_LABEL,
+  type Treffer, type Tijdlijnsoort, type Vragenlijstinzage,
 } from '../api';
 import { useData } from '../gebruik';
 import { Trendgrafiek } from '../grafiek';
@@ -1214,6 +1215,15 @@ function ContactKaart({ contact, opMetingKlik }: {
 function Journaal({ patientId, bron: startBron }: { patientId: string; bron?: string }) {
   const [bron, setBron] = useState<string | undefined>(startBron);
   const [open, setOpen] = useState<string | undefined>();
+  /*
+   * Uitgezette soorten, niet aangezette.
+   *
+   * Het journaal laat standaard álles zien — dat is de belofte van één tijdlijn, en wie
+   * hem versmalt hoort dat zelf te doen. Maar op een dossier met tien jaar historie en
+   * dagelijkse thuismetingen wil je wél kunnen zeggen: even zonder de metingen. Daarom
+   * een filter dat uitzet in plaats van aanzet: wat je niet aanraakt, blijft staan.
+   */
+  const [uit, setUit] = useState<Tijdlijnsoort[]>([]);
   const { data, fout, bezig, setData } = useData(
     () => api.historie(patientId, bron), [patientId, bron]);
 
@@ -1221,7 +1231,15 @@ function Journaal({ patientId, bron: startBron }: { patientId: string; bron?: st
   if (bezig || !data) return <Laden wat="Journaal" />;
 
   const eigen = data.bronnen.filter((b) => b.aard === 'episode');
-  const extern = data.bronnen.filter((b) => b.aard !== 'episode');
+  const extern = data.bronnen.filter((b) => b.aard !== 'episode' && b.aard !== 'patient');
+  const vanPatient = data.bronnen.find((b) => b.aard === 'patient');
+
+  const aanwezig = [...new Set(data.tijdlijn.map((i) => i.soort))];
+  const zichtbaar = data.tijdlijn.filter((i) => !uit.includes(i.soort));
+  const wissel = (soort: Tijdlijnsoort) =>
+    setUit((lijst) => lijst.includes(soort)
+      ? lijst.filter((x) => x !== soort)
+      : [...lijst, soort]);
 
   const lees = async (documentId: string) => {
     setOpen(open === documentId ? undefined : documentId);
@@ -1231,6 +1249,28 @@ function Journaal({ patientId, bron: startBron }: { patientId: string; bron?: st
   return (
     <div className="raster2" style={{ gridTemplateColumns: '282px minmax(0, 1fr)' }}>
       <div>
+        {/*
+          De patiënt als eigen ingang.
+          Dit is geen bron zoals een ziekenhuis er een is, maar een dwarsdoorsnede: alles
+          wat déze mens zelf heeft doorgegeven, los van bij welke episode het hoort. Die
+          vraag is nu alleen te beantwoorden door het hele journaal door te lezen.
+        */}
+        {vanPatient && (
+          <Kaart titel="Van de patiënt zelf" icoon="persoon" telling={vanPatient.aantal} strak>
+            <button className="gesprekknop" data-actief={bron === vanPatient.id}
+              onClick={() => setBron(bron === vanPatient.id ? undefined : vanPatient.id)}>
+              <strong style={{ fontSize: 13 }}>{vanPatient.titel}</strong>
+              <div className="mini">{vanPatient.toelichting}</div>
+            </button>
+            <div className="body" style={{ paddingTop: 0 }}>
+              <p className="mini" style={{ marginBottom: 0 }}>
+                Echte en bruikbare waarden, maar geen registratie van de praktijk tot iemand
+                ze heeft overgenomen.
+              </p>
+            </div>
+          </Kaart>
+        )}
+
         <Kaart titel="Huisartsenzorg" icoon="lijst" telling={eigen.length} strak>
           <button className="gesprekknop" data-actief={!bron} onClick={() => setBron(undefined)}>
             <strong style={{ fontSize: 13 }}>Alles bij elkaar</strong>
@@ -1282,10 +1322,39 @@ function Journaal({ patientId, bron: startBron }: { patientId: string; bron?: st
         </Kaart>
       </div>
 
-      <Kaart titel="Tijdlijn" icoon="boek" telling={`${data.tijdlijn.length} items`}>
-        {data.tijdlijn.length === 0 && <Leeg tekst="Nog niets vastgelegd voor deze bron." />}
+      <Kaart titel="Tijdlijn" icoon="boek"
+        telling={uit.length > 0
+          ? `${zichtbaar.length} van ${data.tijdlijn.length}`
+          : `${data.tijdlijn.length} items`}>
+        {aanwezig.length > 1 && (
+          <div className="tijdlijnfilter">
+            {aanwezig.map((soort) => (
+              <button key={soort} className="merkje" data-toon={uit.includes(soort) ? 'neutraal' : 'informatief'}
+                data-aan={!uit.includes(soort)} onClick={() => wissel(soort)}>
+                <Icoon naam={uit.includes(soort) ? 'kruis' : 'vink'} grootte={11} />
+                {TIJDLIJNSOORT_LABEL[soort]}
+                <span className="mini">{data.tijdlijn.filter((i) => i.soort === soort).length}</span>
+              </button>
+            ))}
+            {uit.length > 0 && (
+              <button className="knop" data-toon="stil" onClick={() => setUit([])}>
+                Alles weer tonen
+              </button>
+            )}
+            <button className="knop" data-toon="stil"
+              onClick={() => setUit(aanwezig.filter((s) => !PATIENTSOORTEN.includes(s)))}>
+              <Icoon naam="persoon" grootte={12} /> Alleen wat de patiënt aanleverde
+            </button>
+          </div>
+        )}
+
+        {zichtbaar.length === 0 && (
+          <Leeg tekst={uit.length > 0
+            ? 'Alles van deze soort staat uit. Zet een filter terug aan.'
+            : 'Nog niets vastgelegd voor deze bron.'} />
+        )}
         <div className="journaal">
-          {data.tijdlijn.map((item) => {
+          {zichtbaar.map((item) => {
             if (item.soort === 'contact') {
               return (
                 <Contactregel key={item.contact.encounterId + item.datum} regel={item.contact}
@@ -1300,6 +1369,13 @@ function Journaal({ patientId, bron: startBron }: { patientId: string; bron?: st
             }
             if (item.soort === 'eigenmeting') {
               return <Eigenmetingregel key={item.meting.id} meting={item.meting} />;
+            }
+            if (item.soort === 'vragenlijst') {
+              return (
+                <Vragenlijstregel key={item.inzage.afnameId} inzage={item.inzage}
+                  open={open === item.inzage.afnameId}
+                  opKlik={() => setOpen(open === item.inzage.afnameId ? undefined : item.inzage.afnameId)} />
+              );
             }
             if (item.soort === 'intake') {
               return <Intakeregel key={item.intake.id} intake={item.intake} />;
@@ -1599,6 +1675,79 @@ function Eigenmetingregel({ meting }: { meting: Eigenmetingdag }) {
         <div className="mini" style={{ marginTop: 5 }}>
           Klinisch bruikbaar, maar geen eigen registratie: deze waarden vullen geen
           ketenindicator tot een zorgverlener ze heeft overgenomen.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Een ingevulde vragenlijst in het journaal.
+ *
+ * Hij staat op de dag waarop de patiënt hem invulde, niet op de dag van het consult
+ * waarin hij is overgenomen — want dat is wanneer hij bestond, en het verschil tussen
+ * die twee data is soms de hele vraag ('dit schreef ze al tien dagen voor het gesprek').
+ *
+ * Of hij is overgenomen staat er met naam bij. Zonder dat kun je later niet zien of de
+ * waarden in het dossier uit deze lijst komen of dat ze nog van de patiënt zijn.
+ */
+function Vragenlijstregel({ inzage, open, opKlik }: {
+  inzage: Vragenlijstinzage; open: boolean; opKlik: () => void;
+}) {
+  return (
+    <div className="journaalregel eigen" data-open={open}>
+      <div>
+        <div className="wanneer">{inzage.ingevuldOp?.slice(0, 10)}</div>
+        <div className="mini">vragenlijst</div>
+      </div>
+      <div>
+        <div className="contactkop">
+          <span className="merkje" data-toon="aandacht">door de patiënt</span>
+          <strong style={{ fontSize: 13 }}>{inzage.naam}</strong>
+          <span className="mini">versie {inzage.versie} · {inzage.kanaal}</span>
+          {inzage.overgenomenOp
+            ? <span className="merkje" data-toon="ok">
+                overgenomen door {inzage.overgenomenDoor} op {inzage.overgenomenOp.slice(0, 10)}
+              </span>
+            : <span className="merkje" data-toon="neutraal">nog niet overgenomen</span>}
+        </div>
+
+        {inzage.kernzin && <div className="citaat">“{inzage.kernzin}”</div>}
+
+        {inzage.signalen.length > 0 && (
+          <div style={{ display: 'grid', gap: 4, marginTop: 6 }}>
+            {inzage.signalen.map((sg) => (
+              <div key={sg.tekst} style={{ display: 'flex', gap: 7, alignItems: 'center', fontSize: 12.5 }}>
+                <ErnstMerk ernst={sg.ernst} /> {sg.tekst}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {open && (
+          <div className="antwoorden" style={{ marginTop: 10 }}>
+            {inzage.rubrieken.map((rubriek) => (
+              <div key={rubriek.naam} className="rubriek">
+                <h4>{rubriek.naam}</h4>
+                {rubriek.regels.map((regel) => (
+                  <div key={regel.vraagId} className="regel" data-opvallend={regel.opvallend}>
+                    <div className="vraag">{regel.patientTekst ?? regel.tekst}</div>
+                    <div className="antwoord">
+                      {regel.antwoord || <span className="mini">niet ingevuld</span>}
+                      {regel.antwoord && regel.eenheid ? ` ${regel.eenheid}` : ''}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="knop-rij" style={{ marginTop: 9 }}>
+          <button className="knop" data-toon="stil" onClick={opKlik}>
+            <Icoon naam="lijst" grootte={12} />
+            {open ? ' Antwoorden inklappen' : ' Alle antwoorden tonen'}
+          </button>
         </div>
       </div>
     </div>

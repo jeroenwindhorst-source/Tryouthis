@@ -42,7 +42,6 @@ const WERKPROCES: Record<string, Ingang[]> = {
     { id: 'aanloop', label: 'Aanloop', icoon: 'klembord' },
     { id: 'spreekuur', label: 'Spreekuur', icoon: 'agenda' },
     { id: 'opvolgen', label: 'Opvolgen', icoon: 'bliksem' },
-    { id: 'monitoren', label: 'Monitoren', icoon: 'radar' },
     { id: 'groepen', label: 'Groepsconsulten', icoon: 'persoon' },
     { id: 'overleg', label: 'Overleg', icoon: 'persoon' },
     { id: 'afronden', label: 'Afronden', icoon: 'afvinken' },
@@ -74,6 +73,9 @@ const WERKPROCES: Record<string, Ingang[]> = {
 
 const PRAKTIJK: Record<string, Ingang[]> = {
   'poh-s': [
+    // 'Mijn cohort' is een overzicht, geen werklijst: wie je op afstand volgt, inclusief
+    // iedereen bij wie niets afwijkt. Wat vandaag aandacht vraagt staat in Opvolgen.
+    { id: 'cohort', label: 'Mijn cohort', icoon: 'radar' },
     { id: 'instroom', label: 'Instroom', icoon: 'instroom' },
     { id: 'plannen', label: 'Plannen', icoon: 'slot' },
     { id: 'rapporten', label: 'Rapporten', icoon: 'rapport' },
@@ -251,7 +253,7 @@ function Werkplek({
           {scherm === 'dagstart' && <Dagstart gaNaar={opGa} openPatient={opOpen} />}
           {scherm === 'aanloop' && <Aanloop openPatient={opOpen} />}
           {scherm === 'opvolgen' && <Opvolgen openPatient={opOpen} />}
-          {scherm === 'monitoren' && <Monitoren openPatient={opOpen} />}
+          {scherm === 'cohort' && <Monitoren openPatient={opOpen} />}
           {scherm === 'afronden' && <Afronden />}
 
           {scherm === 'as-overzicht' && <AssistentWerkplek scherm="overzicht" gaNaar={opGa} openPatient={opOpen} />}

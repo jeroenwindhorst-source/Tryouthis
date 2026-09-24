@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { InMemoryRepository } from '../dist/store.js';
 import {
-  aanloop, consultvoorbereiding, dagstart, opvolgen, overleg, patientOverzicht,
+  aanloop, consultvoorbereiding, dagstart, dossierHistorie, opvolgen, overleg,
+  patientOverzicht, PATIENTBRON, PATIENTSOORTEN,
 } from '../dist/bff.js';
 
 /**
@@ -280,12 +281,54 @@ test('patiëntgegevens: de wachtkamerintake en de vragenlijst spreken elkaar nie
   }
 });
 
-test('dagstart: de vijf blokken staan op volgorde van tijdshorizon en zijn geen van alle leeg', () => {
+test('dagstart: de vier blokken staan op volgorde van tijdshorizon en zijn geen van alle leeg', () => {
   const stappen = dagstart(repo).stappen;
-  assert.deepEqual(stappen.map((s) => s.id),
-    ['aanloop', 'spreekuur', 'opvolgen', 'monitoren', 'afronden']);
+  assert.deepEqual(stappen.map((s) => s.id), ['aanloop', 'spreekuur', 'opvolgen', 'afronden']);
   for (const stap of stappen) {
     assert.ok(stap.aantal > 0, `tegel ${stap.id} is leeg`);
     assert.ok(stap.watZieIk.length > 30, `tegel ${stap.id} legt niet uit wat je er ziet`);
+  }
+});
+
+test('opvolgen: nooit twee regels over dezelfde patiënt uit het beloop én uit een aanlevering', () => {
+  /*
+   * De reden dat 'monitoren' en 'opvolgen' zijn samengevoegd: ze gingen over dezelfde
+   * mensen. Deze test bewaakt dat het samenvoegen ook echt de dubbeling opheft — een
+   * signaal verschijnt alleen bij wie verder niets heeft aangeleverd.
+   */
+  const regels = opvolgen(repo);
+  const metAanlevering = new Set(regels.filter((r) => r.bron !== 'signaal').map((r) => r.patientId));
+  for (const regel of regels.filter((r) => r.bron === 'signaal')) {
+    assert.ok(!metAanlevering.has(regel.patientId),
+      `${regel.naam} staat zowel als signaal als met een concrete aanleiding in opvolgen`);
+  }
+});
+
+test('journaal: een ingevulde vragenlijst staat in de tijdlijn, op de dag dat hij is ingevuld', () => {
+  const metLijst = repo.afnames().filter((a) => a.ingevuldOp);
+  assert.ok(metLijst.length > 5, 'te weinig ingevulde vragenlijsten om iets te bewaken');
+  for (const afname of metLijst.slice(0, 6)) {
+    const historie = dossierHistorie(repo, afname.patientId);
+    const item = historie.tijdlijn.find(
+      (i) => i.soort === 'vragenlijst' && i.inzage.afnameId === afname.id,
+    );
+    assert.ok(item, `${afname.id} ontbreekt in de tijdlijn`);
+    assert.equal(item.datum, afname.ingevuldOp.slice(0, 10));
+  }
+});
+
+test('journaal: de patiëntbron toont alleen wat de patiënt zelf aanleverde', () => {
+  const metBron = repo.alleDossiers()
+    .map((d) => d.patient.id)
+    .filter((id) => dossierHistorie(repo, id).bronnen.some((b) => b.aard === 'patient'));
+  assert.ok(metBron.length > 5, 'bijna niemand levert zelf iets aan');
+
+  for (const patientId of metBron.slice(0, 8)) {
+    const gefilterd = dossierHistorie(repo, patientId, PATIENTBRON);
+    assert.ok(gefilterd.tijdlijn.length > 0, `${patientId}: patiëntbron is leeg`);
+    for (const item of gefilterd.tijdlijn) {
+      assert.ok(PATIENTSOORTEN.includes(item.soort),
+        `${patientId}: ${item.soort} hoort niet bij de patiëntbron`);
+    }
   }
 });

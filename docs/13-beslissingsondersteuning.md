@@ -106,8 +106,10 @@ uitwisseling. Dat filter zit in de datalaag (`isKlinischGeldig`), niet in beleid
   dat bij het aantal resterende dagen hoort.
 - **Spreekuur** — per patiënt van vandaag de twee tot drie gespreksonderwerpen die uit de
   klinische regels volgen, met de ingevulde vragenlijst erboven.
-- **Opvolgen** — wat binnenkwam bij mensen zonder afspraak, met een voorstel per regel.
-- **Monitoren** — per patiënt uitklapbaar de suggesties, direct af te handelen.
+- **Opvolgen** — alles wat aandacht vraagt bij mensen zonder afspraak, met een voorstel
+  per regel en de suggesties uitklapbaar eronder, direct af te handelen.
+- **Mijn cohort** — het volledige overzicht van wie op afstand wordt gevolgd, inclusief
+  wie stabiel is. Geen werklijst; wat vandaag om een besluit vraagt staat in Opvolgen.
 - **Consult** — bovenaan de klinische suggesties (jouw beslissing), daaronder een groen
   blok met wat het systeem zelf heeft geregeld.
 - **Afronden** — wat bulkgewijs mag en wat een mens moet beoordelen, expliciet gescheiden.

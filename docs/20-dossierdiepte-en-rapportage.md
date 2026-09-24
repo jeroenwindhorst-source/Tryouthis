@@ -84,6 +84,36 @@ codesuggesties en hun vertrouwensscore, en met de status of een mens het heeft b
 is geen consult en geen registratie van ons — het is een suggestie van een externe partij, en
 zo staat het er (docs/03 §3).
 
+### De ingevulde vragenlijst
+
+Een ingevulde vragenlijst staat in de tijdlijn **op de dag waarop de patiënt hem invulde**,
+niet op de dag van het consult waarin hij is overgenomen. Dat verschil is soms de hele
+vraag: *dit schreef ze al tien dagen voor het gesprek op*.
+
+Bij de regel staat wat de patiënt zelf inbracht, welke regels erop afgingen, en of hij is
+overgenomen — met naam en datum. Uitklappen laat de hele lijst zien, vraag voor vraag zoals
+de patiënt hem kreeg. Zonder die regel zou een overgenomen vragenlijst alleen nog bestaan
+als tekst in de S van één consult, en dan is niet meer te zien wie het opschreef, wanneer,
+en wat er op de vragen stond die niet in de samenvatting pasten.
+
+### Filteren zonder iets kwijt te raken
+
+Het journaal toont standaard álles. Dat is de belofte van één tijdlijn, en wie hem wil
+versmallen hoort dat zelf te doen — niet andersom. Maar op een dossier met tien jaar
+historie en dagelijkse thuismetingen moet je wél even zonder die metingen kunnen kijken.
+
+Daarom twee ingangen, allebei omkeerbaar:
+
+- **Een filterrij boven de tijdlijn** die soorten *uitzet* in plaats van aanzet: contacten,
+  vragenlijsten, thuismetingen, wachtkamer, van buiten, overleg. Wat je niet aanraakt blijft
+  staan, en wat je hebt weggeklikt blijft zichtbaar als doorgestreept merkje — anders weet
+  je over een minuut niet meer waarom de lijst korter is.
+- **Een bron in de linkerkolom: *Door de patiënt aangeleverd*.** Dat is geen bron zoals een
+  ziekenhuis er een is, maar een dwarsdoorsnede: alles wat déze mens zelf doorgaf, over alle
+  episodes heen. Die vraag — *laat eens zien wat hij zelf heeft aangeleverd* — is anders
+  alleen te beantwoorden door het hele journaal door te lezen en de regels er met het oog
+  uit te pikken.
+
 ## 4. Media
 
 Een dossier bevat niet alleen tekst en getallen. Er komen pdf's binnen van het ziekenhuis, de

@@ -36,18 +36,17 @@ vandaag iets doen* is een andere vraag, op een ander moment, met een andere urge
 
 ## Besluit
 
-De werkplek van de POH kent vijf blokken, op volgorde van **hoe ver het moment ligt
+De werkplek van de POH kent vier blokken, op volgorde van **hoe ver het moment ligt
 waarop er iets gebeurt**:
 
 | Blok | Horizon | Vraag |
 |---|---|---|
 | **Aanloop** | de komende weken | wie komt er straks terwijl de voorbereiding niet rond is? |
 | **Spreekuur** | vandaag | wie komt er, en wat weet ik van deze mens? |
-| **Opvolgen** | nu | wat is er binnengekomen waar ik vandaag iets mee kan? |
-| **Monitoren** | doorlopend | hoe gaat het met de groep die ik op afstand volg? |
+| **Opvolgen** | nu | wat vraagt aandacht bij iemand die géén afspraak heeft? |
 | **Afronden** | straks | wat blijft er liggen als ik naar huis ga? |
 
-Daaruit volgen drie regels.
+Daaruit volgen vier regels.
 
 **De voorbereiding zit in het spreekuur.** Per patiënt, op de plek waar je hem nodig hebt.
 Geen eigen ingang meer.
@@ -63,9 +62,28 @@ in het spreekuur maar in de aanloop. Wat in de spreekkamer gemeten wordt — blo
 voetonderzoek, rookstatus — is daarom géén achterstand maar de agenda van het consult, en
 wordt apart getoond.
 
+**Eén blok per vraag, niet twee lijsten over dezelfde mensen.** De eerste uitwerking had
+naast Opvolgen ook nog *Monitoren* als werkblok, en dat werkte niet: dezelfde eGFR van 40
+stond in het ene blok als binnengekomen uitslag en in het andere als afwijkende waarde.
+Wie twee lijsten heeft, moet onthouden in welke iets staat — en dat kost meer dan het
+oplevert.
+
+Monitoren is opgegaan in Opvolgen. De aanleiding blijft zichtbaar en filterbaar, want die
+bepaalt hoe je reageert (*labuitslag · vragenlijst · thuismeting · signaal uit het
+beloop*), maar er is nooit meer dan één regel over hetzelfde: wie een concrete aanlevering
+heeft, krijgt daarnaast geen signaal over diezelfde waarde. De afhandelbare suggesties die
+onder Monitoren stonden, staan nu onder de regel die ze veroorzaakte.
+
+Het volledige cohort dat op afstand wordt gevolgd — inclusief iedereen die stabiel is —
+blijft bestaan als **Praktijk › Mijn cohort**. Dat is een overzicht en geen werklijst:
+*wie volg ik* is een andere vraag dan *wat moet ik vandaag doen*, en alleen de tweede
+hoort in de dag.
+
 ## Gevolgen
 
-- `Processtap['id']` is `aanloop | spreekuur | opvolgen | monitoren | afronden`.
+- `Processtap['id']` is `aanloop | spreekuur | opvolgen | afronden`.
+- `Opvolgregel` kent de aanleiding `signaal` naast `labuitslag`, `vragenlijst` en
+  `thuismeting`, en draagt modules, zelfredzaamheid en afhandelbare suggesties mee.
 - `Voorbereiding` splitst wat ontbreekt in **ontbreekt** (had vooraf binnen moeten zijn)
   en **tijdensConsult** (wordt zo meteen gemeten). Alleen het eerste is een tekort.
 - De demopopulatie zet labuitslagen klaar vóór de afspraken van vandaag; zonder dat laat
@@ -81,5 +99,10 @@ urgentie. Kort en aantrekkelijk, maar het verliest waar het hier om gaat: een te
 over volgende week en een uitslag van vanochtend vragen een ander soort aandacht, en door
 elkaar gezet worden ze allebei minder goed behandeld.
 
-**Opvolgen onder Monitoren hangen.** Scheelt een blok, maar dan verdwijnt de ene
-thuismeting die om een besluit vraagt onder drieëntwintig regels die dat niet doen.
+**Opvolgen onder Monitoren hangen.** De omgekeerde samenvoeging: scheelt evenveel, maar
+dan verdwijnt de ene thuismeting die om een besluit vraagt onder drieëntwintig regels die
+dat niet doen. Een werklijst die ook alle niet-werk bevat, is geen werklijst.
+
+**Beide blokken laten staan met een duidelijker naam.** Geprobeerd en verworpen: het
+probleem zat niet in de namen maar in de inhoud. Zolang dezelfde patiënt met dezelfde
+waarde in allebei kan staan, helpt geen enkel label.
