@@ -25,6 +25,7 @@ export type Contactvorm =
   | 'consult' | 'consult-lang'
   | 'visite' | 'visite-lang'
   | 'telefonisch' | 'e-consult' | 'videoconsult'
+  | 'groepsconsult'
   | 'verrichting' | 'intern-overleg' | 'herhaalrecept';
 
 export interface Prestatie {
@@ -131,6 +132,16 @@ export const contactvormen: Contactvormdefinitie[] = [
     },
   },
   {
+    id: 'groepsconsult', naam: 'Groepsconsult',
+    wanneer: 'Deelname aan een groepsbijeenkomst, per deelnemer vastgelegd in het eigen dossier.',
+    doorRollen: ['huisarts', 'poh-s'], declarabel: false,
+    identificatie: 'persoonlijk, bij binnenkomst van de groep',
+    nietDeclarabelOmdat:
+      'Een groepsconsult wordt niet per deelnemer als consult gedeclareerd, maar binnen de '
+      + 'ketenzorg of als aparte afspraak met de verzekeraar. Het contact hoort wél in ieders '
+      + 'dossier: er is zorg geleverd en er is per mens iets afgesproken.',
+  },
+  {
     id: 'verrichting', naam: 'Verrichting',
     wanneer: 'Een uitgevoerde handeling: ECG, spirometrie, wratten aanstippen.',
     doorRollen: ALLE_ZORG, declarabel: true,
@@ -173,6 +184,7 @@ export function vindContactvorm(id: Contactvorm): Contactvormdefinitie | undefin
 export function naarContactSoort(vorm: Contactvorm): ContactSoort {
   const kaart: Record<Contactvorm, ContactSoort> = {
     consult: 'consult', 'consult-lang': 'dubbel-consult',
+    groepsconsult: 'groepsconsult',
     visite: 'visite', 'visite-lang': 'visite',
     telefonisch: 'telefonisch', 'e-consult': 'e-consult', videoconsult: 'videoconsult',
     verrichting: 'balie', herhaalrecept: 'balie', 'intern-overleg': 'monitoring',

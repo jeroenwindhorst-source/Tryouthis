@@ -59,6 +59,13 @@ export function Groepsconsulten({ gebruiker, openPatient }: {
   const [gekozenId, setGekozenId] = useState<string | undefined>();
   const [nieuw, setNieuw] = useState(false);
   const [bezigMet, setBezigMet] = useState<string | undefined>();
+  /*
+    De notities staan per deelnemer in het scherm en niet in één veld voor de hele groep.
+    Dat is het hele punt: het consult is gezamenlijk, het dossier niet. Wat je hier typt,
+    landt als contact in het dossier van díe mens — en nergens anders.
+  */
+  const [notities, setNotities] = useState<Record<string, string>>({});
+  const [melding, setMelding] = useState<string | undefined>();
 
   if (fout) return <Fout boodschap={fout} />;
   if (bezig || !data) return <Laden wat="Groepsconsulten" />;
@@ -73,6 +80,30 @@ export function Groepsconsulten({ gebruiker, openPatient }: {
       setData(await api.voegDeelnemerToe(gekozen.id, {
         patientId, naam, status: 'uitgenodigd', onderbouwing,
       }));
+    } finally { setBezigMet(undefined); }
+  };
+
+  const start = async () => {
+    if (!gekozen) return;
+    setBezigMet(gekozen.id);
+    try {
+      setData(await api.startGroepsconsult(gekozen.id));
+      setMelding(gekozen.status === 'bezig'
+        ? 'Groepsconsult afgerond.'
+        : 'Groepsconsult gestart. Je kunt nu per deelnemer een notitie vastleggen.');
+    } finally { setBezigMet(undefined); }
+  };
+
+  const legVast = async (patientId: string) => {
+    if (!gekozen) return;
+    setBezigMet(patientId);
+    try {
+      const uitkomst = await api.legGroepsnotitieVast(gekozen.id, {
+        patientId, notitie: notities[patientId] ?? '', gebruikerId: gebruiker.id,
+      });
+      setData(uitkomst.groepen);
+      setMelding(uitkomst.melding);
+      setNotities((n) => ({ ...n, [patientId]: '' }));
     } finally { setBezigMet(undefined); }
   };
 
@@ -149,9 +180,21 @@ export function Groepsconsulten({ gebruiker, openPatient }: {
               </ol>
 
               <div className="notitie" style={{ marginTop: 11 }}>
-                <strong>Registratie gebeurt na afloop, per deelnemer.</strong> Het consult is
-                gezamenlijk, het dossier niet: ieder krijgt zijn eigen deelcontact met wat er
-                voor hém uit kwam.
+                <strong>Registratie gebeurt tijdens of na afloop, per deelnemer.</strong> Het
+                consult is gezamenlijk, het dossier niet: ieder krijgt zijn eigen contact met
+                wat er voor hém uit kwam.
+              </div>
+
+              <div className="knop-rij" style={{ marginTop: 11 }}>
+                <button className="knop" data-toon={gekozen.status === 'bezig' ? undefined : 'primair'}
+                  disabled={bezigMet === gekozen.id || gekozen.status === 'afgerond'}
+                  onClick={start}>
+                  <Icoon naam={gekozen.status === 'bezig' ? 'vink' : 'bliksem'} grootte={13} />
+                  {gekozen.status === 'bezig' ? ' Groepsconsult afronden' : ' Groepsconsult starten'}
+                </button>
+                <span className="merkje" data-toon={
+                  gekozen.status === 'bezig' ? 'ok' : gekozen.status === 'afgerond' ? 'neutraal' : 'informatief'
+                }>{gekozen.status}</span>
               </div>
             </Kaart>
 
@@ -159,8 +202,12 @@ export function Groepsconsulten({ gebruiker, openPatient }: {
               {gekozen.deelnemers.length === 0 && (
                 <Leeg tekst="Nog niemand aangemeld. Kies hieronder wie erbij past." />
               )}
+              {melding && (
+                <div className="notitie" data-toon="ok" style={{ marginBottom: 11 }}>{melding}</div>
+              )}
               {gekozen.deelnemers.map((d) => (
-                <div key={d.patientId} className="deelnemerregel">
+                <div key={d.patientId}>
+                <div className="deelnemerregel">
                   <button className="knop" data-toon="stil" style={{ padding: 0, fontWeight: 650 }}
                     onClick={() => openPatient(d.patientId)}>
                     {d.naam} <Icoon naam="pijl" grootte={12} />
@@ -180,6 +227,9 @@ export function Groepsconsulten({ gebruiker, openPatient }: {
                   <span className="merkje" data-toon={STATUS_TOON[d.status] ?? 'neutraal'}>
                     {STATUS_LABEL[d.status] ?? d.status}
                   </span>
+                  {d.geregistreerd && (
+                    <span className="merkje" data-toon="ok">vastgelegd</span>
+                  )}
                   <button className="knop" data-toon="stil" disabled={bezigMet === d.patientId}
                     onClick={async () => {
                       setBezigMet(d.patientId);
@@ -189,7 +239,35 @@ export function Groepsconsulten({ gebruiker, openPatient }: {
                     <Icoon naam="kruis" grootte={12} />
                   </button>
                 </div>
+
+                {/*
+                  Het veld verschijnt pas als het consult loopt. Daarvóór valt er niets te
+                  registreren, en een leeg tekstvak bij een bijeenkomst die nog moet
+                  beginnen nodigt uit tot vooraf invullen — precies wat een dossier niet
+                  moet doen.
+                */}
+                {gekozen.status !== 'gepland' && (
+                  <div className="deelnemernotitie">
+                    <textarea className="taakveld" rows={2}
+                      placeholder={`Wat kwam er voor ${d.naam.split(' ')[0]} uit dit consult?`}
+                      value={notities[d.patientId] ?? ''}
+                      onChange={(e) => setNotities((n) => ({ ...n, [d.patientId]: e.target.value }))} />
+                    <button className="knop" data-toon="primair"
+                      disabled={bezigMet === d.patientId
+                        || (notities[d.patientId] ?? '').trim().length < 3}
+                      onClick={() => legVast(d.patientId)}>
+                      <Icoon naam="vink" grootte={12} /> In het dossier
+                    </button>
+                  </div>
+                )}
+                </div>
               ))}
+
+              {gekozen.status === 'gepland' && gekozen.deelnemers.length > 0 && (
+                <div className="reden" style={{ marginTop: 9 }}>
+                  Start het consult hierboven om per deelnemer te kunnen registreren.
+                </div>
+              )}
             </Kaart>
 
             <Kaart titel="Wie past hierbij" icoon="instroom" telling={gekozen.voorgesteld.length}>

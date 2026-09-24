@@ -89,7 +89,8 @@ export interface Condition extends KlinischeResource {
 
 export type ContactSoort =
   | 'consult' | 'dubbel-consult' | 'visite' | 'telefonisch'
-  | 'e-consult' | 'videoconsult' | 'balie' | 'incident' | 'monitoring';
+  | 'e-consult' | 'videoconsult' | 'groepsconsult'
+  | 'balie' | 'incident' | 'monitoring';
 
 export interface Encounter extends KlinischeResource {
   resourceType: 'Encounter';

@@ -126,7 +126,11 @@ export function bouwHistorie(dossier: Dossier, peildatum: Date, zaad: number): U
   for (let i = 0; i < aantal; i++) {
     // Verdeeld over ongeveer drie jaar, met wat spreiding.
     const dagenGeleden = Math.floor(120 + i * (900 / aantal) + willekeurig() * 45);
-    const op = new Date(peildatum.getTime() - dagenGeleden * 86_400_000).toISOString();
+    // Op een spreekuurtijd, niet op de kloktijd van de server: een consult om 03:39 in
+    // het journaal valt meteen op en maakt de rest van de tijdlijn verdacht.
+    const dag = new Date(peildatum.getTime() - dagenGeleden * 86_400_000);
+    dag.setUTCHours(8 + Math.floor(willekeurig() * 9), Math.floor(willekeurig() * 6) * 10, 0, 0);
+    const op = dag.toISOString();
     const episode = actieveEpisodes[Math.floor(willekeurig() * actieveEpisodes.length)];
     // Nooit twee keer achter elkaar hetzelfde sjabloon: dat leest als een kopieerfout.
     let keuze = Math.floor(willekeurig() * sjablonen.length);

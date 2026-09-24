@@ -24,7 +24,8 @@ import { genereerAcuteSignalen, type AcuutSignaal } from './acuut.js';
 import { filterMedia, genereerMedia, type Mediabestand, type Mediafilter } from './media.js';
 import { vindApotheek, type Medicatiewijziging } from './medicatie.js';
 import {
-  genereerGroepsconsulten, type Groepsconsult, type Groepsdeelnemer, type NieuwGroepsconsult,
+  genereerGroepsconsulten, type Groepsconsult, type Groepsdeelnemer, type Groepsstatus,
+  type NieuwGroepsconsult,
 } from './groepsconsult.js';
 import type { Contactvorm } from './contactsoorten.js';
 import { vindVerrichting, type Verrichtinguitslag } from './verrichtingen.js';
@@ -154,6 +155,10 @@ export interface DossierRepository {
   /** Groepsconsulten: één blok, meerdere patiënten. */
   groepsconsulten(): Groepsconsult[];
   maakGroepsconsult(nieuw: NieuwGroepsconsult, door: { id: string; naam: string; rol: Rol }): Groepsconsult;
+  /** Een groepsconsult starten of afronden; de status stuurt wat je ermee kunt. */
+  zetGroepsstatus(groepId: string, status: Groepsstatus): void;
+  /** Vastleggen dat er voor deze deelnemer in het eigen dossier is geregistreerd. */
+  markeerDeelnemerGeregistreerd(groepId: string, patientId: string): void;
   voegDeelnemerToe(groepId: string, deelnemer: Omit<Groepsdeelnemer, 'toegevoegdOp'>): void;
   verwijderDeelnemer(groepId: string, patientId: string): void;
   zetDeelnemerstatus(groepId: string, patientId: string, status: Groepsdeelnemer['status']): void;
@@ -468,6 +473,37 @@ export class InMemoryRepository implements DossierRepository {
     );
 
     /*
+     * DE EERSTE AFSPRAAK IN DE AANLOOP MOET OVER LAB GAAN
+     *
+     * De aanloop draait om één contrast: hetzelfde feit — niet geprikt — is over drie
+     * weken een herinnering en over drie dagen een reden om de afspraak te verzetten.
+     * Dat contrast valt weg zodra de eerstvolgende controle toevallig bij iemand staat
+     * bij wie er vooraf geen bloed hoeft. Dan staat er nergens meer 'verzetten' en is
+     * het blok een lijst met herinneringen.
+     *
+     * Wie er precies vooraan staat, is willekeurig; dát er lab bij hoort, mag dat niet
+     * zijn. Daarom ruilt de eerste afspraak zo nodig van patiënt met de eerstvolgende
+     * die wél labonderzoek vooraf kent.
+     */
+    const heeftLabVooraf = (patientId: string): boolean => {
+      const dossier = this.dossier(patientId);
+      if (!dossier) return false;
+      const plan = bouwZorgplan(dossier, this.persoonlijkPlan(patientId), {
+        peildatum: this.praktijk.peildatum, protocol: this.praktijkprotocol(),
+      });
+      return (plan.contacten[0]?.metingen ?? []).some((m) => m.labVooraf);
+    };
+    const eerste = this.aanloopAfspraken[0];
+    if (eerste && !heeftLabVooraf(eerste.patientId)) {
+      const ruil = this.aanloopAfspraken.find((a) => heeftLabVooraf(a.patientId));
+      if (ruil) {
+        const patientId = eerste.patientId;
+        eerste.patientId = ruil.patientId;
+        ruil.patientId = patientId;
+      }
+    }
+
+    /*
      * Bij tweederde van de aanloop is het bloed wél geprikt. Bij de rest niet, en dat is
      * de reden dat dit blok bestaat: het verschil tussen "de herinnering is verstuurd"
      * en "er is iets gebeurd" is precies wat nu niemand ziet.
@@ -752,6 +788,14 @@ export class InMemoryRepository implements DossierRepository {
     taak.afgerondOp = new Date().toISOString();
     taak.afgerondDoor = door;
     taak.uitkomst = uitkomst;
+
+    // Stond de taak in de agenda, dan gaat dat blok mee op afgerond. Anders staat er in
+    // je dag nog werk dat al gedaan is, en dat is precies het soort ruis waardoor mensen
+    // hun eigen agenda niet meer geloven.
+    const item = taak.agendaItemId
+      ? this.agendaItems.find((a) => a.id === taak.agendaItemId)
+      : undefined;
+    if (item) item.status = 'afgerond';
     return taak;
   }
 
@@ -1269,6 +1313,34 @@ export class InMemoryRepository implements DossierRepository {
     const groep = this.groepen.find((g) => g.id === groepId);
     if (!groep) return;
     groep.deelnemers = groep.deelnemers.filter((d) => d.patientId !== patientId);
+  }
+
+  /**
+   * Een groepsconsult starten of afronden.
+   *
+   * 'Bezig' is niet cosmetisch: pas als het consult loopt, heeft per deelnemer
+   * registreren betekenis — daarvóór is er nog niets gebeurd om op te schrijven.
+   */
+  zetGroepsstatus(groepId: string, status: Groepsstatus): void {
+    const groep = this.groepen.find((g) => g.id === groepId);
+    if (!groep) return;
+    groep.status = status;
+    const item = this.agendaItems.find((a) => a.id === `ag-${groepId}`);
+    if (item) item.status = status === 'afgerond' ? 'afgerond' : status === 'bezig' ? 'in-consult' : 'gepland';
+    // Wie begint, is er ook: de aangemelde deelnemers staan bij de start op aanwezig.
+    if (status === 'bezig') {
+      for (const deelnemer of groep.deelnemers) {
+        if (deelnemer.status === 'aangemeld' || deelnemer.status === 'uitgenodigd') {
+          deelnemer.status = 'aanwezig';
+        }
+      }
+    }
+  }
+
+  markeerDeelnemerGeregistreerd(groepId: string, patientId: string): void {
+    const deelnemer = this.groepen.find((g) => g.id === groepId)?.deelnemers
+      .find((d) => d.patientId === patientId);
+    if (deelnemer) deelnemer.geregistreerd = true;
   }
 
   zetDeelnemerstatus(

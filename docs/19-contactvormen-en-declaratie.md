@@ -157,6 +157,50 @@ Wat erin staat is bewust meer dan een nummer:
 | De naaste, met wat die mag horen | Informeren is iets anders dan meebeslissen; die grens hoort vast te liggen vóórdat iemand hem nodig heeft |
 
 Het belvenster is geen kiezer en geen telefooncentrale — die zit in de telefonie, niet in
-het dossier. Wat het wél doet, is het gesprek als **contact** klaarzetten zodra je
-ophangt: een telefonisch consult is een contactvorm met een eigen declaratieregel, geen
-aantekening bij een ander consult.
+het dossier. Wat het wél doet, is het gesprek **vastleggen als contact**: een telefonisch
+consult is een contactvorm met een eigen declaratieregel, geen aantekening bij een ander
+consult.
+
+
+## Het gesprek vastleggen
+
+De eerste versie van dat belvenster had een knop *Gesprek vastleggen als contact* die het
+venster sloot en verder niets deed. Dat is erger dan geen knop: iemand denkt dat het
+vastligt terwijl er niets staat, en de volgende collega belt opnieuw.
+
+Na het kiezen van een nummer staan er daarom twee velden, en niet meer:
+
+| Veld | Waar het landt | Waarom precies deze twee |
+|---|---|---|
+| **Wat is er gezegd?** | de **S** van het deelcontact | Bij een telefoontje is dat wat de patiënt vertelt; het ís de subjectieve regel |
+| **Wat is er afgesproken?** | de **P** | Zonder vervolg is een telefoontje een aantekening; mét vervolg is het beleid |
+
+Daarnaast kies je de **episode** (voorgesteld uit de lopende episodes — zonder episode is
+er geen deelcontact en dus geen SOEP) en de **duur**. Wat eruit komt is een `Encounter` met
+contactvorm *telefonisch*, uitvoerder, duur en declaratiebeeld, plus een `Deelcontact` aan
+die episode. Dezelfde route als het consultscherm, dus dezelfde beoordeling en hetzelfde
+journaal.
+
+**Zonder notitie landt het contact ook.** De verleiding is om de notitie verplicht te
+maken; dat is verkeerd. Er is gebeld, en een dossier waarin een deel van de zorg
+onzichtbaar is, is geen dossier. Het contact gaat dus het journaal in, en de
+declaratieregel zegt erbij dat telefonisch pas een prestatie is als er inhoudelijk iets is
+vastgelegd. Het systeem dwingt niet, het laat het gevolg zien.
+
+Kwam het gesprek voort uit een werktaak, dan is die taak in dezelfde handeling afgerond met
+de notitie als uitkomst — anders vertel je twee keer hetzelfde.
+
+
+## Het groepsconsult, per deelnemer
+
+Een groepsconsult is gezamenlijk; het dossier niet. Tijdens of na afloop staat er daarom
+per deelnemer een veld, en wat daar getypt wordt landt als contact in het dossier van díe
+mens en nergens anders.
+
+De contactvorm is `groepsconsult` en die is **niet declarabel per deelnemer**: een
+groepsconsult wordt binnen de ketenzorg of als aparte afspraak met de verzekeraar geregeld,
+niet als acht losse consulten. Het systeem zegt dat erbij in plaats van een prestatie voor
+te spiegelen die er niet is — dezelfde redenering als bij het herhaalrecept en het interne
+overleg.
+
+Zie [ADR-0020](adr/ADR-0020-een-gesprek-is-pas-zorg-als-het-vastligt.md).

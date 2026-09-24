@@ -3,6 +3,7 @@ import { api } from '../api';
 import { useData } from '../gebruik';
 import { Icoon } from '../iconen';
 import { Agenda, Fout, Kaart, Laden, Leeg, Werklijst } from '../onderdelen';
+import { Taakvenster } from './Taakvenster';
 
 const KANAAL_ICOON: Record<string, string> = {
   telefoon: 'gesprek', portaal: 'huis', balie: 'persoon', 'e-consult': 'gesprek',
@@ -27,7 +28,8 @@ export function AssistentWerkplek({ gebruiker, scherm, gaNaar, openPatient }: {
   gaNaar: (scherm: string) => void;
   openPatient: (id: string) => void;
 }) {
-  const { data, fout, bezig, setData } = useData(() => api.assistent());
+  const { data, fout, bezig, setData, herlaad } = useData(() => api.assistent());
+  const [taak, setTaak] = useState<string | undefined>();
 
   // De assistent is degene die dit in de praktijk bijhoudt: wie er binnenkomt, wie
   // zich meldt aan de balie en wie niet komt opdagen.
@@ -118,11 +120,17 @@ export function AssistentWerkplek({ gebruiker, scherm, gaNaar, openPatient }: {
           'uitzetten bij de assistent' een zin in een ander scherm en gebeurt er niets.
         */}
         <Werklijst gebruiker={gebruiker} naarPlannen={() => gaNaar('plannen')}
-          openPatient={openPatient} />
+          openPatient={openPatient} opTaak={setTaak} />
+
+        {taak && (
+          <Taakvenster taakId={taak} gebruiker={gebruiker} openPatient={openPatient}
+            opSluit={() => setTaak(undefined)} opGewijzigd={herlaad} />
+        )}
 
         <div className="raster2">
           <Kaart titel="Mijn dag" icoon="agenda" telling={data.agenda.length}>
-            <Agenda regels={data.agenda} openPatient={openPatient} opStatus={zetStatus} />
+            <Agenda regels={data.agenda} openPatient={openPatient} opStatus={zetStatus}
+              opTaak={setTaak} />
           </Kaart>
 
           <Kaart titel="Nieuw binnengekomen" icoon="gesprek" telling={data.triage.length}>

@@ -55,6 +55,7 @@ export interface AgendaRegel {
   patientId?: string; naam?: string; leeftijd?: number; reden?: string;
   modules: ModuleChip[]; aandacht?: string; voorbereid?: boolean; intakeKlaar?: boolean;
   status: Afspraakstatus; statusLabel: string; aangemeldVia?: string; aangemeldOm?: string;
+  taakId?: string;
 }
 
 export interface WachtkamerIntake {
@@ -847,6 +848,35 @@ export interface Bereikbaarheid {
   advies: string;
 }
 
+export interface Ontbrekendonderdeel {
+  naam: string; kort?: string; stand: 'binnen' | 'open' | 'te-laat'; toelichting: string;
+}
+
+export interface Taakdossier {
+  taak: Taakregel;
+  patientId?: string;
+  naam: string;
+  leeftijd?: number;
+  modules: ModuleChip[];
+  bereikbaarheid?: Bereikbaarheid;
+  afspraak?: {
+    afspraakId: string; datum: string; tijd: string; dagenTot: number;
+    status: string; statusLabel: string; advies: string; toelichting: string;
+  };
+  ontbreekt: Ontbrekendonderdeel[];
+  signalen: Signaal[];
+  gespreksdoel: string[];
+  laatsteContact?: { datum: string; soort: string; wie: string };
+  episodes: { id: string; titel: string }[];
+}
+
+export interface Gespreksuitkomst {
+  melding: string;
+  declaratie?: Declaratiebeeld;
+  regel?: JournaalRegel;
+  taak?: Taakregel;
+}
+
 export interface Protocolafwijking { reden: string; door: string; op: string }
 
 export interface Protocolwaarden {
@@ -953,6 +983,11 @@ const httpApi = {
     stuur<{ taak?: Taakregel }>(`/api/taken/${id}/plannen`, { start }),
   rondTaakAf: (id: string, door: string, uitkomst: string) =>
     stuur<{ taak?: Taakregel }>(`/api/taken/${id}/afronden`, { door, uitkomst }),
+  taakdossier: (taakId: string) => haal<Taakdossier>(`/api/taak/${taakId}/dossier`),
+  legContactVast: (patientId: string, gegevens: {
+    notitie?: string; afspraak?: string; contactvorm?: string; duurMinuten?: number;
+    episodeId?: string; kanaal?: string; taakId?: string; gebruikerId?: string;
+  }) => stuur<Gespreksuitkomst>(`/api/patient/${patientId}/contact`, gegevens),
   planWerkblok: (blokId: string, rol: string, start: string) =>
     stuur<Praktijkplanbord>('/api/werkblok', { blokId, rol, start }),
   protocol: (gebruikerId?: string) =>
@@ -1065,6 +1100,12 @@ const httpApi = {
     stuur<Groepsconsult[]>(`/api/groepsconsulten/${groepId}/deelnemers/${patientId}/verwijderen`, {}),
   zetDeelnemerstatus: (groepId: string, patientId: string, status: string) =>
     stuur<Groepsconsult[]>(`/api/groepsconsulten/${groepId}/deelnemers/${patientId}/status`, { status }),
+  startGroepsconsult: (groepId: string) =>
+    stuur<Groepsconsult[]>(`/api/groepsconsulten/${groepId}/start`, {}),
+  legGroepsnotitieVast: (groepId: string, gegevens: {
+    patientId: string; notitie: string; gebruikerId?: string;
+  }) => stuur<{ melding: string; groepen: Groepsconsult[] }>(
+    `/api/groepsconsulten/${groepId}/notitie`, gegevens),
 
   rapport: (criteria: Record<string, string>) =>
     stuur<Rapport>('/api/rapport', criteria),

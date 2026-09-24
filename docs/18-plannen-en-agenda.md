@@ -93,3 +93,29 @@ Naast de patiënten en de afspraakverzoeken staan daarom twee dingen in de linke
   maken elke rapportage erover zinloos.
 
 Zie [ADR-0019](adr/ADR-0019-een-knop-levert-werk-op.md).
+
+
+## Een ingepland blok is een ingang
+
+Een taak inplannen bleek niet hetzelfde als weten wat je gaat zeggen. Het blok stond om
+11:20 in de agenda, je klikte erop, en dan stond er precies wat je er zelf in had getypt
+toen je hem uitzette.
+
+Elk blok dat uit een werktaak komt, opent daarom het **taakdossier**: één venster dat de
+vraag beantwoordt *wat komt er bij deze mens nog tekort?*
+
+| Blok | Wat erin staat |
+|---|---|
+| Wat komt er nog tekort | Per onderdeel: binnen, nog niet binnen of te laat — met de doorlooptijd en de resterende dagen |
+| De afspraak | Datum, tijd, dagen, en het advies uit de aanloop |
+| Wat er verder speelt | De signalen uit het dossier, zodat je niet belt over lab terwijl er iets anders is |
+| Wat je wilt bereiken | Een paar zinnen: wat je zegt, in de volgorde waarin je het zegt |
+| Waarom deze taak er is | De aanleiding, wie hem uitzette, en wanneer hij uiterlijk af moet |
+| Hoe je hem bereikt | De bereikbaarheid, met de belknop ernaast |
+
+Het taakdossier rekent niets zelf uit: het haalt zijn onderdelen uit de aanloop, het
+zorgplan, de signalen en de bereikbaarheid. Twee plekken die hetzelfde zouden moeten
+berekenen, gaan uiteenlopen — en dan weet niemand meer welke klopt.
+
+Vanuit datzelfde venster bel je, en het gesprek wordt daar vastgelegd als contact
+(docs/19). Zie [ADR-0020](adr/ADR-0020-een-gesprek-is-pas-zorg-als-het-vastligt.md).

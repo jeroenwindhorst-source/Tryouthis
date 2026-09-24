@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { InMemoryRepository } from '../dist/store.js';
 import {
-  aanloop, bereikbaarheid, consultvoorbereiding, dagstart, dossierHistorie, herstelProtocol,
-  opvolgen, overleg,
-  patientOverzicht, planTaak, planWerkblok, protocoloverzicht, rondTaakAf, takenoverzicht,
+  aanloop, agenda, bereikbaarheid, consultvoorbereiding, dagstart, dossierHistorie,
+  herstelProtocol, legContactVast, legGroepsnotitieVast, opvolgen, overleg,
+  patientOverzicht, planTaak, planWerkblok, protocoloverzicht, rondTaakAf, startGroepsconsult,
+  taakdossier, takenoverzicht,
   wijzigProtocol, zetTaakUit, PATIENTBRON, PATIENTSOORTEN,
 } from '../dist/bff.js';
 
@@ -583,5 +584,217 @@ test('bereikbaarheid: e-mailadressen staan op een domein dat nooit kan bestaan',
   for (const dossier of repo.alleDossiers()) {
     const email = dossier.patient.contact?.email;
     if (email) assert.match(email, /@example\.invalid$/);
+  }
+});
+
+test('taakdossier: een ingepland blok vertelt wat er bij deze patiënt tekortkomt', () => {
+  /*
+   * Het gat dat dit dicht: je sleept 'De Vries bellen' naar twintig minuten vrij, klikt
+   * erop, en dan stond er precies wat je zelf had ingetypt. Wat je op dat moment nodig
+   * hebt is het omgekeerde — welk onderdeel ontbreekt er nog, hoeveel dagen zijn er nog,
+   * en hoe bereik ik deze mens.
+   */
+  const eigen = new InMemoryRepository();
+  const regel = aanloop(eigen).find((a) => a.status === 'bellen' || a.status === 'verzetten');
+  assert.ok(regel, 'geen enkele aanloopregel vraagt om een telefoontje');
+
+  const { taak } = zetTaakUit(eigen, {
+    soort: 'bellen', titel: 'Bellen over het bloedonderzoek',
+    aanleiding: 'Lab nog niet geprikt.',
+    patientId: regel.patientId, patientNaam: regel.naam,
+    bron: { soort: 'aanloop', verwijzing: regel.afspraakId },
+    voorRol: 'poh-s', voorGebruikerId: 'zv-poh-1',
+  }, 'zv-poh-1');
+
+  const dossier = taakdossier(eigen, taak.id);
+  assert.ok(dossier, 'geen taakdossier');
+  assert.equal(dossier.patientId, regel.patientId);
+  assert.ok(dossier.ontbreekt.length > 0, 'er staat niet in wat er ontbreekt');
+  assert.ok(dossier.ontbreekt.some((o) => o.stand !== 'binnen'),
+    'alles staat op binnen terwijl de aanloop om actie vraagt');
+  assert.equal(dossier.afspraak?.afspraakId, regel.afspraakId);
+  assert.ok(dossier.bereikbaarheid?.kanalen.some((k) => k.belbaar),
+    'er is geen nummer om te bellen');
+  assert.ok(dossier.gespreksdoel.length > 1, 'geen gespreksdoel');
+  assert.ok(dossier.gespreksdoel.at(-1).includes('contact'),
+    'het gespreksdoel eindigt niet met vastleggen');
+  assert.equal(taakdossier(eigen, 'bestaat-niet'), undefined);
+});
+
+test('taakdossier: het blok in de agenda wijst terug naar de taak', () => {
+  const eigen = new InMemoryRepository();
+  const { taak } = zetTaakUit(eigen, {
+    soort: 'bellen', titel: 'Terugbellen', aanleiding: 'Uitslag doorgeven.',
+    bron: { soort: 'handmatig' }, voorRol: 'poh-s', voorGebruikerId: 'zv-poh-1',
+  }, 'zv-poh-1');
+  const dag = eigen.peildatum().toISOString().slice(0, 10);
+  planTaak(eigen, taak.id, `${dag}T15:20:00+02:00`);
+
+  const blok = agenda(eigen, 'poh-s').find((a) => a.taakId === taak.id);
+  assert.ok(blok, 'het geplande blok draagt het taak-id niet, dus is het niet te openen');
+});
+
+test('contact vastleggen: een telefoontje landt als contact in het journaal', () => {
+  /*
+   * 'Gesprek vastleggen als contact' sloot het venster en liet niets achter. Dat is erger
+   * dan geen knop: iemand denkt dat het is vastgelegd terwijl er niets staat, en de
+   * volgende collega belt opnieuw.
+   */
+  const eigen = new InMemoryRepository();
+  const patientId = eigen.alleDossiers()[0].patient.id;
+  const voor = dossierHistorie(eigen, patientId).journaal.length;
+
+  const uitkomst = legContactVast(eigen, patientId, {
+    notitie: 'Patiënt gesproken; gaat vrijdag prikken.',
+    afspraak: 'Uitslag bespreken bij de controle.',
+    kanaal: '06-12345678', gebruikerId: 'zv-poh-1',
+  });
+  assert.ok(uitkomst, 'er is niets vastgelegd');
+
+  const journaal = dossierHistorie(eigen, patientId).journaal;
+  assert.equal(journaal.length, voor + 1);
+  assert.equal(journaal[0].soort, 'telefonisch');
+  assert.ok(journaal[0].heeftSoep, 'het contact heeft geen SOEP-tekst');
+  assert.ok(journaal[0].regels.some((r) => r.letter === 'S' && r.tekst.includes('vrijdag')));
+  assert.ok(journaal[0].regels.some((r) => r.letter === 'P'));
+  assert.equal(uitkomst.declaratie.declarabel, true);
+});
+
+test('contact vastleggen: zonder notitie is het geen prestatie, en dat staat er ook', () => {
+  const eigen = new InMemoryRepository();
+  const patientId = eigen.alleDossiers()[0].patient.id;
+  const uitkomst = legContactVast(eigen, patientId, { gebruikerId: 'zv-poh-1' });
+
+  // Het contact staat er wél: er is gebeld, en dat hoort in het dossier.
+  assert.equal(dossierHistorie(eigen, patientId).journaal[0].soort, 'telefonisch');
+  assert.equal(uitkomst.declaratie.declarabel, false);
+  assert.ok(uitkomst.declaratie.ontbreekt.length > 0,
+    'er staat niet bij wat er ontbreekt voor de declaratie');
+  assert.match(uitkomst.melding, /notitie/i);
+});
+
+test('contact vastleggen: de taak waar het gesprek uit voortkwam, is daarna af', () => {
+  const eigen = new InMemoryRepository();
+  const patientId = eigen.alleDossiers()[0].patient.id;
+  const { taak } = zetTaakUit(eigen, {
+    soort: 'bellen', titel: 'Bellen', aanleiding: 'Lab ontbreekt.',
+    patientId, bron: { soort: 'handmatig' }, voorRol: 'poh-s', voorGebruikerId: 'zv-poh-1',
+  }, 'zv-poh-1');
+
+  const uitkomst = legContactVast(eigen, patientId, {
+    notitie: 'Gebeld, gaat morgen prikken.', taakId: taak.id, gebruikerId: 'zv-poh-1',
+  });
+  assert.equal(uitkomst.taak.status, 'afgerond');
+  assert.equal(takenoverzicht(eigen, 'zv-poh-1').open, 0);
+});
+
+test('groepsconsult: per deelnemer landt de notitie in het eigen dossier', () => {
+  /*
+   * Het consult is gezamenlijk, het dossier niet. Wat hier wordt vastgelegd, hoort bij
+   * één mens — en mag dus niet bij de andere deelnemers terechtkomen.
+   */
+  const eigen = new InMemoryRepository();
+  const groep = eigen.groepsconsulten().find((g) => g.deelnemers.length >= 2);
+  assert.ok(groep, 'geen groepsconsult met deelnemers');
+
+  const [eerste, tweede] = groep.deelnemers;
+  const voorEerste = dossierHistorie(eigen, eerste.patientId).journaal.length;
+  const voorTweede = dossierHistorie(eigen, tweede.patientId).journaal.length;
+
+  startGroepsconsult(eigen, groep.id);
+  assert.equal(eigen.groepsconsulten().find((g) => g.id === groep.id).status, 'bezig');
+
+  const uitkomst = legGroepsnotitieVast(eigen, groep.id, {
+    patientId: eerste.patientId,
+    notitie: 'Doet actief mee; gaat de koolhydraatlijst thuis bijhouden.',
+    gebruikerId: 'zv-poh-1',
+  });
+  assert.match(uitkomst.melding, /vastgelegd/i);
+
+  const naEerste = dossierHistorie(eigen, eerste.patientId).journaal;
+  assert.equal(naEerste.length, voorEerste + 1);
+  assert.ok(naEerste[0].regels.some((r) => r.tekst.includes('koolhydraatlijst')));
+  assert.equal(dossierHistorie(eigen, tweede.patientId).journaal.length, voorTweede,
+    'de notitie van de één staat ook in het dossier van de ander');
+
+  const na = uitkomst.groepen.find((g) => g.id === groep.id);
+  assert.equal(na.deelnemers.find((d) => d.patientId === eerste.patientId).geregistreerd, true);
+});
+
+test('groepsconsult: een lege notitie levert geen contact op', () => {
+  const eigen = new InMemoryRepository();
+  const groep = eigen.groepsconsulten().find((g) => g.deelnemers.length > 0);
+  const deelnemer = groep.deelnemers[0];
+  const voor = dossierHistorie(eigen, deelnemer.patientId).journaal.length;
+
+  startGroepsconsult(eigen, groep.id);
+  const uitkomst = legGroepsnotitieVast(eigen, groep.id, {
+    patientId: deelnemer.patientId, notitie: '  ', gebruikerId: 'zv-poh-1',
+  });
+  assert.match(uitkomst.melding, /lege notitie/i);
+  assert.equal(dossierHistorie(eigen, deelnemer.patientId).journaal.length, voor);
+});
+
+test('aanloop: er staat altijd één afspraak die verzet moet worden en één die gebeld kan worden', () => {
+  /*
+   * Het contrast waar dit blok om draait: hetzelfde feit — niet geprikt — is over drie
+   * weken een herinnering en over vier dagen een reden om te verzetten. Dat contrast
+   * verdween zodra de eerstvolgende controle toevallig bij iemand stond bij wie er geen
+   * bloed vooraf hoort. Dan is het blok een lijst met herinneringen, en is er niets te
+   * laten zien.
+   */
+  const regels = aanloop(repo);
+  const verzetten = regels.find((r) => r.status === 'verzetten');
+  assert.ok(verzetten, 'geen enkele afspraak vraagt om verzetten');
+  assert.ok(verzetten.dagenTot <= 5, 'verzetten hoort dichtbij te staan');
+  assert.ok(verzetten.vooraf.some((v) => !v.binnen && !v.haalbaar),
+    'er staat verzetten zonder een onderdeel dat het niet meer haalt');
+
+  // En de vragenlijst haalt het wél: die kan tot de avond ervoor.
+  if (verzetten.vragenlijst?.status === 'open') {
+    assert.match(verzetten.advies, /LDL|Albumine|HbA1c|cholesterol/i,
+      'de reden om te verzetten hoort het lab te zijn, niet de vragenlijst');
+  }
+
+  assert.ok(regels.some((r) => r.status === 'bellen'), 'geen enkele afspraak vraagt om bellen');
+});
+
+test('contact vastleggen: het tijdstip volgt de demoklok, niet de serverklok', () => {
+  /*
+   * Een telefonisch consult dat om 03:37 in het journaal landt tussen een spreekuur dat
+   * om 08:40 begon, maakt de hele tijdlijn ongeloofwaardig — en dat gebeurt zodra je de
+   * kloktijd van de server gebruikt in plaats van het moment waarop de demo staat.
+   */
+  const eigen = new InMemoryRepository();
+  const patientId = eigen.alleDossiers()[0].patient.id;
+  legContactVast(eigen, patientId, { notitie: 'Gebeld.', gebruikerId: 'zv-poh-1' });
+  assert.equal(dossierHistorie(eigen, patientId).journaal[0].tijd, '10:20');
+});
+
+test('taken: een afgeronde taak laat geen blok in de agenda achter', () => {
+  const eigen = new InMemoryRepository();
+  const { taak } = zetTaakUit(eigen, {
+    soort: 'bellen', titel: 'Terugbellen', aanleiding: 'Uitslag doorgeven.',
+    bron: { soort: 'handmatig' }, voorRol: 'poh-s', voorGebruikerId: 'zv-poh-1',
+  }, 'zv-poh-1');
+  const dag = eigen.peildatum().toISOString().slice(0, 10);
+  const gepland = planTaak(eigen, taak.id, `${dag}T15:20:00+02:00`);
+  rondTaakAf(eigen, taak.id, 'zv-poh-1', 'gebeld');
+
+  const blok = eigen.agenda('poh-s').find((a) => a.id === gepland.agendaItemId);
+  assert.equal(blok.status, 'afgerond');
+});
+
+test('journaal: historische contacten staan op een tijdstip dat bij een praktijk past', () => {
+  /*
+   * Elk contact erfde de kloktijd van de server, en dan staat er in het journaal een
+   * consult om 03:39. Dat valt in een demonstratie meteen op en maakt de rest van de
+   * tijdlijn verdacht.
+   */
+  const dossier = repo.alleDossiers().find((d) => d.contacten.length >= 3);
+  for (const contact of dossier.contacten) {
+    const uur = Number(contact.herkomst.vastgelegdOp.slice(11, 13));
+    assert.ok(uur >= 8 && uur <= 17,
+      `contact om ${contact.herkomst.vastgelegdOp.slice(11, 16)} valt buiten kantooruren`);
   }
 });

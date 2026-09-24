@@ -6,6 +6,7 @@ import {
   Agenda, ErnstMerk, Fout, IntakeKaart, Kaart, Laden, Leeg, ModuleChips, Vragenlijstkaart,
   Zelfredzaamheidsmeter,
 } from '../onderdelen';
+import { Taakvenster } from './Taakvenster';
 
 /**
  * HET SPREEKUUR — de dag, mét de voorbereiding erin
@@ -160,10 +161,14 @@ function Voorbereidingskaart({ v, uitgeklapt, opUitklappen, openPatient }: {
   );
 }
 
-export function Spreekuur({ openPatient }: { openPatient: (id: string) => void }) {
+export function Spreekuur({ gebruiker, openPatient }: {
+  gebruiker: { id: string };
+  openPatient: (id: string) => void;
+}) {
   const dag = useData(() => api.dagstart());
   const voor = useData(() => api.voorbereiding());
   const [uitgeklapt, setUitgeklapt] = useState<Record<string, boolean>>({});
+  const [taak, setTaak] = useState<string | undefined>();
 
   if (dag.fout) return <Fout boodschap={dag.fout} />;
   if (voor.fout) return <Fout boodschap={voor.fout} />;
@@ -225,8 +230,14 @@ export function Spreekuur({ openPatient }: { openPatient: (id: string) => void }
       )}
 
       <Kaart titel="Mijn dag" icoon="agenda" telling={`${data.agenda.length} in de agenda`}>
-        <Agenda regels={data.agenda} openPatient={openPatient} opStatus={zetStatus} />
+        <Agenda regels={data.agenda} openPatient={openPatient} opStatus={zetStatus}
+          opTaak={setTaak} />
       </Kaart>
+
+      {taak && (
+        <Taakvenster taakId={taak} gebruiker={gebruiker} openPatient={openPatient}
+          opSluit={() => setTaak(undefined)} opGewijzigd={dag.herlaad} />
+      )}
 
       {rest.length > 0 && (
         <>

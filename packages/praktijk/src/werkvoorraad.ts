@@ -497,6 +497,25 @@ export function genereerAgenda(praktijk: Praktijk, zaad = 21): AgendaItem[] {
  */
 export const DEMO_KLOK = { uur: 10, minuut: 20 };
 
+/**
+ * Het tijdstip van een registratie die nú gebeurt.
+ *
+ * De demopraktijk staat stil op 10:20. Een contact dat je tijdens een demonstratie
+ * vastlegt, hoort op dat moment in het journaal te landen en niet op de kloktijd van de
+ * server — anders staat er ineens een telefonisch consult om 03:37 tussen een spreekuur
+ * dat om 08:40 begon, en klopt de volgorde van het journaal niet meer met het verhaal.
+ *
+ * De seconden en milliseconden blijven echt, zodat twee registraties achter elkaar nog
+ * steeds in de goede volgorde staan.
+ */
+export function demoNu(peildatum: Date): string {
+  const tweecijferig = (n: number) => String(n).padStart(2, '0');
+  const echt = new Date();
+  return `${peildatum.toISOString().slice(0, 10)}T`
+    + `${tweecijferig(DEMO_KLOK.uur)}:${tweecijferig(DEMO_KLOK.minuut)}:`
+    + `${tweecijferig(echt.getSeconds())}.${String(echt.getMilliseconds()).padStart(3, '0')}Z`;
+}
+
 export function zetDagstatus(items: AgendaItem[], peildatum: Date): AgendaItem[] {
   const nu = DEMO_KLOK.uur * 60 + DEMO_KLOK.minuut;
   const dag = peildatum.toISOString().slice(0, 10);

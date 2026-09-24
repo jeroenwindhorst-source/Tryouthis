@@ -241,7 +241,7 @@ function Werkplek({
               startTab={voorkeuren.dossierStart} />
           )}
           {scherm === 'spreekuur' && !patientId && gebruiker.rol === 'poh-s' && (
-            <Spreekuur openPatient={opOpen} />
+            <Spreekuur gebruiker={gebruiker} openPatient={opOpen} />
           )}
           {scherm === 'spreekuur' && !patientId && gebruiker.rol === 'assistent' && (
             <Dossierzoeker opOpen={opOpen} />

@@ -39,7 +39,7 @@ import {
 import { gebruikers, vindGebruiker } from './gebruikers.js';
 import { gesprekkenVoor, naamVanGebruiker, ongelezenVoor } from './berichten.js';
 import {
-  groepeerAutorisaties, STATUSLABEL,
+  demoNu, groepeerAutorisaties, STATUSLABEL,
   type Afspraakstatus, type Autorisatiegroep, type Triageverzoek, type WachtkamerIntake,
 } from './werkvoorraad.js';
 import type { DossierRepository, Overlegnotitie } from './store.js';
@@ -1130,6 +1130,200 @@ export function planWerkblok(
   });
 }
 
+// ── 4c. Het taakdossier ─────────────────────────────────────────────────────
+
+/**
+ * WAT JE MOET WETEN VOORDAT JE BELT
+ *
+ * Een taak inplannen is niet hetzelfde als weten wat je gaat zeggen. Het blok staat om
+ * 11:20 in de agenda, je klikt erop — en dan begint het werk pas: uitzoeken wat er bij
+ * deze mens eigenlijk nog ontbreekt. Dat staat allemaal ergens (in de aanloop, in het
+ * zorgplan, in de signalen), alleen niet op de plek waar je op dat moment bent. Het
+ * gevolg is dat iemand met een telefoon in de hand door vier schermen loopt te klikken.
+ *
+ * Het taakdossier zet het bij elkaar: waarom deze taak bestaat, wat er nog niet binnen
+ * is, wanneer de afspraak staat, hoe je deze mens bereikt en wat je dus wilt zeggen.
+ * Een blok in de agenda is daarmee geen herinnering meer maar een voorbereid gesprek.
+ */
+export interface Ontbrekendonderdeel {
+  naam: string;
+  /**
+   * Hoe dit onderdeel heet midden in een zin.
+   *
+   * 'Jaarlijkse screening — controle' is een correcte titel en een onmogelijke zin: wie
+   * hem in een advies zet, krijgt 'vraag of Jaarlijkse screening — controle nog geregeld
+   * wordt'. In het gespreksdoel heet hij daarom gewoon 'de vragenlijst'; de volledige
+   * naam staat erboven in de lijst.
+   */
+  kort?: string;
+  /** Binnen, nog open, of niet meer op tijd te krijgen. */
+  stand: 'binnen' | 'open' | 'te-laat';
+  toelichting: string;
+}
+
+export interface Taakdossier {
+  taak: Taakregel;
+  patientId?: string;
+  naam: string;
+  leeftijd?: number;
+  modules: { id: string; naam: string; icoon: string }[];
+  bereikbaarheid?: Bereikbaarheid;
+  /** De afspraak waar deze taak omheen hangt, als die er is. */
+  afspraak?: {
+    afspraakId: string; datum: string; tijd: string; dagenTot: number;
+    status: Aanloopstatus; statusLabel: string; advies: string; toelichting: string;
+  };
+  /** Wat er bij deze patiënt nog niet rond is — de reden dat je belt. */
+  ontbreekt: Ontbrekendonderdeel[];
+  signalen: Signaal[];
+  /** Wat je in dit gesprek wilt bereiken. Geen keuzemenu, een paar zinnen. */
+  gespreksdoel: string[];
+  /** Het laatste contact, zodat je weet wat er al gezegd is. */
+  laatsteContact?: { datum: string; soort: string; wie: string };
+  /** Lopende episodes — het contact dat hieruit komt moet ergens aan hangen. */
+  episodes: { id: string; titel: string }[];
+}
+
+/** Opsomming met komma's en één 'en' aan het eind. */
+function opsomming(namen: string[]): string {
+  return namen.length <= 1 ? namen.join('') : `${namen.slice(0, -1).join(', ')} en ${namen.at(-1)}`;
+}
+
+export function taakdossier(repo: DossierRepository, taakId: string): Taakdossier | undefined {
+  const peildatum = repo.peildatum();
+  const vandaag = peildatum.toISOString().slice(0, 10);
+  const ruw = repo.werktaken().find((t) => t.id === taakId);
+  if (!ruw) return undefined;
+
+  const taak = verrijkTaak(ruw, vandaag);
+  const leeg: Taakdossier = {
+    taak, naam: ruw.patientNaam ?? ruw.titel, modules: [], ontbreekt: [], signalen: [],
+    gespreksdoel: [ruw.aanleiding], episodes: [],
+  };
+
+  const dossier = ruw.patientId ? repo.dossier(ruw.patientId) : undefined;
+  if (!dossier) return leeg;
+
+  const plan = planVoor(repo, dossier);
+  const regel = aanloop(repo).find((r) => r.patientId === dossier.patient.id);
+
+  /*
+   * De onderdelen komen uit de aanloop als die er is, en anders rechtstreeks uit het
+   * zorgplan. Dat tweede geval is geen randgeval: een taak die uit Opvolgen komt, hangt
+   * niet aan een afspraak, en dan is de vraag 'wat ontbreekt er' net zo relevant.
+   */
+  const ontbreekt: Ontbrekendonderdeel[] = [];
+  if (regel) {
+    for (const item of regel.vooraf) {
+      ontbreekt.push({
+        naam: item.naam,
+        stand: item.binnen ? 'binnen' : item.haalbaar ? 'open' : 'te-laat',
+        toelichting: item.binnen
+          ? `Binnen op ${item.op}`
+          : item.haalbaar
+            ? `Nog niet binnen · kost ${item.doorlooptijdDagen} dagen, er zijn er nog ${regel.dagenTot}`
+            : `Kost ${item.doorlooptijdDagen} dagen, er zijn er nog ${regel.dagenTot} — dat wordt niets meer`,
+      });
+    }
+    if (regel.vragenlijst) {
+      ontbreekt.push({
+        naam: regel.vragenlijst.naam,
+        kort: 'de vragenlijst',
+        stand: regel.vragenlijst.status === 'ingevuld' ? 'binnen' : 'open',
+        toelichting: regel.vragenlijst.status === 'ingevuld'
+          ? 'Ingevuld en klaar om over te nemen in het consult'
+          : `Staat ${regel.vragenlijst.openDagen ?? 0} dagen open in het portaal · kan tot de avond ervoor`,
+      });
+    }
+  } else {
+    for (const meting of plan.contacten[0]?.metingen ?? []) {
+      if (!meting.labVooraf) continue;
+      ontbreekt.push({
+        naam: meting.naam,
+        stand: meting.laatsteOp ? 'binnen' : 'open',
+        toelichting: meting.laatsteOp
+          ? `Laatste waarde ${meting.laatsteOp}`
+          : 'Nog geen uitslag in het dossier',
+      });
+    }
+    for (const afname of repo.afnames(dossier.patient.id)) {
+      const inzage = bouwInzage(afname, peildatum);
+      if (!inzage) continue;
+      ontbreekt.push({
+        naam: inzage.naam,
+        kort: 'de vragenlijst',
+        stand: inzage.status === 'ingevuld' ? 'binnen' : 'open',
+        toelichting: inzage.status === 'ingevuld'
+          ? 'Ingevuld en klaar om over te nemen'
+          : `Staat ${inzage.openDagen ?? 0} dagen open in het portaal`,
+      });
+    }
+  }
+
+  const open = ontbreekt.filter((o) => o.stand === 'open');
+  const teLaat = ontbreekt.filter((o) => o.stand === 'te-laat');
+  const sig = signalen(dossier, peildatum);
+
+  /*
+   * Het gespreksdoel is het verschil tussen een lijstje en een voorbereiding. Het zegt
+   * niet wat er ontbreekt — dat staat erboven — maar wat je er in dit telefoontje mee
+   * gaat doen. Eén zin per ding dat aan de orde komt, in de volgorde waarin je het zegt.
+   */
+  const gespreksdoel: string[] = [];
+  if (teLaat.length > 0 && regel) {
+    gespreksdoel.push(
+      `Leg uit dat ${opsomming(teLaat.map((o) => o.kort ?? o.naam))} niet meer op tijd binnen `
+      + `${teLaat.length === 1 ? 'is' : 'zijn'} voor ${regel.datum}, en stel voor de afspraak `
+      + 'een week te verzetten.',
+    );
+  }
+  if (open.length > 0) {
+    gespreksdoel.push(
+      regel
+        ? `Vraag of ${opsomming(open.map((o) => o.kort ?? o.naam))} deze week nog geregeld `
+          + `wordt — er ${regel.dagenTot === 1 ? 'is' : 'zijn'} nog ${regel.dagenTot} dagen.`
+        : `Vraag naar ${opsomming(open.map((o) => o.kort ?? o.naam))}.`,
+    );
+  }
+  const zwaarste = sig.find((s) => s.ernst === 'urgent') ?? sig[0];
+  if (zwaarste) gespreksdoel.push(`Noem wat opvalt: ${zwaarste.tekst.toLowerCase()}`);
+  if (gespreksdoel.length === 0) gespreksdoel.push(ruw.aanleiding);
+  gespreksdoel.push('Leg het gesprek daarna vast als contact, met een notitie in het journaal.');
+
+  const contacten = [...dossier.contacten]
+    .sort((a, b) => b.herkomst.vastgelegdOp.localeCompare(a.herkomst.vastgelegdOp));
+
+  return {
+    taak,
+    patientId: dossier.patient.id,
+    naam: volledigeNaam(dossier),
+    leeftijd: leeftijd(dossier, peildatum),
+    modules: plan.modules.map((m) => ({ id: m.id, naam: m.naam, icoon: m.icoon })),
+    bereikbaarheid: bereikbaarheid(dossier),
+    afspraak: regel
+      ? {
+          afspraakId: regel.afspraakId, datum: regel.datum, tijd: regel.tijd,
+          dagenTot: regel.dagenTot, status: regel.status,
+          statusLabel: AANLOOPSTATUS_LABEL[regel.status],
+          advies: regel.advies, toelichting: regel.toelichting,
+        }
+      : undefined,
+    ontbreekt,
+    signalen: sig,
+    gespreksdoel,
+    laatsteContact: contacten[0]
+      ? {
+          datum: contacten[0].herkomst.vastgelegdOp.slice(0, 10),
+          soort: contacten[0].soort,
+          wie: contacten[0].uitvoerder.naam,
+        }
+      : undefined,
+    episodes: dossier.episodes
+      .filter((e) => e.status === 'active')
+      .map((e) => ({ id: e.id, titel: e.titel })),
+  };
+}
+
 // ── 5. Monitoring ───────────────────────────────────────────────────────────
 
 export interface MonitoringRegel {
@@ -1617,7 +1811,8 @@ export function registreerConsult(
   const dossier = repo.dossier(patientId);
   if (!dossier) return undefined;
   const peildatum = repo.peildatum();
-  const nu = peildatum.toISOString();
+  // Op de demoklok, niet op de serverklok — zie demoNu().
+  const nu = demoNu(peildatum);
 
   const voor = planVoor(repo, dossier);
   const gatenVoor = new Set(
@@ -1758,6 +1953,101 @@ export function registreerConsult(
   };
 }
 
+
+/**
+ * EEN GESPREK VASTLEGGEN ALS CONTACT
+ *
+ * 'Gesprek vastleggen als contact' was een knop die het venster sloot. Daarna stond er
+ * niets in het journaal — wat erger is dan geen knop, want nu denkt iemand dat het is
+ * vastgelegd. En precies bij een telefoontje is dat kwalijk: het is vaak het enige spoor
+ * dat er contact is geweest, en zonder dat spoor belt de volgende collega opnieuw.
+ *
+ * Een telefonisch consult is hier daarom hetzelfde soort ding als een consult op de
+ * praktijk: een Encounter met een uitvoerder, een duur, een prestatie en — als er iets
+ * gezegd is dat ertoe doet — een deelcontact met SOEP aan een episode. De notitie is
+ * geen extraatje maar het verschil tussen een belpoging en een contact, en de
+ * declaratieregel zegt het ook: telefonisch is alleen een prestatie als het inhoudelijk
+ * is vastgelegd.
+ */
+export interface Gespreksvastlegging {
+  /** Wat er is gezegd. Landt als S-regel in het deelcontact. */
+  notitie?: string;
+  /** Wat er is afgesproken. Landt als P-regel. */
+  afspraak?: string;
+  contactvorm?: Contactvorm;
+  duurMinuten?: number;
+  episodeId?: string;
+  /** Welk nummer of kanaal is gebruikt. Komt in de bevestiging, niet in het dossier. */
+  kanaal?: string;
+  /** De taak die hiermee af is, als het gesprek uit een taak voortkwam. */
+  taakId?: string;
+  gebruikerId?: string;
+}
+
+export interface Gespreksuitkomst {
+  melding: string;
+  /** Wat dit administratief oplevert, en wat er eventueel nog ontbreekt. */
+  declaratie?: ReturnType<typeof beoordeelDeclaratie>;
+  /** De journaalregel die er zojuist bij is gekomen. */
+  regel?: JournaalRegel;
+  /** De taak die hiermee is afgerond, als die er was. */
+  taak?: Taakregel;
+}
+
+export function legContactVast(
+  repo: DossierRepository, patientId: string, gegevens: Gespreksvastlegging,
+): Gespreksuitkomst | undefined {
+  const dossier = repo.dossier(patientId);
+  if (!dossier) return undefined;
+
+  const vorm: Contactvorm = gegevens.contactvorm ?? 'telefonisch';
+  const notitie = gegevens.notitie?.trim();
+  const afspraak = gegevens.afspraak?.trim();
+
+  /*
+   * Zonder episode kan er geen deelcontact zijn, en dan zou de notitie nergens aan
+   * hangen. In plaats van de gebruiker daarmee lastig te vallen kiezen we de lopende
+   * episode — en als er meerdere zijn, die van het aandachtsgebied waar deze taak over
+   * gaat. Handmatig kiezen kan altijd nog; dat is het veld `episodeId`.
+   */
+  const lopend = dossier.episodes.filter((e) => e.status === 'active');
+  const episodeId = gegevens.episodeId ?? lopend[0]?.id;
+
+  const uitkomst = registreerConsult(repo, patientId, {
+    metingen: [],
+    soep: { S: notitie, P: afspraak },
+    episodeId,
+    gebruikerId: gegevens.gebruikerId,
+    contactvorm: vorm,
+    duurMinuten: gegevens.duurMinuten ?? 10,
+  });
+  if (!uitkomst) return undefined;
+
+  let taak: Taakregel | undefined;
+  if (gegevens.taakId) {
+    const vandaag = repo.peildatum().toISOString().slice(0, 10);
+    const afgerond = rondTaakAf(
+      repo, gegevens.taakId, gegevens.gebruikerId ?? 'zv-poh-1',
+      notitie ? `Gebeld. ${notitie}` : 'Gebeld; gesprek vastgelegd als contact.',
+    );
+    if (afgerond) taak = verrijkTaak(afgerond, vandaag);
+  }
+
+  const vormnaam = vindContactvorm(vorm)?.naam ?? vorm;
+  const waar = gegevens.kanaal ? ` via ${gegevens.kanaal}` : '';
+  const melding = notitie
+    ? `${vormnaam}${waar} vastgelegd in het journaal van ${volledigeNaam(dossier)}.`
+    : `${vormnaam}${waar} vastgelegd. Zonder notitie staat er alleen dát er contact was — `
+      + 'en telefonisch telt pas als prestatie als er inhoudelijk iets is vastgelegd.';
+
+  return {
+    melding,
+    declaratie: uitkomst.declaratie,
+    regel: journaal(repo.dossier(patientId)!)[0],
+    taak,
+  };
+}
+
 // ── 9. Agenda ───────────────────────────────────────────────────────────────
 
 export interface AgendaRegel {
@@ -1780,12 +2070,24 @@ export interface AgendaRegel {
   statusLabel: string;
   aangemeldVia?: string;
   aangemeldOm?: string;
+  /**
+   * De werktaak achter dit blok, als het er een is.
+   *
+   * Zonder dit veld is een ingepland blok een tekstje met een tijd erbij: je weet dat je
+   * om 11:20 iemand moet bellen, maar niet waarover. Met het taak-id erbij is het blok
+   * een ingang naar het taakdossier — wat er ontbreekt, hoe je deze mens bereikt en wat
+   * je wilt zeggen.
+   */
+  taakId?: string;
 }
 
 /** De dag van één rol, als tijdlijn. Blokken en patiëntafspraken door elkaar. */
 export function agenda(repo: DossierRepository, rol: Rol): AgendaRegel[] {
   const peildatum = repo.peildatum();
   const intakes = repo.intakes();
+  const taakBij = new Map(
+    repo.werktaken().filter((t) => t.agendaItemId).map((t) => [t.agendaItemId!, t.id]),
+  );
 
   return repo.agenda(rol).map((item): AgendaRegel => {
     const dossier = item.patientId ? repo.dossier(item.patientId) : undefined;
@@ -1794,6 +2096,7 @@ export function agenda(repo: DossierRepository, rol: Rol): AgendaRegel[] {
         id: item.id, tijd: item.start.slice(11, 16), duurMinuten: item.duurMinuten,
         soort: item.soort, titel: item.titel, reden: item.reden, modules: [],
         status: item.status, statusLabel: STATUSLABEL[item.status],
+        taakId: taakBij.get(item.id),
       };
     }
     const plan = planVoor(repo, dossier);
@@ -1820,6 +2123,7 @@ export function agenda(repo: DossierRepository, rol: Rol): AgendaRegel[] {
       statusLabel: STATUSLABEL[item.status],
       aangemeldVia: item.aangemeldVia,
       aangemeldOm: item.aangemeldOm?.slice(11, 16),
+      taakId: taakBij.get(item.id),
     };
   });
 }
@@ -3201,6 +3505,62 @@ export function maakGroepsconsult(
   if (!gebruiker || gebruiker.rol === 'administrator') return undefined;
   repo.maakGroepsconsult(nieuw, { id: gebruiker.id, naam: gebruiker.naam, rol: gebruiker.rol });
   return groepsconsulten(repo);
+}
+
+
+/**
+ * EEN GROEPSCONSULT STARTEN, EN PER DEELNEMER REGISTREREN
+ *
+ * Het overzicht van wie er komt was er al. Wat ontbrak is wat er daarna gebeurt: het
+ * consult begint, er wordt anderhalf uur gepraat, en dan moet er voor acht mensen iets in
+ * acht dossiers. In de praktijk gebeurt dat achteraf uit het hoofd, of helemaal niet.
+ *
+ * Daarom kan het consult hier gestart worden en staat er tijdens de bijeenkomst per
+ * deelnemer een veld. Wat je daar typt, wordt een contact in het dossier van díe mens —
+ * met de groep als aanleiding en het thema als episode-ingang. Het consult is
+ * gezamenlijk, het dossier niet.
+ */
+export function startGroepsconsult(repo: DossierRepository, groepId: string) {
+  const groep = repo.groepsconsulten().find((g) => g.id === groepId);
+  if (!groep) return undefined;
+  repo.zetGroepsstatus(groepId, groep.status === 'bezig' ? 'afgerond' : 'bezig');
+  return groepsconsulten(repo);
+}
+
+export interface Groepsnotitie {
+  patientId: string;
+  notitie: string;
+  gebruikerId?: string;
+}
+
+export function legGroepsnotitieVast(
+  repo: DossierRepository, groepId: string, gegevens: Groepsnotitie,
+): { melding: string; groepen: ReturnType<typeof groepsconsulten> } | undefined {
+  const groep = repo.groepsconsulten().find((g) => g.id === groepId);
+  const deelnemer = groep?.deelnemers.find((d) => d.patientId === gegevens.patientId);
+  if (!groep || !deelnemer) return undefined;
+  if (gegevens.notitie.trim().length < 3) {
+    return {
+      melding: 'Een lege notitie levert een contact op waar niemand iets aan heeft. '
+        + 'Schrijf op wat er voor deze deelnemer uit kwam.',
+      groepen: groepsconsulten(repo),
+    };
+  }
+
+  const uitkomst = legContactVast(repo, gegevens.patientId, {
+    notitie: gegevens.notitie,
+    afspraak: `Deelgenomen aan het groepsconsult "${groep.titel}" (${groep.thema}).`,
+    contactvorm: 'groepsconsult',
+    duurMinuten: groep.duurMinuten,
+    gebruikerId: gegevens.gebruikerId,
+  });
+  if (!uitkomst) return undefined;
+
+  repo.markeerDeelnemerGeregistreerd(groepId, gegevens.patientId);
+  return {
+    melding: `Vastgelegd in het dossier van ${deelnemer.naam}.`,
+    groepen: groepsconsulten(repo),
+  };
 }
 
 // ── 18e. Rapportages ────────────────────────────────────────────────────────

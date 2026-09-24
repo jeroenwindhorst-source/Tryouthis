@@ -14,6 +14,7 @@ import {
   neemVragenlijstOver, opvolgen, vragenlijstenVoor,
   protocoloverzicht, wijzigProtocol, herstelProtocol, type Protocolwijziging,
   takenoverzicht, zetTaakUit, planTaak, rondTaakAf, planWerkblok, bereikbaarheidVoor,
+  taakdossier, legContactVast, startGroepsconsult, legGroepsnotitieVast,
   type NieuweTaak,
   orderOverzicht, orderVoorstellen, overleg, pakAcuutOp, patientOverzicht, plaatsLosseOrders,
   planbord, planbordPraktijk, praktijkrapportage, praktijkSamenvatting, registreerConsult,
@@ -371,6 +372,20 @@ app.post<{ Params: { id: string; patientId: string } }>(
   },
 );
 
+app.post<{ Params: { id: string } }>(
+  '/api/groepsconsulten/:id/start',
+  async (req, reply) =>
+    startGroepsconsult(repo, req.params.id)
+      ?? reply.code(404).send({ fout: 'groepsconsult niet gevonden' }));
+
+app.post<{
+  Params: { id: string }; Body: { patientId: string; notitie: string; gebruikerId?: string };
+}>(
+  '/api/groepsconsulten/:id/notitie',
+  async (req, reply) =>
+    legGroepsnotitieVast(repo, req.params.id, req.body)
+      ?? reply.code(404).send({ fout: 'deelnemer niet gevonden' }));
+
 app.post<{ Params: { id: string; patientId: string }; Body: { status: string } }>(
   '/api/groepsconsulten/:id/deelnemers/:patientId/status',
   async (req) => {
@@ -509,6 +524,15 @@ app.post<{ Params: { id: string }; Body: { start: string } }>(
 app.post<{ Params: { id: string }; Body: { door: string; uitkomst: string } }>(
   '/api/taken/:id/afronden', async (req) =>
     ({ taak: rondTaakAf(repo, req.params.id, req.body.door, req.body.uitkomst) }));
+
+app.get<{ Params: { id: string } }>('/api/taak/:id/dossier', async (req, reply) =>
+  taakdossier(repo, req.params.id) ?? reply.code(404).send({ fout: 'taak niet gevonden' }));
+
+app.post<{
+  Params: { id: string }; Body: Parameters<typeof legContactVast>[2];
+}>('/api/patient/:id/contact', async (req, reply) =>
+  legContactVast(repo, req.params.id, req.body)
+    ?? reply.code(404).send({ fout: 'patiënt niet gevonden' }));
 
 app.post<{ Body: { blokId: string; rol: string; start: string } }>('/api/werkblok', async (req) => {
   planWerkblok(repo, req.body);

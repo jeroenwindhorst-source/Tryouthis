@@ -8,6 +8,7 @@ import {
   neemVragenlijstOver, opvolgen, vragenlijstenVoor,
   protocoloverzicht, wijzigProtocol, herstelProtocol, type Protocolwijziging,
   takenoverzicht, zetTaakUit, planTaak, rondTaakAf, planWerkblok, bereikbaarheidVoor,
+  taakdossier, legContactVast, startGroepsconsult, legGroepsnotitieVast,
   type NieuweTaak,
   orderOverzicht, orderVoorstellen, overleg, pakAcuutOp, patientOverzicht, plaatsLosseOrders,
   planbord, planbordPraktijk, praktijkrapportage, praktijkSamenvatting, registreerConsult,
@@ -150,6 +151,18 @@ export const lokaleApi = {
     repo.zetDeelnemerstatus(groepId, patientId, status as Groepsdeelnemer['status']);
     return traag(groepsconsulten(repo));
   },
+  startGroepsconsult: (groepId: string) => {
+    const lijst = startGroepsconsult(repo, groepId);
+    if (!lijst) return Promise.reject(new Error(`Groepsconsult ${groepId} niet gevonden`));
+    return traag(lijst);
+  },
+  legGroepsnotitieVast: (groepId: string, gegevens: {
+    patientId: string; notitie: string; gebruikerId?: string;
+  }) => {
+    const uitkomst = legGroepsnotitieVast(repo, groepId, gegevens);
+    if (!uitkomst) return Promise.reject(new Error('Deelnemer niet gevonden'));
+    return traag(uitkomst);
+  },
 
   rapport: (criteria: Criteria) => traag(rapport(repo, criteria)),
   rapportExport: (criteria: Criteria) => traag(rapportExport(repo, criteria)),
@@ -227,6 +240,16 @@ export const lokaleApi = {
   planTaak: (id: string, start: string) => traag({ taak: planTaak(repo, id, start) }),
   rondTaakAf: (id: string, door: string, uitkomst: string) =>
     traag({ taak: rondTaakAf(repo, id, door, uitkomst) }),
+  taakdossier: (taakId: string) => {
+    const uitkomst = taakdossier(repo, taakId);
+    if (!uitkomst) return Promise.reject(new Error(`Taak ${taakId} niet gevonden`));
+    return traag(uitkomst);
+  },
+  legContactVast: (patientId: string, gegevens: Parameters<typeof legContactVast>[2]) => {
+    const uitkomst = legContactVast(repo, patientId, gegevens);
+    if (!uitkomst) return Promise.reject(new Error(`Patiënt ${patientId} niet gevonden`));
+    return traag(uitkomst);
+  },
   planWerkblok: (blokId: string, rol: string, start: string) => {
     planWerkblok(repo, { blokId, rol, start });
     return traag(planbordPraktijk(repo));

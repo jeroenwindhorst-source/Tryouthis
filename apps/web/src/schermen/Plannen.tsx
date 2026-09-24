@@ -6,6 +6,7 @@ import {
 import { useData } from '../gebruik';
 import { Icoon } from '../iconen';
 import { Fout, Kaart, Laden, Leeg, ModuleChips, Statusmerk } from '../onderdelen';
+import { Taakvenster } from './Taakvenster';
 
 const ROL_LABEL: Record<string, string> = {
   huisarts: 'Huisarts', 'poh-s': 'POH-Somatiek', assistent: 'Doktersassistent',
@@ -54,10 +55,11 @@ export function Plannen({ gebruiker, openPatient }: {
   gebruiker: Gebruiker;
   openPatient: (id: string) => void;
 }) {
-  const { data, fout, bezig, setData } = useData(() => api.planbordPraktijk());
+  const { data, fout, bezig, setData, herlaad } = useData(() => api.planbordPraktijk());
   const taken = useData(() => api.taken(gebruiker.id), [gebruiker.id]);
   const [gekozen, setGekozen] = useState<Sleep | undefined>();
   const [bezigMet, setBezigMet] = useState<string | undefined>();
+  const [taak, setTaak] = useState<string | undefined>();
 
   if (fout) return <Fout boodschap={fout} />;
   if (bezig || !data) return <Laden wat="Planbord" />;
@@ -168,6 +170,10 @@ export function Plannen({ gebruiker, openPatient }: {
                   {t.uiterlijkOp && ` · uiterlijk ${t.uiterlijkOp}`}
                 </div>
                 <div className="knop-rij" style={{ marginTop: 7 }}>
+                  <button className="knop" data-toon="stil"
+                    onClick={(e) => { e.stopPropagation(); setTaak(t.id); }}>
+                    <Icoon naam="lijst" grootte={12} /> Wat ontbreekt er
+                  </button>
                   {t.patientId && (
                     <button className="knop" data-toon="stil"
                       onClick={(e) => { e.stopPropagation(); openPatient(t.patientId!); }}>
@@ -296,15 +302,22 @@ export function Plannen({ gebruiker, openPatient }: {
         <div className="dagkolommen" data-nadruk={Boolean(eigenRol)}>
           {kolommen.map((kolom) => (
             <Dagkolom key={kolom.rol} kolom={kolom} gekozen={gekozen} eigen={kolom.rol === eigenRol}
-              bezigMet={bezigMet} opPlan={plan} openPatient={openPatient} />
+              bezigMet={bezigMet} opPlan={plan} openPatient={openPatient}
+              opTaak={setTaak} />
           ))}
         </div>
       </div>
+
+      {taak && (
+        <Taakvenster taakId={taak} gebruiker={gebruiker} openPatient={openPatient}
+          opSluit={() => setTaak(undefined)}
+          opGewijzigd={() => { herlaad(); taken.herlaad(); }} />
+      )}
     </>
   );
 }
 
-function Dagkolom({ kolom, gekozen, eigen, bezigMet, opPlan, openPatient }: {
+function Dagkolom({ kolom, gekozen, eigen, bezigMet, opPlan, openPatient, opTaak }: {
   kolom: Praktijkplanbord['kolommen'][number];
   gekozen?: Sleep;
   /** Is dit de agenda van de ingelogde gebruiker? Die krijgt de ruimte. */
@@ -312,6 +325,8 @@ function Dagkolom({ kolom, gekozen, eigen, bezigMet, opPlan, openPatient }: {
   bezigMet?: string;
   opPlan: (slot: Slot) => void;
   openPatient: (id: string) => void;
+  /** Een ingepland werkblok openen — wat komt er bij deze patiënt nog tekort? */
+  opTaak?: (taakId: string) => void;
 }) {
   // Afspraken en vrije plekken door elkaar, op tijd. Een lijst met alleen vrije tijden
   // zonder de afspraken eromheen laat je de verkeerde plek kiezen.
@@ -343,15 +358,23 @@ function Dagkolom({ kolom, gekozen, eigen, bezigMet, opPlan, openPatient }: {
 
       <div className="dagregels">
         {regels.map((regel) => regel.soort === 'afspraak' ? (
+          /*
+            Een blok dat uit een taak komt, opent de taak en niet het dossier. Dat is
+            precies het moment waar het misging: je sleept 'De Vries bellen' naar 11:20,
+            klikt erop en kreeg een dossier waarin je zelf mocht uitzoeken waaróm je belt.
+          */
           <div key={regel.afspraak.id} className="dagregel" data-soort={regel.afspraak.soort}
-            data-klikbaar={Boolean(regel.afspraak.patientId)}
-            onClick={regel.afspraak.patientId
-              ? () => openPatient(regel.afspraak.patientId!) : undefined}>
+            data-klikbaar={Boolean(regel.afspraak.patientId || regel.afspraak.taakId)}
+            onClick={regel.afspraak.taakId && opTaak
+              ? () => opTaak(regel.afspraak.taakId!)
+              : regel.afspraak.patientId
+                ? () => openPatient(regel.afspraak.patientId!) : undefined}>
             <span className="klok">{regel.tijd}</span>
             <div>
               <div className="wie">{regel.afspraak.naam ?? regel.afspraak.titel}</div>
               <div className="mini">
                 {regel.afspraak.reden ?? regel.afspraak.titel} · {regel.afspraak.duurMinuten} min
+                {regel.afspraak.taakId && ' · werktaak — klik voor het overzicht'}
               </div>
               {/*
                 Geen aandachtsgebieden in deze kolommen. Het planbord beantwoordt één vraag

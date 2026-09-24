@@ -188,25 +188,39 @@ export function Statusmerk({ regel }: { regel: AgendaRegel }) {
   );
 }
 
-export function Agenda({ regels, openPatient, opStatus }: {
+export function Agenda({ regels, openPatient, opStatus, opTaak }: {
   regels: AgendaRegel[];
   openPatient?: (id: string) => void;
   /** Handmatig corrigeren wat de zuil niet weet: iemand meldt zich aan de balie of komt niet. */
   opStatus?: (afspraakId: string, status: string) => void;
+  /**
+   * Een ingepland werkblok openen.
+   *
+   * Zonder dit was een blok in de agenda een tekstje met een tijd erbij: je wist dat je
+   * om 11:20 iemand moest bellen, maar niet waarover. Nu opent het het taakvenster —
+   * wat er nog ontbreekt, hoe je deze mens bereikt en wat je wilt zeggen.
+   */
+  opTaak?: (taakId: string) => void;
 }) {
   if (regels.length === 0) return <Leeg tekst="Geen afspraken vandaag." />;
   return (
     <div className="agenda">
       {regels.map((r) => {
         // De hele regel is de knop, niet alleen de naam: je klikt op een afspraak, niet op tekst.
-        const klikbaar = Boolean(r.patientId && openPatient);
+        // Een taakblok opent de taak en niet het dossier: je bent bezig met de taak.
+        const opent = r.taakId && opTaak
+          ? () => opTaak(r.taakId!)
+          : r.patientId && openPatient
+            ? () => openPatient(r.patientId!)
+            : undefined;
+        const klikbaar = Boolean(opent);
         return (
         <div key={r.id} className="regel" data-soort={r.soort} data-aandacht={Boolean(r.aandacht)}
           data-status={r.status} data-klikbaar={klikbaar}
           role={klikbaar ? 'button' : undefined} tabIndex={klikbaar ? 0 : undefined}
-          onClick={klikbaar ? () => openPatient!(r.patientId!) : undefined}
-          onKeyDown={klikbaar
-            ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPatient!(r.patientId!); } }
+          onClick={opent}
+          onKeyDown={opent
+            ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); opent(); } }
             : undefined}>
           <span className="klok">{r.tijd}</span>
           <span className="streep" />
@@ -228,6 +242,7 @@ export function Agenda({ regels, openPatient, opStatus }: {
           <div className="rechts">
             <span className="duur">{r.duurMinuten} min</span>
             <Statusmerk regel={r} />
+            {r.taakId && <span className="merkje" data-toon="informatief">werktaak</span>}
             {r.intakeKlaar && <span className="merkje" data-toon="informatief">intake klaar</span>}
             {r.voorbereid === false && <span className="merkje" data-toon="aandacht">niet compleet</span>}
             {r.voorbereid === true && <span className="merkje" data-toon="ok">voorbereid</span>}
@@ -550,10 +565,12 @@ export function Vragenlijstkaart({ inzage, uitgeklapt, opUitklappen, opOvernemen
  * wordt niet bekeken; deze staat op de dagstart, naast de agenda, waar je toch al kijkt.
  * Inplannen doe je op het planbord — daar ligt de vrije tijd.
  */
-export function Werklijst({ gebruiker, naarPlannen, openPatient }: {
+export function Werklijst({ gebruiker, naarPlannen, openPatient, opTaak }: {
   gebruiker: { id: string };
   naarPlannen?: () => void;
   openPatient?: (id: string) => void;
+  /** De taak openen: wat ontbreekt er, hoe bereik ik hem, en bellen vanuit hetzelfde venster. */
+  opTaak?: (taakId: string) => void;
 }) {
   const [data, setData] = useState<Takenoverzicht | undefined>();
   const [bezigMet, setBezigMet] = useState<string | undefined>();
@@ -599,7 +616,15 @@ export function Werklijst({ gebruiker, naarPlannen, openPatient }: {
           <div key={taak.id} className="werktaak" data-dringend={taak.dringend}>
             <span className="ikoon"><Icoon naam={taak.icoon} grootte={14} /></span>
             <div>
-              <strong style={{ fontSize: 13 }}>{taak.titel}</strong>
+              {opTaak
+                ? (
+                  <button className="knop" data-toon="stil"
+                    style={{ padding: 0, fontWeight: 650, fontSize: 13 }}
+                    onClick={() => opTaak(taak.id)}>
+                    {taak.titel} <Icoon naam="pijl" grootte={12} />
+                  </button>
+                )
+                : <strong style={{ fontSize: 13 }}>{taak.titel}</strong>}
               <div className="reden">{taak.aanleiding}</div>
               <div className="mini">
                 {taak.soortLabel} · {taak.duurMinuten} min · uitgezet door {taak.aangemaaktDoor}

@@ -68,8 +68,20 @@ function herkomstVan(auteurId: string, rol: Herkomst['auteurRol'], op: string): 
   return { bron: 'zorgverlener', vastgelegdOp: op, auteurId, auteurRol: rol };
 }
 
+/**
+ * Een datum in het verleden, op een tijdstip dat bij een praktijk past.
+ *
+ * Zonder dat laatste erft elk historisch contact de kloktijd van de server, en dan staat
+ * er in het journaal een consult om 03:39 — wat in een demonstratie meteen opvalt en de
+ * rest van de tijdlijn verdacht maakt. Het tijdstip volgt uit het aantal dagen, dus bij
+ * elke opbouw krijgt hetzelfde contact dezelfde tijd.
+ */
 function datumMinDagen(basis: Date, dagen: number): string {
-  return new Date(basis.getTime() - dagen * 86_400_000).toISOString();
+  const dag = new Date(basis.getTime() - dagen * 86_400_000);
+  // Spreekuurtijden: 08:00 tot 16:50, in stappen van tien minuten.
+  const stap = Math.abs(Math.round(dagen) * 7 + 3) % 54;
+  dag.setUTCHours(8 + Math.floor(stap / 6), (stap % 6) * 10, 0, 0);
+  return dag.toISOString();
 }
 
 interface GeneratieOpties {

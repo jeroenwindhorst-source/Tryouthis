@@ -6,7 +6,7 @@ import {
   type Meetreeks, type WachtkamerIntake,
   type NieuweOrder, type Overlegnotitie, type PatientOverzicht, type RegistratieUitkomst,
   PATIENTSOORTEN, TIJDLIJNSOORT_LABEL,
-  type Bereikbaarheid, type Treffer, type Tijdlijnsoort, type Vragenlijstinzage,
+  type Treffer, type Tijdlijnsoort, type Vragenlijstinzage,
 } from '../api';
 import { useData } from '../gebruik';
 import { Trendgrafiek } from '../grafiek';
@@ -14,7 +14,7 @@ import { Soepveld } from '../soepveld';
 import { Zorgreis } from '../zorgreis';
 import { Icoon, icoonVanModule } from '../iconen';
 import {
-  Beleidsband, Bereikbaarheidskaart, ErnstMerk, Fout, IntakeKaart, Kaart, Laden, Leeg,
+  Beleidsband, ErnstMerk, Fout, IntakeKaart, Kaart, Laden, Leeg,
   ModuleIdChips, Signalen, SuggestieKaart, Vragenlijstkaart, Zelfredzaamheidsmeter,
 } from '../onderdelen';
 import { Orders } from './Orders';
@@ -24,6 +24,7 @@ import { Verrichtingen } from './Verrichtingen';
 import { Overzicht } from './Overzicht';
 import { Media } from './Media';
 import { Bespreekknop } from './Overleg';
+import { Belvenster } from './Belvenster';
 
 /**
  * Veelgebruikte planafspraken.
@@ -179,6 +180,7 @@ export function Consult({ patientId, gebruiker, terug, startTab = 'consult' }: {
   const [ordersVandaag, setOrdersVandaag] = useState<NieuweOrder[]>([]);
   const [video, setVideo] = useState(false);
   const [bellen, setBellen] = useState(false);
+  const [gebeldVastgelegd, setGebeldVastgelegd] = useState(false);
   const [toonDetails, setToonDetails] = useState(false);
   const [journaalBron, setJournaalBron] = useState<string | undefined>();
   const [vragenlijsten, setVragenlijsten] = useState<Vragenlijstinzage[] | undefined>();
@@ -332,8 +334,16 @@ export function Consult({ patientId, gebruiker, terug, startTab = 'consult' }: {
       )}
 
       {bellen && data.patient.bereikbaarheid && (
-        <Belvenster naam={data.patient.naam} gegevens={data.patient.bereikbaarheid}
-          opSluit={() => setBellen(false)} />
+        <Belvenster patientId={patientId} naam={data.patient.naam}
+          gegevens={data.patient.bereikbaarheid} episodes={data.episodes} gebruiker={gebruiker}
+          opSluit={() => {
+            setBellen(false);
+            // Pas bij het sluiten opnieuw ophalen. Tussentijds herladen zet het hele
+            // dossier even op 'Laden…', en dan verdwijnt het belvenster onder je handen
+            // terwijl je de bevestiging staat te lezen.
+            if (gebeldVastgelegd) { setGebeldVastgelegd(false); herlaad(); }
+          }}
+          opVastgelegd={() => setGebeldVastgelegd(true)} />
       )}
 
       <div className="dossiertabs">
@@ -1038,62 +1048,6 @@ export function Consult({ patientId, gebruiker, terug, startTab = 'consult' }: {
  * geregistreerd wordt. Dat is het deel dat een HIS moet regelen; het beeld komt van een
  * partij die daar goed in is (docs/14 §4, ingebedde apps).
  */
-/**
- * HET BELVENSTER
- *
- * Geen kiezer en geen telefooncentrale — die zit in de telefonie, niet in het dossier.
- * Wat hier staat is het antwoord op de vraag die je stelt op het moment dat je gaat
- * bellen: welk nummer, en is er iets dat ik moet weten voordat ik opneem?
- *
- * De knop 'Bellen' legt het gesprek vast als contact zodra je het afrondt. Dat is het
- * punt: een telefoontje is zorg (docs/19), en wie hem niet vastlegt heeft wel gewerkt
- * maar niets geleverd.
- */
-function Belvenster({ naam, gegevens, opSluit }: {
-  naam: string; gegevens: Bereikbaarheid; opSluit: () => void;
-}) {
-  const [gebeld, setGebeld] = useState<string | undefined>();
-  return (
-    <>
-      <div className="paneel-scherm" onClick={opSluit} />
-      <div className="videovenster" role="dialog" aria-label="Bellen">
-        <header>
-          <span className="kop"><Icoon naam="gesprek" grootte={15} /> {naam} bellen</span>
-          <button className="knop" data-toon="stil" onClick={opSluit}>
-            <Icoon naam="kruis" grootte={15} />
-          </button>
-        </header>
-
-        <div className="belblok">
-          <div className="notitie" data-toon="merk" style={{ marginBottom: 12 }}>
-            <strong>Waarmee zou je beginnen?</strong> {gegevens.advies}
-          </div>
-
-          <Bereikbaarheidskaart gegevens={gegevens} opBellen={(k) => setGebeld(k.waarde)} />
-
-          {gebeld && (
-            <div className="notitie" data-toon="merk" style={{ marginTop: 12 }}>
-              <strong>Verbinden met {gebeld}…</strong> In de demo gebeurt er verder niets.
-              In productie belt je toestel; als je ophangt staat er een contactregel klaar
-              met de duur erin, die je alleen nog hoeft aan te vullen.
-            </div>
-          )}
-        </div>
-
-        <footer>
-          <button className="knop" data-toon="primair" disabled={!gebeld} onClick={opSluit}>
-            <Icoon naam="vink" grootte={13} /> Gesprek vastleggen als contact
-          </button>
-          <span className="mini">
-            Een telefonisch consult is een contactvorm met een eigen declaratieregel — niet
-            een aantekening bij een ander consult.
-          </span>
-        </footer>
-      </div>
-    </>
-  );
-}
-
 function Videovenster({ naam, portaal, opSluit }: {
   naam: string; portaal: boolean; opSluit: () => void;
 }) {

@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { api, type AgendaRegel, type Processtap } from '../api';
 import { useData } from '../gebruik';
 import { Icoon } from '../iconen';
 import { Agenda, Fout, Kaart, Laden, Werklijst } from '../onderdelen';
+import { Taakvenster } from './Taakvenster';
 
 const STAP_ICOON: Record<Processtap['id'], string> = {
   aanloop: 'klembord', spreekuur: 'agenda', opvolgen: 'bliksem', afronden: 'afvinken',
@@ -49,7 +51,8 @@ export function Dagstart({ gebruiker, gaNaar, openPatient }: {
   gaNaar: (scherm: string) => void;
   openPatient: (id: string) => void;
 }) {
-  const { data, fout, bezig, setData } = useData(() => api.dagstart());
+  const { data, fout, bezig, setData, herlaad } = useData(() => api.dagstart());
+  const [taak, setTaak] = useState<string | undefined>();
 
   // De agenda is het enige dat tijdens de dag verandert; de rest van het scherm niet.
   // Daarom alleen die regels bijwerken in plaats van het hele scherm opnieuw te laden.
@@ -99,12 +102,18 @@ export function Dagstart({ gebruiker, gaNaar, openPatient }: {
         agenda verandert niet van zichzelf; wat een collega bij jou heeft neergelegd wel.
       */}
       <Werklijst gebruiker={gebruiker} naarPlannen={() => gaNaar('plannen')}
-        openPatient={openPatient} />
+        openPatient={openPatient} opTaak={setTaak} />
+
+      {taak && (
+        <Taakvenster taakId={taak} gebruiker={gebruiker} openPatient={openPatient}
+          opSluit={() => setTaak(undefined)} opGewijzigd={herlaad} />
+      )}
 
       <div className="raster2">
         <Kaart titel="Mijn dag" icoon="agenda" telling={`${data.agenda.length} in de agenda`}
           extra={<Wachtkamerstand regels={data.agenda} />}>
-          <Agenda regels={data.agenda} openPatient={openPatient} opStatus={zetStatus} />
+          <Agenda regels={data.agenda} openPatient={openPatient} opStatus={zetStatus}
+            opTaak={setTaak} />
         </Kaart>
 
         <div>
