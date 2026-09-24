@@ -295,6 +295,8 @@ K(p('Bovenaan staat **Fatima Bos, over vier dagen**, met de melding **Verzetten*
 K(zeg('“Zij komt maandag, en het bloed is niet geprikt. Prikken en de uitslag terugkrijgen kost twee tot drie werkdagen. Dus dat consult gaat over niets: twintig minuten, en daarna moet ze terugkomen. Het systeem zegt niet ‘er ontbreekt iets’ — het zegt: verzet deze afspraak.”'));
 K(p('Daaronder **Greetje de Vries, over zes dagen**, met de melding **Bellen**.'));
 K(zeg('“Precies hetzelfde feit — niet geprikt — maar er zijn nog zes dagen. Dan is bellen de juiste actie, niet verzetten. Hetzelfde signaal, een ander advies, omdat de tijd anders ligt.”'));
+K(doe('Wijs bij Fatima Bos de merkjes onder het advies aan.'));
+K(zeg('“En let op het verschil tussen die twee regels. Het lab lukt niet meer — dat kost vijf dagen. De vragenlijst kan nog wel, die kan tot de dag ervoor. Dus de reden om te verzetten is het bloedonderzoek, niet de vragenlijst. Die doorlooptijden zijn geen aanname van ons: ze staan in het protocol, en de praktijk kan ze aanpassen als het prikpunt hier trager is.”'));
 K(zeg('“Dit is nu onzichtbaar. Iedere praktijk ontdekt dit op het moment dat de patiënt al in de stoel zit.”'));
 
 // ── 4
@@ -368,6 +370,9 @@ K(p('Drie uitstapjes van een minuut, in volgorde van indruk.'));
 K(p('**Acuut.** Er is inmiddels een melding binnengekomen. Klik op **Acuut** in de linkerbalk. Je ziet wie hem oppakt, of dat niemand hem heeft opgepakt. *“Acute zaken moeten zich opdringen, niet in een lijstje wachten tot iemand kijkt.”*'));
 K(p('**Medicatie aanpassen.** In een dossier: **Medicatie aanpassen**. Er schuift rechts een paneel open. Stoppen van het oude middel, starten van het nieuwe, recept naar de gekozen apotheek — één handeling, niet vier losse. *“En je kiest waar het recept heen gaat.”*'));
 K(p('**Berichten.** Onderscheid tussen collega’s onderling en het contact met de patiënt. *“Contact met een patiënt is zorg, geen mailtje. Het staat in het dossier en het is declarabel.”*'));
+K(p('**Het protocol aanpassen.** Klik onder **Praktijk** op **Het protocol**. Bij HbA1c staat *7 dagen vooraf* met eronder *richtlijn: 5 dagen vooraf*, en daaronder de reden. Klik op **Aanpassen** bij een willekeurige meting.'));
+K(zeg('“Elke praktijk wijkt af van de richtlijn, en meestal met goede redenen. Nu zit dat in hoofden en in werkafspraken. Hier staat het in het systeem — met de richtlijn ernaast, met een naam en een datum, en met een reden die verplicht is. Zonder die reden is een afwijking over een half jaar niet te onderscheiden van een vergissing.”'));
+K(zeg('“En het is niet alleen de manager die dit mag. Ik draai het spreekuur, dus ik weet als eerste dat het prikpunt traag is. Wat ik hier verander, werkt meteen door in ieders zorgplan en in de aanloop.”'));
 
 // ── Spiekbriefje
 K(h1('Spiekbriefje'));
@@ -381,6 +386,7 @@ K(tabel(
     ['Eerste aandacht', 'Willem Hendriks (thuisbloeddruk 160) · Ruud Mulder (eGFR 40)'],
     ['Opvolgen · aanleidingen', '5 labuitslagen · 5 vragenlijsten · 3 thuismetingen · 1 uit het beloop'],
     ['Mijn cohort', '23 gevolgd · 7 met een signaal · 16 stabiel'],
+    ['Protocol', '8 aandachtsgebieden · 3 afwijkingen van de richtlijn'],
     ['Aanloop · verzetten', 'Fatima Bos, over 4 dagen'],
     ['Aanloop · bellen', 'Greetje de Vries, over 6 dagen'],
     ['Nu aan de beurt', 'Anneke Bos, 10:40 — cijfer 4, geldzorgen, haalt medicijnen niet op'],

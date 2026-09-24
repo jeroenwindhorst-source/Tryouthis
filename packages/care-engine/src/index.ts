@@ -1,5 +1,6 @@
 export * from './criteria.js';
 export * from './protocol.js';
+export * from './protocolaanpassing.js';
 export * from './zelfredzaamheid.js';
 export * from './ketenkoppeling.js';
 export * from './instroom.js';

@@ -107,6 +107,28 @@ Apps draaien via SMART on FHIR app launch op dezelfde API die externe partijen z
 De vormtaal wordt gedeeld via designtokens, zodat een ingebedde app er als onderdeel
 van het systeem uitziet zonder dat hij er onderdeel van is.
 
+## 6b. Het protocol aanpassen
+
+De vier niveaus hierboven gaan over instellingen. Het protocol zelf — welke metingen bij
+een aandachtsgebied horen, hoe vaak ze moeten, hoeveel dagen vóór het consult ze binnen
+moeten zijn — was tot nu toe alleen te lezen.
+
+Dat klopt niet met de praktijk. Elke praktijk wijkt af: het prikpunt is traag, de
+optometrist doet de funduscontrole, deze populatie vraagt om vaker controleren. Die
+afwijkingen bestaan al, maar ze zitten in hoofden en werkafspraken en niet in het systeem.
+
+Aanpassen kan nu, onder drie voorwaarden:
+
+1. **De richtlijn blijft ernaast staan.** De landelijke modules worden nooit gemuteerd;
+   de praktijkinstelling is een laag eroverheen. In het scherm staat bij elke gewijzigde
+   waarde wat de richtlijn zei.
+2. **Een afwijking vraagt een reden**, samen met wie hem maakte en wanneer. Zonder reden
+   is een afwijking over een half jaar niet te onderscheiden van een vergissing.
+3. **Het recht ligt bij wie ermee werkt** — huisarts, praktijkondersteuner én
+   praktijkmanager. Wie het spreekuur draait weet als eerste dat het prikpunt traag is.
+
+Zie [ADR-0018](adr/ADR-0018-protocol-is-aanpasbaar-met-reden.md).
+
 ## 7. Wat hiervan in de repo zit
 
 ```

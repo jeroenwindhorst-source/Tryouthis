@@ -264,7 +264,7 @@ function Werkplek({
           {scherm === 'ha-team' && <HuisartsWerkplek scherm="team" gaNaar={opGa} openPatient={opOpen} />}
 
           {scherm === 'instroom' && <Instroom openPatient={opOpen} />}
-          {scherm === 'protocol' && <Protocol />}
+          {scherm === 'protocol' && <Protocol gebruiker={gebruiker} />}
           {scherm === 'beheer' && <Beheer />}
           {scherm === 'gebruikers' && <Gebruikers />}
           {scherm === 'berichten' && <Berichten gebruiker={gebruiker} openPatient={opOpen} />}

@@ -2,7 +2,8 @@ import type { Appointment, Deelcontact, Dossier, Observation, Rol, Task } from '
 import { leeftijd } from '@zpe/fhir-model';
 import {
   beoordeelInstroom, beoordeelZelfredzaamheid, bouwZorgplan, CODE, leegPersoonlijkPlan,
-  type PersoonlijkPlan,
+  modules as landelijkProtocol, pasProtocolToe,
+  type PersoonlijkPlan, type Protocolaanpassing, type Zorgmodule,
 } from '@zpe/care-engine';
 import {
   genereerAanloop, genereerPraktijk, genereerSpreekuur, genereerZelfredzaamheid, type Praktijk,
@@ -78,6 +79,14 @@ export interface DossierRepository {
   /** Uitgezette en ingevulde vragenlijsten; zonder patientId die van de hele praktijk. */
   afnames(patientId?: string): Vragenlijstafname[];
   neemAfnameOver(id: string, door: string): void;
+
+  /** Waar deze praktijk van de landelijke richtlijn afwijkt, en waarom. */
+  protocolaanpassingen(): Protocolaanpassing[];
+  /** Het protocol zoals deze praktijk het hanteert — richtlijn plus afwijkingen. */
+  praktijkprotocol(): Zorgmodule[];
+  pasProtocolAan(aanpassing: Protocolaanpassing): void;
+  /** Eén afwijking terugdraaien naar de richtlijn. */
+  herstelProtocolonderdeel(moduleId: string, itemCode?: string): void;
   /** Nieuwe episode openen vanuit het consult. */
   maakEpisode(patientId: string, code: { icpc: string; snomed?: string; display: string }, door: string): string | undefined;
   /** Interne communicatie tussen teamleden. */
@@ -178,6 +187,7 @@ export interface Overlegnotitie {
 export class InMemoryRepository implements DossierRepository {
   private praktijk!: Praktijk;
   private afspraken!: Appointment[];
+  private protocolLijst: Protocolaanpassing[] = [];
   private aanloopAfspraken!: Appointment[];
   private afnameLijst: Vragenlijstafname[] = [];
   private taakLijst: Task[] = [];
@@ -230,6 +240,33 @@ export class InMemoryRepository implements DossierRepository {
     this.mediaLijst = new Map();
     this.groepen = [];
     this.afnameLijst = [];
+
+    /*
+     * Beginstand van de protocolafwijkingen.
+     *
+     * Elke praktijk wijkt af van de richtlijn, en dat is legitiem — maar nu zit die
+     * afwijking in de hoofden van mensen. Deze drie zijn ontleend aan wat praktijken in
+     * gesprekken noemen: een prikpunt dat traag is, een controle die ze vaker doen dan de
+     * richtlijn vraagt, en een verrichting die ze hebben uitbesteed.
+     */
+    this.protocolLijst = [
+      {
+        moduleId: 'glucose', itemCode: CODE.hba1c, doorlooptijdDagen: 7,
+        reden: 'Het prikpunt verwerkt maar twee keer per week; vijf dagen is hier niet genoeg.',
+        door: 'Mirjam de Groot', op: '2026-03-11',
+      },
+      {
+        moduleId: 'nierfunctie', itemCode: CODE.acr, intervalDagen: 183,
+        reden: 'Onze populatie heeft veel diabetes met beginnende nierschade; halfjaarlijks '
+          + 'in plaats van jaarlijks, zo afgesproken met de zorggroep.',
+        door: 'Daan Verhoeven', op: '2026-01-22',
+      },
+      {
+        moduleId: 'glucose', itemCode: CODE.fundus, actief: false,
+        reden: 'Funduscontrole loopt volledig via de optometrist; wij roepen er niet apart voor op.',
+        door: 'Mirjam de Groot', op: '2025-11-04',
+      },
+    ];
 
     // Drie jaar dossierhistorie: contacten met SOEP en de bijbehorende meetreeksen.
     // Zonder historie is er niets om in terug te kijken, en dan lijkt elk dossier nieuw.
@@ -401,7 +438,7 @@ export class InMemoryRepository implements DossierRepository {
       const dossier = this.dossier(afspraak.patientId);
       if (!dossier) continue;
       const plan = bouwZorgplan(dossier, this.persoonlijkPlan(afspraak.patientId), {
-        peildatum: this.praktijk.peildatum,
+        peildatum: this.praktijk.peildatum, protocol: this.praktijkprotocol(),
       });
       dossier.observaties.push(...genereerVoorafLab(dossier, plan, geprikt, 21000 + i));
     }
@@ -425,7 +462,7 @@ export class InMemoryRepository implements DossierRepository {
       // Alleen wat al in het verleden ligt kan geprikt zijn; de rest wacht nog.
       if (prikdag > this.praktijk.peildatum) return;
       const plan = bouwZorgplan(dossier, this.persoonlijkPlan(afspraak.patientId), {
-        peildatum: this.praktijk.peildatum,
+        peildatum: this.praktijk.peildatum, protocol: this.praktijkprotocol(),
       });
       dossier.observaties.push(...genereerVoorafLab(dossier, plan, prikdag, 23000 + i));
     });
@@ -648,6 +685,31 @@ export class InMemoryRepository implements DossierRepository {
     return this.afspraken.filter((a) => a.start.startsWith(datum));
   }
   aanloop(): Appointment[] { return this.aanloopAfspraken; }
+
+  protocolaanpassingen(): Protocolaanpassing[] { return this.protocolLijst; }
+
+  /**
+   * Het protocol van deze praktijk.
+   *
+   * Opnieuw samenstellen bij elke aanroep in plaats van cachen: het wordt tijdens een
+   * demo aangepast, en een zorgplan dat nog op het oude protocol rekent omdat er ergens
+   * een kopie stond, is het soort fout dat je pas een week later ontdekt.
+   */
+  praktijkprotocol(): Zorgmodule[] {
+    return pasProtocolToe(landelijkProtocol, this.protocolLijst);
+  }
+
+  pasProtocolAan(aanpassing: Protocolaanpassing): void {
+    const zelfde = (a: Protocolaanpassing) =>
+      a.moduleId === aanpassing.moduleId && a.itemCode === aanpassing.itemCode;
+    this.protocolLijst = [...this.protocolLijst.filter((a) => !zelfde(a)), aanpassing];
+  }
+
+  herstelProtocolonderdeel(moduleId: string, itemCode?: string): void {
+    this.protocolLijst = this.protocolLijst.filter(
+      (a) => !(a.moduleId === moduleId && a.itemCode === itemCode),
+    );
+  }
 
   afnames(patientId?: string): Vragenlijstafname[] {
     return patientId

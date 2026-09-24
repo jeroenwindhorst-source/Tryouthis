@@ -12,6 +12,7 @@ import {
   maakGroepsconsult, media, rapport, rapportExport, samenvatting,
   InMemoryRepository, intakes, legVerrichtingVast, meetreeksen, meldAan, monitoringCohort,
   neemVragenlijstOver, opvolgen, vragenlijstenVoor,
+  protocoloverzicht, wijzigProtocol, herstelProtocol, type Protocolwijziging,
   orderOverzicht, orderVoorstellen, overleg, pakAcuutOp, patientOverzicht, plaatsLosseOrders,
   planbord, planbordPraktijk, praktijkrapportage, praktijkSamenvatting, registreerConsult,
   terminologie, verrichtingen, verwerkVragenlijst, vraagAfspraakAan, zetOpBespreeklijst,
@@ -488,25 +489,17 @@ app.get('/api/beheer', async () => beheer());
 
 // ── Protocol en verantwoording ──────────────────────────────────────────────
 
-app.get('/api/protocol', async () => ({
-  toelichting:
-    'Eén geïntegreerd protocol, opgebouwd uit aandachtsgebieden. Er is geen protocol per ' +
-    'aandoening; landelijke ketens worden achteraf afgeleid.',
-  regelsetVersie: REGELSET_VERSIE,
-  modules: modules.map((m) => ({
-    id: m.id, naam: m.naam, omschrijving: m.omschrijving, icoon: m.icoon, rol: m.rol,
-    richtlijnen: m.richtlijnen,
-    relevantie: m.relevantie.omschrijving,
-    items: m.items.map((i) => ({
-      code: i.code, naam: i.naam, basisIntervalDagen: i.basisIntervalDagen,
-      zelfAanleverbaar: i.zelfAanleverbaar, labVooraf: i.labVooraf,
-      intervalRegels: (i.intervalRegels ?? []).map((r) => ({ factor: r.factor, reden: r.reden })),
-    })),
-  })),
-  ketens: ketens.map((k) => ({
-    id: k.id, naam: k.naam, modules: k.modules, declaratie: k.declaratie,
-  })),
-}));
+app.get<{ Querystring: { gebruiker?: string } }>('/api/protocol', async (req) =>
+  protocoloverzicht(repo, req.query.gebruiker));
+
+app.post<{ Body: Protocolwijziging & { door: string } }>('/api/protocol/wijzig', async (req) => {
+  const { door, ...wijziging } = req.body;
+  return wijzigProtocol(repo, wijziging, door);
+});
+
+app.post<{ Body: { moduleId: string; itemCode?: string; door: string } }>(
+  '/api/protocol/herstel', async (req) =>
+    herstelProtocol(repo, req.body.moduleId, req.body.itemCode, req.body.door));
 
 // ── Terminologie (docs/02) ──────────────────────────────────────────────────
 

@@ -107,6 +107,14 @@ Daaronder **Greetje de Vries, over zes dagen**, met de melding **Bellen**.
 > juiste actie, niet verzetten. Hetzelfde signaal, een ander advies, omdat de tijd anders
 > ligt."*
 
+Wijs bij Fatima Bos de merkjes onder het advies aan.
+
+> *"En let op het verschil tussen die twee regels. Het lab lukt niet meer — dat kost vijf
+> dagen. De vragenlijst kan nog wel, die kan tot de dag ervoor. Dus de reden om te
+> verzetten is het bloedonderzoek, niet de vragenlijst. Die doorlooptijden zijn geen
+> aanname van ons: ze staan in het protocol, en de praktijk kan ze aanpassen als het
+> prikpunt hier trager is."*
+
 > *"Dit is nu onzichtbaar. Iedere praktijk ontdekt dit op het moment dat de patiënt al in
 > de stoel zit."*
 
@@ -273,6 +281,20 @@ apotheek — één handeling, niet vier losse. *"En je kiest waar het recept hee
 *"Contact met een patiënt is zorg, geen mailtje. Het staat in het dossier en het is
 declarabel."*
 
+**Het protocol aanpassen.** Klik onder **Praktijk** op **Het protocol**. Bij HbA1c staat
+*7 dagen vooraf* met eronder *richtlijn: 5 dagen vooraf*, en daaronder de reden: *"Het
+prikpunt verwerkt maar twee keer per week."* Klik op **Aanpassen** bij een willekeurige
+meting.
+
+> *"Elke praktijk wijkt af van de richtlijn, en meestal met goede redenen. Nu zit dat in
+> hoofden en in werkafspraken. Hier staat het in het systeem — met de richtlijn ernaast,
+> met een naam en een datum, en met een reden die verplicht is. Zonder die reden is een
+> afwijking over een half jaar niet te onderscheiden van een vergissing."*
+
+> *"En het is niet alleen de manager die dit mag. Ik draai het spreekuur, dus ik weet als
+> eerste dat het prikpunt traag is. Wat ik hier verander, werkt meteen door in ieders
+> zorgplan en in de aanloop."*
+
 ---
 
 ## Spiekbriefje
@@ -287,6 +309,7 @@ Getallen die kloppen bij een verse demo, op het moment dat je inlogt.
 | Eerste aandacht | Willem Hendriks (thuisbloeddruk 160) · Ruud Mulder (eGFR 40) |
 | Opvolgen · aanleidingen | 5 labuitslagen · 5 vragenlijsten · 3 thuismetingen · 1 uit het beloop |
 | Mijn cohort | 23 gevolgd · 7 met een signaal · 16 stabiel |
+| Protocol | 8 aandachtsgebieden · 3 afwijkingen van de richtlijn |
 | Aanloop · verzetten | Fatima Bos, over 4 dagen |
 | Aanloop · bellen | Greetje de Vries, over 6 dagen |
 | Nu aan de beurt | Anneke Bos, 10:40 — cijfer 4, geldzorgen, haalt medicijnen niet op |

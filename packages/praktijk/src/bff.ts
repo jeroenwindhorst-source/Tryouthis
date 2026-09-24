@@ -1,8 +1,9 @@
 import type { Dossier, Rol, Task } from '@zpe/fhir-model';
 import { laatsteMeting, leeftijd, metingReeks, numeriekeWaarde } from '@zpe/fhir-model';
 import {
-  automatisering, bewaakMiddel, bouwZorgplan, beoordeelInstroom, CODE, instroomOverzicht,
-  planOproepen, suggesties, verwerk, vindVragenlijst, voorgesteldeOrdersets, zoekCatalogus,
+  automatisering, bewaakMiddel, bouwZorgplan, beoordeelInstroom, CODE, doorlooptijdReden,
+  doorlooptijdVan, instroomOverzicht, ketens, modules, planOproepen, REGELSET_VERSIE,
+  suggesties, verwerk, vindVragenlijst, voorgesteldeOrdersets, zoekCatalogus,
   type CatalogusSoort, type Suggestie, type Zorgplan,
 } from '@zpe/care-engine';
 import { NIVEAU_UITLEG } from '@zpe/configuratie';
@@ -54,7 +55,12 @@ export function volledigeNaam(dossier: Dossier): string {
 }
 
 function planVoor(repo: DossierRepository, dossier: Dossier): Zorgplan {
-  return bouwZorgplan(dossier, repo.persoonlijkPlan(dossier.patient.id), { peildatum: repo.peildatum() });
+  return bouwZorgplan(dossier, repo.persoonlijkPlan(dossier.patient.id), {
+    peildatum: repo.peildatum(),
+    // Het protocol van déze praktijk, niet de landelijke richtlijn: een afwijking die je
+    // in het beheerscherm instelt, moet meteen doorwerken in ieders zorgplan.
+    protocol: repo.praktijkprotocol(),
+  });
 }
 
 function suggestiesVoor(repo: DossierRepository, dossier: Dossier, plan: Zorgplan): Suggestie[] {
@@ -433,8 +439,17 @@ export interface Aanloopregel {
   /** Aantal dagen tot de afspraak. */
   dagenTot: number;
   modules: { id: string; naam: string; icoon: string }[];
-  /** Wat vóór het consult binnen moet zijn, met de stand van zaken per onderdeel. */
-  vooraf: { naam: string; binnen: boolean; op?: string }[];
+  /**
+   * Wat vóór het consult binnen moet zijn, met de stand van zaken per onderdeel.
+   *
+   * `haalbaar` is het verschil dat ertoe doet: er zijn nog genoeg dagen over voor de
+   * doorlooptijd van dít onderdeel. Een vragenlijst haalt dat bijna altijd, een
+   * labuitslag niet.
+   */
+  vooraf: {
+    naam: string; binnen: boolean; op?: string;
+    doorlooptijdDagen: number; haalbaar: boolean;
+  }[];
   vragenlijst?: { naam: string; status: 'ingevuld' | 'open'; openDagen?: number };
   status: Aanloopstatus;
   /** Wat de POH nu zou doen. Eén zin, geen keuzemenu. */
@@ -464,45 +479,77 @@ export function aanloop(repo: DossierRepository): Aanloopregel[] {
      * zegt niets over de vraag of deze controle door kan gaan; daarvoor telt alleen of de
      * uitslag nog geldig is op het moment van de afspraak.
      */
-    const vooraf = (plan.contacten[0]?.metingen ?? [])
+    const vooraf: Aanloopregel['vooraf'] = (plan.contacten[0]?.metingen ?? [])
       .filter((m) => m.labVooraf)
-      .map((m) => ({
-        naam: m.naam,
-        binnen: Boolean(m.laatsteOp) && m.vervaltOp > datum,
-        op: m.laatsteOp,
-      }));
+      .map((m) => {
+        const binnen = Boolean(m.laatsteOp) && m.vervaltOp > datum;
+        return {
+          naam: m.naam,
+          binnen,
+          op: m.laatsteOp,
+          doorlooptijdDagen: m.doorlooptijdDagen,
+          // Haalbaar zolang er nog meer dagen over zijn dan het onderdeel nodig heeft.
+          haalbaar: binnen || dagenTot >= m.doorlooptijdDagen,
+        };
+      });
 
     const afname = repo.afnames(dossier.patient.id)
       .find((a) => a.vragenlijstId === 'vl-jaarscreening');
     const inzage = afname ? bouwInzage(afname, peildatum) : undefined;
-
-    const openLab = vooraf.filter((v) => !v.binnen);
     const openLijst = inzage?.status === 'open';
-    const ietsOpen = openLab.length > 0 || openLijst;
 
     /*
-     * De grens ligt op vijf dagen. Dat is geen willekeurig getal: bloed prikken en de
-     * uitslag terugkrijgen kost in deze regio twee tot drie werkdagen, dus onder de vijf
-     * dagen is het niet meer te halen en is verzetten eerlijker dan hopen.
+     * DE DOORLOOPTIJD VERSCHILT PER ONDERDEEL — EN DAT IS DE HELE POINTE
+     *
+     * Eerder gold één grens van vijf dagen voor alles wat nog binnen moest komen, en dan
+     * kwam er bij een afspraak over vier dagen te staan dat óók de vragenlijst niet meer
+     * op tijd zou zijn. Dat is niet waar: een vragenlijst kan de avond ervoor nog
+     * ingevuld worden. Bloed prikken kan dat niet.
+     *
+     * De doorlooptijd hoort dus bij het onderdeel, niet bij het blok — en ze staat in het
+     * protocol, waar de praktijk hem kan aanpassen als het prikpunt trager of sneller is
+     * (ADR-0017). Het gevolg is dat één afspraak twee adviezen tegelijk kan opleveren:
+     * dit lukt niet meer, dat lukt nog wel.
      */
-    const status: Aanloopstatus = !ietsOpen
+    const lijstDoorlooptijd = 1;
+    const open = [
+      ...vooraf.filter((v) => !v.binnen),
+      // In het advies heet hij gewoon 'de vragenlijst'; de volledige naam staat als
+      // merkje bij de regel. Een zin met 'jaarlijkse screening — controle' erin
+      // middenin leest niet meer als een advies.
+      ...(openLijst
+        ? [{
+            naam: 'de vragenlijst', binnen: false,
+            doorlooptijdDagen: lijstDoorlooptijd,
+            haalbaar: dagenTot >= lijstDoorlooptijd,
+          }]
+        : []),
+    ];
+    const teLaat = open.filter((v) => !v.haalbaar);
+    const kanNog = open.filter((v) => v.haalbaar);
+
+    const status: Aanloopstatus = open.length === 0
       ? 'op-schema'
-      : dagenTot <= 5 ? 'verzetten'
-      : dagenTot <= 10 ? 'bellen'
+      : teLaat.length > 0 ? 'verzetten'
+      // Nog haalbaar, maar de speling is op: minder dan vijf dagen marge boven de
+      // doorlooptijd betekent dat wachten het alsnog laat mislukken.
+      : kanNog.some((v) => dagenTot - v.doorlooptijdDagen <= 5) ? 'bellen'
       : 'herinnering-loopt';
 
     // Opsomming met komma's en één 'en' aan het eind. Drie keer 'en' in één zin leest
     // als een foutmelding, en dat is precies niet de indruk die dit blok moet wekken.
-    const delen = [...openLab.map((v) => v.naam), ...(openLijst ? ['de vragenlijst'] : [])];
-    const wat = delen.length <= 1
-      ? delen.join('')
-      : `${delen.slice(0, -1).join(', ')} en ${delen.at(-1)}`;
+    const opsom = (namen: string[]) => namen.length <= 1
+      ? namen.join('')
+      : `${namen.slice(0, -1).join(', ')} en ${namen.at(-1)}`;
 
     const advies = {
       'op-schema': 'Niets te doen — alles is binnen.',
-      'herinnering-loopt': `Herinnering staat uit voor ${wat}. Nog ${dagenTot} dagen.`,
-      bellen: `Bellen: ${wat} nog niet binnen, en er zijn nog ${dagenTot} dagen.`,
-      verzetten: `Verzetten: ${wat} komt in ${dagenTot} dagen niet meer op tijd binnen.`,
+      'herinnering-loopt': `Herinnering staat uit voor ${opsom(open.map((v) => v.naam))}. `
+        + `Nog ${dagenTot} dagen.`,
+      bellen: `Bellen: ${opsom(kanNog.map((v) => v.naam))} nog niet binnen, en er zijn nog `
+        + `${dagenTot} dagen.`,
+      verzetten: `Verzetten: ${opsom(teLaat.map((v) => v.naam))} `
+        + `${teLaat.length === 1 ? 'komt' : 'komen'} in ${dagenTot} dagen niet meer op tijd binnen.`,
     }[status];
 
     const toelichting = {
@@ -511,8 +558,14 @@ export function aanloop(repo: DossierRepository): Aanloopregel[] {
         + 'ingrijpen is nu niet nodig.',
       bellen: 'De uitnodiging heeft niet gewerkt. Een telefoontje nu houdt de afspraak heel; '
         + 'wachten betekent dat de afspraak straks alsnog verzet moet worden.',
-      verzetten: 'Prikken en de uitslag terugkrijgen kost twee tot drie werkdagen. Dit consult '
-        + 'gaat zonder uitslag over niets; een week later verzetten kost minder dan het dubbel doen.',
+      verzetten: kanNog.length > 0
+        // Het verschil benoemen in plaats van alles op één hoop gooien: wat nog wel kan,
+        // hoeft niet mee te verhuizen naar een nieuwe afspraak.
+        ? 'Prikken en de uitslag terugkrijgen kost meer dagen dan er nog zijn. Wat nog wél kan: '
+          + `${opsom(kanNog.map((v) => v.naam))} — dat hoeft het verzetten niet tegen te houden, `
+          + 'maar zonder uitslag gaat dit consult over niets.'
+        : 'Prikken en de uitslag terugkrijgen kost meer dagen dan er nog zijn. Dit consult '
+          + 'gaat zonder uitslag over niets; een week later verzetten kost minder dan het dubbel doen.',
     }[status];
 
     return [{
@@ -1006,7 +1059,7 @@ export function patientOverzicht(repo: DossierRepository, patientId: string) {
   if (!dossier) return undefined;
   const peildatum = repo.peildatum();
   const persoonlijk = repo.persoonlijkPlan(patientId);
-  const plan = bouwZorgplan(dossier, persoonlijk, { peildatum });
+  const plan = planVoor(repo, dossier);
   const oproepen = planOproepen(plan, dossier.patient, { peildatum });
   const lijst = suggestiesVoor(repo, dossier, plan);
 
@@ -1497,7 +1550,213 @@ export function intakeVoor(repo: DossierRepository, patientId: string) {
   return repo.intakes().find((i) => i.patientId === patientId);
 }
 
-// ── 13. Beheer ──────────────────────────────────────────────────────────────
+// ── 13. Het protocol ────────────────────────────────────────────────────────
+
+/**
+ * HET PROTOCOL, INZIEN ÉN AANPASSEN
+ *
+ * Een protocolscherm dat alleen laat zien wat de richtlijn zegt, is een folder. De
+ * praktijk wijkt er hoe dan ook van af — het prikpunt is traag, de optometrist doet de
+ * fundus, bij deze populatie wordt vaker gecontroleerd — en zonder plek om dat vast te
+ * leggen zit die kennis in hoofden en losse afspraken.
+ *
+ * Daarom staat per onderdeel de richtlijnwaarde náást de praktijkwaarde, met wie hem
+ * veranderde, wanneer en waarom. Aanpassen kan, terugzetten ook, en allebei is zichtbaar.
+ * Dat is niet strenger dan nodig: een regelset die het handelen beïnvloedt moet
+ * herleidbaar zijn tot wie wat besloot (docs/07).
+ */
+
+export interface Protocolitem {
+  code: string;
+  naam: string;
+  /** Wat de richtlijn zegt. Verandert nooit door een praktijkinstelling. */
+  richtlijn: {
+    intervalDagen: number;
+    doorlooptijdDagen: number;
+    labVooraf: boolean;
+  };
+  /** Wat deze praktijk hanteert. Gelijk aan de richtlijn tenzij er is afgeweken. */
+  praktijk: {
+    intervalDagen: number;
+    doorlooptijdDagen: number;
+    labVooraf: boolean;
+    actief: boolean;
+  };
+  doorlooptijdReden: string;
+  zelfAanleverbaar: boolean;
+  vragenlijst?: string;
+  intervalRegels: { factor: number; reden: string }[];
+  /** De afwijking zelf, als die er is. */
+  afwijking?: { reden: string; door: string; op: string };
+}
+
+export interface Protocolmodule {
+  id: string;
+  naam: string;
+  omschrijving: string;
+  icoon: string;
+  rol: string;
+  relevantie: string;
+  richtlijnen: { naam: string; versie: string; url?: string }[];
+  actief: boolean;
+  afwijking?: { reden: string; door: string; op: string };
+  items: Protocolitem[];
+}
+
+export interface Protocoloverzicht {
+  toelichting: string;
+  regelsetVersie: string;
+  modules: Protocolmodule[];
+  ketens: {
+    id: string; naam: string; modules: string[];
+    declaratie: { prestatiecode: string; omschrijving: string };
+  }[];
+  /** Hoeveel onderdelen van de richtlijn afwijken — het getal waar een manager naar kijkt. */
+  aantalAfwijkingen: number;
+  magAanpassen: boolean;
+}
+
+export function protocoloverzicht(
+  repo: DossierRepository, gebruikerId?: string,
+): Protocoloverzicht {
+  const aanpassingen = repo.protocolaanpassingen();
+  const vind = (moduleId: string, itemCode?: string) =>
+    aanpassingen.find((a) => a.moduleId === moduleId && a.itemCode === itemCode);
+  const gebruiker = gebruikerId ? vindGebruiker(gebruikerId) : undefined;
+
+  return {
+    toelichting:
+      'Eén geïntegreerd protocol, opgebouwd uit aandachtsgebieden. Er is geen protocol per '
+      + 'aandoening; landelijke ketens worden achteraf afgeleid.',
+    regelsetVersie: REGELSET_VERSIE,
+    aantalAfwijkingen: aanpassingen.length,
+    magAanpassen: Boolean(gebruiker?.rechten.includes('protocol-aanpassen')),
+    modules: modules.map((module): Protocolmodule => {
+      const moduleAfwijking = vind(module.id);
+      return {
+        id: module.id,
+        naam: module.naam,
+        omschrijving: module.omschrijving,
+        icoon: module.icoon,
+        rol: module.rol,
+        relevantie: module.relevantie.omschrijving,
+        richtlijnen: module.richtlijnen,
+        actief: moduleAfwijking?.actief !== false,
+        afwijking: moduleAfwijking
+          ? { reden: moduleAfwijking.reden, door: moduleAfwijking.door, op: moduleAfwijking.op }
+          : undefined,
+        items: module.items.map((item): Protocolitem => {
+          const a = vind(module.id, item.code);
+          const richtlijn = {
+            intervalDagen: item.basisIntervalDagen,
+            doorlooptijdDagen: doorlooptijdVan(item),
+            labVooraf: Boolean(item.labVooraf),
+          };
+          return {
+            code: item.code,
+            naam: item.naam,
+            richtlijn,
+            praktijk: {
+              intervalDagen: a?.intervalDagen ?? richtlijn.intervalDagen,
+              doorlooptijdDagen: a?.doorlooptijdDagen ?? richtlijn.doorlooptijdDagen,
+              labVooraf: a?.labVooraf ?? richtlijn.labVooraf,
+              actief: a?.actief !== false,
+            },
+            doorlooptijdReden: doorlooptijdReden(item),
+            zelfAanleverbaar: Boolean(item.zelfAanleverbaar),
+            vragenlijst: item.vragenlijst,
+            intervalRegels: (item.intervalRegels ?? []).map((r) => ({ factor: r.factor, reden: r.reden })),
+            afwijking: a ? { reden: a.reden, door: a.door, op: a.op } : undefined,
+          };
+        }),
+      };
+    }),
+    ketens: ketens.map((k) => ({
+      id: k.id, naam: k.naam, modules: k.modules, declaratie: k.declaratie,
+    })),
+  };
+}
+
+export interface Protocolwijziging {
+  moduleId: string;
+  itemCode?: string;
+  actief?: boolean;
+  intervalDagen?: number;
+  doorlooptijdDagen?: number;
+  labVooraf?: boolean;
+  reden: string;
+}
+
+/**
+ * Een protocolwijziging doorvoeren.
+ *
+ * Twee dingen zijn verplicht en niet te omzeilen: het recht en de reden. Zonder recht
+ * gebeurt er niets; zonder reden ook niet. Een afwijking zonder onderbouwing is over een
+ * half jaar niet te onderscheiden van een vergissing, en dan wordt hij hersteld door
+ * iemand die niet weet waarom hij bestond — of erger: hij blijft staan terwijl niemand
+ * hem nog kan verdedigen.
+ */
+export function wijzigProtocol(
+  repo: DossierRepository, wijziging: Protocolwijziging, doorId: string,
+): { uitgevoerd: boolean; melding: string; overzicht: Protocoloverzicht } {
+  const gebruiker = vindGebruiker(doorId);
+  if (!gebruiker?.rechten.includes('protocol-aanpassen')) {
+    return {
+      uitgevoerd: false,
+      melding: 'Je hebt geen recht om het protocol aan te passen.',
+      overzicht: protocoloverzicht(repo, doorId),
+    };
+  }
+  if (wijziging.reden.trim().length < 5) {
+    return {
+      uitgevoerd: false,
+      melding: 'Een afwijking van de richtlijn vraagt een reden. Zonder die reden is hij '
+        + 'over een half jaar niet te onderscheiden van een vergissing.',
+      overzicht: protocoloverzicht(repo, doorId),
+    };
+  }
+
+  repo.pasProtocolAan({
+    moduleId: wijziging.moduleId,
+    itemCode: wijziging.itemCode,
+    actief: wijziging.actief,
+    intervalDagen: wijziging.intervalDagen,
+    doorlooptijdDagen: wijziging.doorlooptijdDagen,
+    labVooraf: wijziging.labVooraf,
+    reden: wijziging.reden.trim(),
+    door: gebruiker.naam,
+    op: new Date().toISOString().slice(0, 10),
+  });
+
+  return {
+    uitgevoerd: true,
+    melding: 'Aangepast. Dit werkt meteen door in alle zorgplannen en in de aanloop.',
+    overzicht: protocoloverzicht(repo, doorId),
+  };
+}
+
+/** Een afwijking terugdraaien naar de richtlijn. */
+export function herstelProtocol(
+  repo: DossierRepository, moduleId: string, itemCode: string | undefined, doorId: string,
+): { uitgevoerd: boolean; melding: string; overzicht: Protocoloverzicht } {
+  const gebruiker = vindGebruiker(doorId);
+  if (!gebruiker?.rechten.includes('protocol-aanpassen')) {
+    return {
+      uitgevoerd: false,
+      melding: 'Je hebt geen recht om het protocol aan te passen.',
+      overzicht: protocoloverzicht(repo, doorId),
+    };
+  }
+  repo.herstelProtocolonderdeel(moduleId, itemCode);
+  return {
+    uitgevoerd: true,
+    melding: 'Teruggezet naar de richtlijn.',
+    overzicht: protocoloverzicht(repo, doorId),
+  };
+}
+
+// ── 14. Beheer ──────────────────────────────────────────────────────────────
+
 
 export function beheer() {
   const effectief = configuratie();

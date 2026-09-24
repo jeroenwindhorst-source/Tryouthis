@@ -1,7 +1,8 @@
 import type { Dossier, Rol } from '@zpe/fhir-model';
 import { laatsteMeting, numeriekeWaarde } from '@zpe/fhir-model';
 import { ketenbijdragen, traditioneleKetens, type Ketenbijdrage } from './ketenkoppeling.js';
-import { modules as alleModules, type Invoer, type Monitoritem, type Zorgmodule } from './protocol.js';
+import { modules as standaardModules, type Invoer, type Monitoritem, type Zorgmodule } from './protocol.js';
+import { doorlooptijdVan } from './protocolaanpassing.js';
 import {
   beoordeelZelfredzaamheid, type Zelfredzaamheid, type Zelfredzaamheidsbeeld,
 } from './zelfredzaamheid.js';
@@ -86,6 +87,8 @@ export interface GepiandItem {
   naam: string;
   /** Hoe dit item wordt vastgelegd: getal, gecodeerde keuze, verrichting of vragenlijst. */
   invoer: Invoer;
+  /** Hoeveel dagen vóór het contact dit binnen moet zijn om op tijd te zijn. */
+  doorlooptijdDagen: number;
   /** Modules die dit item nodig hebben — één meting kan er meerdere bedienen. */
   modules: string[];
   intervalDagen: number;
@@ -164,6 +167,14 @@ export interface PlanOpties {
   horizonDagen?: number;
   minimumIntervalDagen?: number;
   basisDuurMinuten?: number;
+  /**
+   * Het protocol zoals deze praktijk het heeft ingesteld.
+   *
+   * Ontbreekt het, dan geldt de landelijke richtlijn. Meegeven in plaats van globaal
+   * muteren, zodat twee praktijken in hetzelfde proces naast elkaar kunnen bestaan en
+   * een test een afwijkend protocol kan doorrekenen zonder de rest te raken.
+   */
+  protocol?: Zorgmodule[];
 }
 
 const DAG = 86_400_000;
@@ -199,12 +210,12 @@ function bepaalInterval(
 /** Bepaalt welke modules actief zijn en waarom. */
 function bepaalModules(
   dossier: Dossier, persoonlijk: PersoonlijkPlan, peildatum: Date, intensiteitFactor: number,
-  beeld?: Zelfredzaamheidsbeeld,
+  beeld?: Zelfredzaamheidsbeeld, protocol: Zorgmodule[] = standaardModules,
 ): { actief: ActieveModule[]; nietActief: Zorgplan['nietActief'] } {
   const actief: ActieveModule[] = [];
   const nietActief: Zorgplan['nietActief'] = [];
 
-  for (const module of alleModules) {
+  for (const module of protocol) {
     const keuze = persoonlijk.moduleKeuzes.find((k) => k.moduleId === module.id);
     const relevantie = module.relevantie.evalueer(dossier, peildatum);
     const uitsluiting = module.uitsluiting?.evalueer(dossier, peildatum);
@@ -251,6 +262,7 @@ function bepaalModules(
         return {
           code: item.code, naam: item.naam, modules: [module.id],
           invoer: item.invoer ?? { soort: 'getal' },
+          doorlooptijdDagen: doorlooptijdVan(item),
           intervalDagen: interval.dagen, intervalReden: interval.reden,
           duurMinuten: item.duurMinuten, zelfAanleverbaar: item.zelfAanleverbaar,
           labVooraf: item.labVooraf, vragenlijst: item.vragenlijst,
@@ -420,10 +432,11 @@ export function bouwZorgplan(
 
   const toelichting: string[] = [];
   const consequenties: string[] = [];
-  const moduleRol = new Map<string, Rol>(alleModules.map((m: Zorgmodule) => [m.id, m.rol]));
+  const protocol = opties.protocol ?? standaardModules;
+  const moduleRol = new Map<string, Rol>(protocol.map((m: Zorgmodule) => [m.id, m.rol]));
 
   if (persoonlijk.intensiteit === 'palliatief') {
-    const { actief, nietActief } = bepaalModules(dossier, persoonlijk, peildatumDate, 1, beeld);
+    const { actief, nietActief } = bepaalModules(dossier, persoonlijk, peildatumDate, 1, beeld, protocol);
     return {
       patientId: dossier.patient.id, intensiteit: persoonlijk.intensiteit, zelfredzaamheid: beeld,
       modules: [], nietActief: [...nietActief, ...actief.map((m) => ({
@@ -445,7 +458,7 @@ export function bouwZorgplan(
   }
 
   const { actief, nietActief } = bepaalModules(
-    dossier, persoonlijk, peildatumDate, intensiteitFactor, beeld,
+    dossier, persoonlijk, peildatumDate, intensiteitFactor, beeld, protocol,
   );
   let items = voegItemsSamen(actief);
 
@@ -536,7 +549,7 @@ export function bouwZorgplan(
     );
   }
   for (const keuze of persoonlijk.moduleKeuzes) {
-    const module = alleModules.find((m) => m.id === keuze.moduleId);
+    const module = protocol.find((m) => m.id === keuze.moduleId);
     if (!module) continue;
     consequenties.push(
       `${module.naam} is handmatig ${keuze.aan ? 'aangezet' : 'uitgezet'} door ${keuze.door}: ${keuze.reden}.`,

@@ -60,6 +60,17 @@ export interface Monitoritem {
   zelfAanleverbaar?: boolean;
   /** Moet dit vóór het consult in een labaanvraag? */
   labVooraf?: boolean;
+  /**
+   * Hoeveel dagen vóór het consult dit binnen moet zijn om op tijd te zijn.
+   *
+   * Niet hetzelfde voor alles, en dat verschil is precies wat een praktijk nodig heeft
+   * om te besluiten of een afspraak nog kan doorgaan. Bloed prikken en de uitslag
+   * terugkrijgen kost dagen: onder die grens is het niet meer te halen. Een vragenlijst
+   * kan de avond ervoor nog ingevuld worden.
+   *
+   * Ontbreekt de waarde, dan geldt de aanname uit `doorlooptijdVan()`.
+   */
+  doorlooptijdDagen?: number;
   /** Sommige items binnen een module gelden maar voor een deel van de patiënten. */
   relevantie?: Criterium;
   /** Regels die het interval op maat maken. */

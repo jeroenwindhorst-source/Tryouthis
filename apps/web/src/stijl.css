@@ -195,6 +195,43 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -.01em; }
   font-size: 12.5px; font-style: italic; color: var(--merk-diep);
 }
 
+/* ── Protocol aanpassen ───────────────────────────────────────────────────── */
+
+/*
+ * Een afwijking van de richtlijn ziet eruit als een aantekening in de kantlijn, niet
+ * als een foutmelding. Het ís geen fout — het is een onderbouwde keuze, en de reden
+ * hoort er even zichtbaar bij te staan als de afwijking zelf.
+ */
+.afwijking {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 8px 11px; margin: 8px 0;
+  border-left: 3px solid var(--aandacht);
+  background: var(--aandacht-zacht); border-radius: 0 6px 6px 0;
+}
+.afwijking .mini { margin-top: 2px; }
+
+.protocolformulier {
+  padding: 12px 14px; border: 1px solid var(--merk-lijn);
+  background: var(--merk-zacht); border-radius: var(--rond);
+}
+.protocolformulier .velden {
+  display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end;
+}
+.protocolformulier label { display: grid; gap: 3px; }
+.protocolformulier input[type="number"] {
+  width: 96px; padding: 5px 8px; font-size: 13px;
+  border: 1px solid var(--line); border-radius: var(--rond-klein); background: var(--vlak);
+}
+.protocolformulier textarea {
+  width: 100%; padding: 7px 9px; font: inherit; font-size: 13px;
+  border: 1px solid var(--line); border-radius: var(--rond-klein);
+  background: var(--vlak); resize: vertical;
+}
+.protocolformulier label.schakel {
+  display: flex; gap: 7px; align-items: center; font-size: 12.5px; padding-bottom: 6px;
+}
+.protocolformulier label.schakel input { width: auto; }
+
 /* Kopje binnen een kaart, boven een kolom of lijst. */
 .blokkop {
   font-size: 12px; text-transform: uppercase; letter-spacing: .07em;
@@ -349,6 +386,11 @@ td.rechts, th.rechts { text-align: right; }
 .notitie strong { color: #1e3a8a; }
 .notitie[data-toon="waarschuwing"] { background: var(--aandacht-zacht); border-color: #f2dfb4; color: #7c4a03; }
 .notitie[data-toon="waarschuwing"] strong { color: #5b3502; }
+/* Een notitie in de merkkleur: bevestiging of een uitleg over wat je zelf mag doen. */
+.notitie[data-toon="merk"] {
+  background: var(--merk-zacht); border-color: var(--merk-lijn); color: var(--merk-diep);
+}
+.notitie[data-toon="merk"] strong { color: var(--merk-diep); }
 
 /* ── Dossier ──────────────────────────────────────────────────────────────── */
 

@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { InMemoryRepository } from '../dist/store.js';
 import {
-  aanloop, consultvoorbereiding, dagstart, dossierHistorie, opvolgen, overleg,
-  patientOverzicht, PATIENTBRON, PATIENTSOORTEN,
+  aanloop, consultvoorbereiding, dagstart, dossierHistorie, herstelProtocol, opvolgen, overleg,
+  patientOverzicht, protocoloverzicht, wijzigProtocol, PATIENTBRON, PATIENTSOORTEN,
 } from '../dist/bff.js';
 
 /**
@@ -331,4 +331,117 @@ test('journaal: de patiëntbron toont alleen wat de patiënt zelf aanleverde', (
         `${patientId}: ${item.soort} hoort niet bij de patiëntbron`);
     }
   }
+});
+
+// ── Doorlooptijd en het protocol ────────────────────────────────────────────
+
+test('aanloop: de vragenlijst laat een afspraak nooit sneuvelen zolang er nog een dag is', () => {
+  /*
+   * De doorlooptijd hoort bij het onderdeel, niet bij het blok. Eerder gold één grens
+   * van vijf dagen voor alles, en dan stond er bij een afspraak over vier dagen dat ook
+   * de vragenlijst niet meer op tijd zou zijn — terwijl die de avond ervoor nog ingevuld
+   * kan worden.
+   */
+  for (const regel of aanloop(repo)) {
+    if (regel.dagenTot < 1) continue;
+    const lijstOpen = regel.vragenlijst?.status === 'open';
+    const labTeLaat = regel.vooraf.some((v) => !v.binnen && !v.haalbaar);
+    if (lijstOpen && !labTeLaat) {
+      assert.notEqual(regel.status, 'verzetten',
+        `${regel.naam} wordt verzet terwijl alleen de vragenlijst nog open staat`);
+    }
+  }
+});
+
+test('aanloop: haalbaarheid volgt de doorlooptijd van het onderdeel zelf', () => {
+  for (const regel of aanloop(repo)) {
+    for (const onderdeel of regel.vooraf) {
+      if (onderdeel.binnen) continue;
+      assert.equal(onderdeel.haalbaar, regel.dagenTot >= onderdeel.doorlooptijdDagen,
+        `${regel.naam} / ${onderdeel.naam}: haalbaarheid klopt niet met ${onderdeel.doorlooptijdDagen} dagen`);
+    }
+  }
+});
+
+test('protocol: de richtlijn blijft zichtbaar naast wat de praktijk ervan maakt', () => {
+  const overzicht = protocoloverzicht(repo, 'zv-poh-1');
+  assert.ok(overzicht.aantalAfwijkingen > 0, 'geen enkele afwijking om te tonen');
+
+  const afwijkend = overzicht.modules
+    .flatMap((m) => m.items)
+    .filter((i) => i.afwijking);
+  assert.ok(afwijkend.length > 0);
+
+  for (const item of afwijkend) {
+    assert.ok(item.afwijking.reden.length > 10, `${item.naam}: afwijking zonder reden`);
+    assert.ok(item.afwijking.door.length > 0, `${item.naam}: afwijking zonder naam`);
+    assert.ok(item.afwijking.op.length === 10, `${item.naam}: afwijking zonder datum`);
+    const anders = item.praktijk.intervalDagen !== item.richtlijn.intervalDagen
+      || item.praktijk.doorlooptijdDagen !== item.richtlijn.doorlooptijdDagen
+      || item.praktijk.labVooraf !== item.richtlijn.labVooraf
+      || !item.praktijk.actief;
+    assert.ok(anders, `${item.naam}: draagt een afwijking maar is gelijk aan de richtlijn`);
+  }
+});
+
+test('protocol: aanpassen vraagt een recht én een reden', () => {
+  const eigen = new InMemoryRepository();
+
+  const zonderRecht = wijzigProtocol(
+    eigen, { moduleId: 'leefstijl', itemCode: '29463-7', intervalDagen: 92, reden: 'Vaker wegen bij ons.' },
+    'zv-as-1',
+  );
+  assert.equal(zonderRecht.uitgevoerd, false);
+
+  const zonderReden = wijzigProtocol(
+    eigen, { moduleId: 'leefstijl', itemCode: '29463-7', intervalDagen: 92, reden: 'ok' },
+    'zv-poh-1',
+  );
+  assert.equal(zonderReden.uitgevoerd, false);
+
+  const goed = wijzigProtocol(
+    eigen, { moduleId: 'leefstijl', itemCode: '29463-7', intervalDagen: 92, reden: 'Vaker wegen bij ons.' },
+    'zv-poh-1',
+  );
+  assert.equal(goed.uitgevoerd, true);
+  const item = goed.overzicht.modules
+    .find((m) => m.id === 'leefstijl').items
+    .find((i) => i.code === '29463-7');
+  assert.equal(item.praktijk.intervalDagen, 92);
+  assert.equal(item.richtlijn.intervalDagen, 183, 'de richtlijnwaarde mag niet meeveranderen');
+  assert.equal(item.afwijking.door, 'Sanne Bakker');
+});
+
+test('protocol: een aanpassing werkt door in het zorgplan van de patiënt', () => {
+  const eigen = new InMemoryRepository();
+  const intervalVan = (repository, patientId) => {
+    const plan = patientOverzicht(repository, patientId).zorgplan;
+    return plan.modules
+      .flatMap((m) => m.items)
+      // Een item dat maar in één module voorkomt: de rookstatus zit in drie modules,
+      // en dan zegt een gewijzigd interval in één ervan niets over de uitkomst.
+      .find((i) => i.code === 'medicatiebeoordeling')?.intervalDagen;
+  };
+  // De eerste de beste met leefstijl in het plan; niet elk dossier heeft elke module.
+  const patientId = eigen.alleDossiers()
+    .map((d) => d.patient.id)
+    .find((id) => intervalVan(eigen, id) !== undefined);
+  assert.ok(patientId, 'geen enkele patiënt met een medicatiebeoordeling in het zorgplan');
+
+  const voor = intervalVan(eigen, patientId);
+
+  wijzigProtocol(
+    eigen,
+    {
+      moduleId: 'medicatieveiligheid', itemCode: 'medicatiebeoordeling',
+      intervalDagen: 183, reden: 'Bij polyfarmacie halfjaarlijks in plaats van jaarlijks.',
+    },
+    'zv-poh-1',
+  );
+  assert.notEqual(intervalVan(eigen, patientId), voor,
+    'de protocolwijziging werkt niet door in het zorgplan');
+
+  herstelProtocol(eigen, 'medicatieveiligheid', 'medicatiebeoordeling', 'zv-poh-1');
+  assert.equal(intervalVan(eigen, patientId), voor,
+    'terugzetten herstelt het oorspronkelijke interval niet');
 });

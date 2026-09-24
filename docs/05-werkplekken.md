@@ -31,6 +31,13 @@ drie weken een herinnering, over acht dagen een telefoontje en over drie dagen e
 om de afspraak te verzetten. Hetzelfde feit, een ander gevolg — en in bestaande systemen
 komt het pas aan het licht als de patiënt al in de stoel zit.
 
+De grens verschilt per onderdeel, want de **doorlooptijd** verschilt: prikken en de
+uitslag terugkrijgen kost dagen, een vragenlijst kan de avond ervoor nog ingevuld worden.
+Eén afspraak kan daardoor twee adviezen tegelijk opleveren — *het lab lukt niet meer, de
+vragenlijst nog wel*. Die doorlooptijden staan in het protocol en zijn daar aan te passen
+([ADR-0018](adr/ADR-0018-protocol-is-aanpasbaar-met-reden.md)), want ze verschillen per
+regio.
+
 **Opvolgen** verzamelt alles wat aandacht vraagt bij iemand zonder afspraak: een
 labuitslag die afwijkt, een ingevulde vragenlijst waarin iemand iets opschrijft dat niet
 kan wachten, een reeks thuisgemeten bloeddrukken, of een beloop in het dossier dat de

@@ -6,6 +6,7 @@ import {
   maakGroepsconsult, media, rapport, rapportExport, samenvatting,
   InMemoryRepository, intakes, legVerrichtingVast, meetreeksen, meldAan, monitoringCohort,
   neemVragenlijstOver, opvolgen, vragenlijstenVoor,
+  protocoloverzicht, wijzigProtocol, herstelProtocol, type Protocolwijziging,
   orderOverzicht, orderVoorstellen, overleg, pakAcuutOp, patientOverzicht, plaatsLosseOrders,
   planbord, planbordPraktijk, praktijkrapportage, praktijkSamenvatting, registreerConsult,
   terminologie, verrichtingen, vraagAfspraakAan, zetOpBespreeklijst, zoekOrders, zoekPatient,
@@ -214,25 +215,11 @@ export const lokaleApi = {
     return traag({ intake: repo.intakes().find((i) => i.id === id)! });
   },
 
-  protocol: () => traag({
-    toelichting:
-      'Eén geïntegreerd protocol, opgebouwd uit aandachtsgebieden. Er is geen protocol per ' +
-      'aandoening; landelijke ketens worden achteraf afgeleid.',
-    regelsetVersie: REGELSET_VERSIE,
-    modules: modules.map((m) => ({
-      id: m.id, naam: m.naam, omschrijving: m.omschrijving, icoon: m.icoon, rol: m.rol,
-      richtlijnen: m.richtlijnen,
-      relevantie: m.relevantie.omschrijving,
-      items: m.items.map((i) => ({
-        code: i.code, naam: i.naam, basisIntervalDagen: i.basisIntervalDagen,
-        zelfAanleverbaar: i.zelfAanleverbaar, labVooraf: i.labVooraf,
-        intervalRegels: (i.intervalRegels ?? []).map((r) => ({ factor: r.factor, reden: r.reden })),
-      })),
-    })),
-    ketens: ketens.map((k) => ({
-      id: k.id, naam: k.naam, modules: k.modules, declaratie: k.declaratie,
-    })),
-  }),
+  protocol: (gebruikerId?: string) => traag(protocoloverzicht(repo, gebruikerId)),
+  wijzigProtocol: (wijziging: Protocolwijziging, door: string) =>
+    traag(wijzigProtocol(repo, wijziging, door)),
+  herstelProtocol: (moduleId: string, itemCode: string | undefined, door: string) =>
+    traag(herstelProtocol(repo, moduleId, itemCode, door)),
 
   patient: (id: string) => {
     const overzicht = patientOverzicht(repo, id);

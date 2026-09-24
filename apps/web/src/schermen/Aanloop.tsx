@@ -56,12 +56,21 @@ export function Aanloop({ openPatient }: { openPatient: (id: string) => void }) 
             <div className="reden">{a.toelichting}</div>
           </div>
 
-          {/* De stand per onderdeel, want 'niet rond' is te weinig om op te handelen. */}
+          {/*
+            De stand per onderdeel, want 'niet rond' is te weinig om op te handelen. Bij
+            wat nog niet binnen is staat de doorlooptijd erbij: dát is het getal waarmee
+            je beslist of bellen nog zin heeft of dat verzetten eerlijker is.
+          */}
           <div className="chips">
             {a.vooraf.map((v) => (
-              <span key={v.naam} className="merkje" data-toon={v.binnen ? 'ok' : 'aandacht'}>
+              <span key={v.naam} className="merkje"
+                data-toon={v.binnen ? 'ok' : v.haalbaar ? 'aandacht' : 'urgent'}>
                 <Icoon naam="buisje" grootte={12} /> {v.naam}
-                {v.binnen ? ` · ${v.op}` : ' · niet geprikt'}
+                {v.binnen
+                  ? ` · ${v.op}`
+                  : v.haalbaar
+                    ? ` · niet geprikt · ${v.doorlooptijdDagen} dagen nodig`
+                    : ` · niet geprikt · lukt niet meer (${v.doorlooptijdDagen} dagen nodig)`}
               </span>
             ))}
             {a.vragenlijst && (
@@ -69,7 +78,7 @@ export function Aanloop({ openPatient }: { openPatient: (id: string) => void }) 
                 <Icoon naam="gesprek" grootte={12} /> {a.vragenlijst.naam}
                 {a.vragenlijst.status === 'ingevuld'
                   ? ' · ingevuld'
-                  : ` · ${a.vragenlijst.openDagen} dagen open`}
+                  : ` · ${a.vragenlijst.openDagen} dagen open · kan tot de dag ervoor`}
               </span>
             )}
           </div>

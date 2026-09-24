@@ -612,7 +612,10 @@ export interface Aanloopregel {
   afspraakId: string; patientId: string; naam: string; leeftijd: number;
   datum: string; tijd: string; dagenTot: number;
   modules: ModuleChip[];
-  vooraf: { naam: string; binnen: boolean; op?: string }[];
+  vooraf: {
+    naam: string; binnen: boolean; op?: string;
+    doorlooptijdDagen: number; haalbaar: boolean;
+  }[];
   vragenlijst?: { naam: string; status: 'ingevuld' | 'open'; openDagen?: number };
   status: Aanloopstatus; advies: string; toelichting: string;
 }
@@ -766,18 +769,49 @@ export interface Praktijksamenvatting {
   modules: { naam: string; aantal: number }[];
 }
 
+export interface Protocolafwijking { reden: string; door: string; op: string }
+
+export interface Protocolwaarden {
+  intervalDagen: number; doorlooptijdDagen: number; labVooraf: boolean;
+}
+
+export interface Protocolitem {
+  code: string; naam: string;
+  richtlijn: Protocolwaarden;
+  praktijk: Protocolwaarden & { actief: boolean };
+  doorlooptijdReden: string;
+  zelfAanleverbaar: boolean;
+  vragenlijst?: string;
+  intervalRegels: { factor: number; reden: string }[];
+  afwijking?: Protocolafwijking;
+}
+
+export interface Protocolmodule {
+  id: string; naam: string; omschrijving: string; icoon: string; rol: string;
+  relevantie: string;
+  richtlijnen: { naam: string; versie: string; url?: string; uitgever?: string }[];
+  actief: boolean;
+  afwijking?: Protocolafwijking;
+  items: Protocolitem[];
+}
+
 export interface Protocol {
-  toelichting: string; regelsetVersie: string;
-  modules: {
-    id: string; naam: string; omschrijving: string; icoon: string; rol: string;
-    richtlijnen: { naam: string; versie: string; url?: string; uitgever?: string }[]; relevantie: string;
-    items: {
-      code: string; naam: string; basisIntervalDagen: number;
-      zelfAanleverbaar?: boolean; labVooraf?: boolean;
-      intervalRegels: { factor: number; reden: string }[];
-    }[];
-  }[];
+  toelichting: string;
+  regelsetVersie: string;
+  modules: Protocolmodule[];
   ketens: { id: string; naam: string; modules: string[]; declaratie: { prestatiecode: string; omschrijving: string } }[];
+  aantalAfwijkingen: number;
+  magAanpassen: boolean;
+}
+
+export interface Protocolwijziging {
+  moduleId: string; itemCode?: string;
+  actief?: boolean; intervalDagen?: number; doorlooptijdDagen?: number; labVooraf?: boolean;
+  reden: string;
+}
+
+export interface Protocoluitkomst {
+  uitgevoerd: boolean; melding: string; overzicht: Protocol;
 }
 
 export interface Afsluititem {
@@ -832,7 +866,12 @@ const httpApi = {
     stuur<HuisartsOverzicht>(`/api/autorisatie/${id}/afwijzen`, { reden }),
   bevestigIntake: (id: string) =>
     stuur<{ intake: WachtkamerIntake }>(`/api/intake/${id}/bevestig`, {}),
-  protocol: () => haal<Protocol>('/api/protocol'),
+  protocol: (gebruikerId?: string) =>
+    haal<Protocol>(`/api/protocol${gebruikerId ? `?gebruiker=${gebruikerId}` : ''}`),
+  wijzigProtocol: (wijziging: Protocolwijziging, door: string) =>
+    stuur<Protocoluitkomst>('/api/protocol/wijzig', { ...wijziging, door }),
+  herstelProtocol: (moduleId: string, itemCode: string | undefined, door: string) =>
+    stuur<Protocoluitkomst>('/api/protocol/herstel', { moduleId, itemCode, door }),
   patient: (id: string) => haal<PatientOverzicht>(`/api/patient/${id}`),
   suggestie: (patientId: string, regelId: string, actieId: string, reden?: string) =>
     stuur<PatientOverzicht>(`/api/patient/${patientId}/suggestie`, { regelId, actieId, reden }),

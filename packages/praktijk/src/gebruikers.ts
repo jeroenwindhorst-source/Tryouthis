@@ -24,6 +24,16 @@ export type Recht =
   | 'monitoring'
   | 'instroom-beheren'
   | 'protocol-inzien'
+  /**
+   * Het protocol van de praktijk aanpassen.
+   *
+   * Bewust breder dan alleen de praktijkmanager. Wie ermee werkt weet waaróm een interval
+   * niet klopt of waarom het prikpunt trager is dan aangenomen — en als alleen de manager
+   * het kan wijzigen, blijft de afwijking in de hoofden van mensen zitten in plaats van
+   * in het systeem. Elke wijziging draagt een naam, een datum en een reden, dus de
+   * verantwoording blijft intact.
+   */
+  | 'protocol-aanpassen'
   | 'configuratie-praktijk' | 'configuratie-persoonlijk'
   | 'gebruikers-beheren'
   | 'berichten';
@@ -65,7 +75,10 @@ export const gebruikers: Gebruiker[] = [
     actief: true,
     // De POH mag medicatie vóórstellen, niet voorschrijven — dat is het verschil dat
     // het autorisatieproces bij de huisarts nodig maakt (docs/03 §7).
-    rechten: [...BASIS_ZORG, 'monitoring', 'instroom-beheren', 'medicatie-voorstellen', 'verwijzen'],
+    rechten: [
+      ...BASIS_ZORG, 'monitoring', 'instroom-beheren', 'medicatie-voorstellen', 'verwijzen',
+      'protocol-aanpassen',
+    ],
   },
   {
     id: 'zv-assistent-1',
@@ -95,7 +108,7 @@ export const gebruikers: Gebruiker[] = [
     actief: true,
     rechten: [
       ...BASIS_ZORG, 'monitoring', 'autoriseren', 'medicatie-voorschrijven', 'verwijzen',
-      'instroom-beheren',
+      'instroom-beheren', 'protocol-aanpassen',
     ],
   },
   {
@@ -111,7 +124,10 @@ export const gebruikers: Gebruiker[] = [
     laatsteAanmelding: '2026-09-14T16:10:00+02:00',
     actief: true,
     // Een beheerder komt bewust niet in dossiers: beheer en zorginhoud zijn gescheiden.
-    rechten: ['configuratie-praktijk', 'configuratie-persoonlijk', 'gebruikers-beheren', 'berichten', 'protocol-inzien'],
+    rechten: [
+      'configuratie-praktijk', 'configuratie-persoonlijk', 'gebruikers-beheren', 'berichten',
+      'protocol-inzien', 'protocol-aanpassen',
+    ],
   },
 ];
 
