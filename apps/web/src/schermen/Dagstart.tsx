@@ -139,14 +139,16 @@ export function Dagstart({ gaNaar, openPatient }: {
 
           <Kaart titel="Hoe dit scherm werkt" icoon="boek">
             <p style={{ marginTop: 0, color: 'var(--ink-2)', fontSize: 12.5 }}>
-              De vier kaarten bovenaan zijn je werkproces, in volgorde. Je begint links en eindigt
-              rechts. Elke kaart zegt wat je er vindt, zodat je niet hoeft te zoeken waar je werk staat.
+              De vijf kaarten bovenaan zijn je werkproces. Ze staan niet op volgorde van de dag
+              maar van de <em>tijdshorizon</em>: hoe ver het moment ligt waarop er iets gebeurt.
+              Elke kaart zegt wat je er vindt, zodat je niet hoeft te zoeken waar je werk staat.
             </p>
             <ul className="uitleg">
-              <li><strong>Voorbereiden</strong> — is het lab binnen, is de vragenlijst ingevuld, waar gaat dit gesprek over?</li>
-              <li><strong>Spreekuur</strong> — het plan van deze mens, de suggesties en je registratie in één scherm.</li>
-              <li><strong>Monitoren</strong> — alleen wie afwijkt. Wie stabiel is, hoeft niet langs.</li>
-              <li><strong>Afronden</strong> — wat er open staat en wat er automatisch is geregeld.</li>
+              <li><strong>Aanloop</strong> — de komende weken: wie komt er straks terwijl het lab of de vragenlijst nog niet binnen is?</li>
+              <li><strong>Spreekuur</strong> — vandaag: per patiënt de voorbereiding, en daarna het consult in één scherm.</li>
+              <li><strong>Opvolgen</strong> — nu: uitslagen, vragenlijsten en thuismetingen van mensen zonder afspraak.</li>
+              <li><strong>Monitoren</strong> — doorlopend: alleen wie afwijkt. Wie stabiel is, hoeft niet langs.</li>
+              <li><strong>Afronden</strong> — straks: wat er open staat en wat er automatisch is geregeld.</li>
             </ul>
             <p style={{ color: 'var(--ink-2)', fontSize: 12.5, marginBottom: 0 }}>
               Er staat nergens een zorgprogramma. Je werkt met aandachtsgebieden per mens; de

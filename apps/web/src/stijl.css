@@ -738,7 +738,7 @@ body {
 }
 .knop[data-toon="primair"]:hover { background: linear-gradient(180deg, var(--merk), var(--merk-diep)); }
 
-/* De vier processtappen krijgen elk een eigen tint. Ze zijn het startscherm en
+/* De vijf processtappen krijgen elk een eigen tint. Ze zijn het startscherm en
    het enige moment waarop kleur gewoon mag opvrolijken — het zijn vier vaste
    stappen, dus de kleur is te leren en dus betekenisvol. */
 .stap { overflow: hidden; }
