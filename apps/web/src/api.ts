@@ -740,7 +740,11 @@ export interface PersoonlijkPlan {
 }
 
 export interface PatientOverzicht {
-  patient: { id: string; naam: string; leeftijd: number; geboortedatum: string; geslacht: string; bsn?: string; portaalActief?: boolean };
+  patient: {
+    id: string; naam: string; leeftijd: number; geboortedatum: string; geslacht: string;
+    bsn?: string; portaalActief?: boolean;
+    bereikbaarheid?: Bereikbaarheid;
+  };
   episodes: { id: string; titel: string; status: string; icpc?: string; start?: string }[];
   medicatie: { id?: string; naam: string; atc?: string; dosering: string; chronisch: boolean }[];
   metingen: { code: string; naam: string; laatste?: number; eenheid?: string; op?: string; bron?: string; reeks: { op: string; waarde?: number }[] }[];
@@ -823,6 +827,24 @@ export interface NieuweTaak {
 export interface Taakstand {
   id: string; titel: string; voorNaam: string;
   status: string; standLabel: string; soortLabel: string;
+}
+
+// ── Bereikbaarheid ──────────────────────────────────────────────────────────
+
+export interface Bereikbaarheidskanaal {
+  soort: 'mobiel' | 'vast' | 'email' | 'portaal';
+  label: string; waarde: string; voorkeur: boolean; belbaar: boolean;
+}
+
+export interface Bereikbaarheid {
+  kanalen: Bereikbaarheidskanaal[];
+  adres?: string;
+  toelichting?: string;
+  contactpersoon?: {
+    naam: string; relatie: string; telefoon: string; mag: string; magUitleg: string;
+  };
+  portaalActief: boolean;
+  advies: string;
 }
 
 export interface Protocolafwijking { reden: string; door: string; op: string }
@@ -923,6 +945,8 @@ const httpApi = {
   bevestigIntake: (id: string) =>
     stuur<{ intake: WachtkamerIntake }>(`/api/intake/${id}/bevestig`, {}),
   taken: (gebruikerId: string) => haal<Takenoverzicht>(`/api/taken/${gebruikerId}`),
+  bereikbaarheid: (patientId: string) =>
+    haal<Bereikbaarheid & { naam: string }>(`/api/patient/${patientId}/bereikbaarheid`),
   zetTaakUit: (nieuw: NieuweTaak, door: string) =>
     stuur<{ taak?: Taakregel; melding: string }>('/api/taken', { ...nieuw, door }),
   planTaak: (id: string, start: string) =>

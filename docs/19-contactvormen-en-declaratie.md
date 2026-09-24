@@ -130,3 +130,33 @@ geen enkele. Een tweede klik op een al opgepakt signaal doet niets.
   van de specialist hoort als extern document in de tijdlijn te landen (ADR-0010).
 - **Push in plaats van pollen.** De acute instroom wordt elke tien seconden opgehaald. In
   productie is dat een pushverbinding.
+
+
+## Hoe bereik je deze mens?
+
+Zodra het systeem *bel deze patiënt* als taak kan uitzetten (ADR-0019), moet het ook
+kunnen beantwoorden **hoe**. Dat ontbrak: het dossier kende wel een telefoonnummer, maar
+geen enkel scherm liet het zien — dus werd het in een ander systeem opgezocht, of aan de
+assistent gevraagd.
+
+De bereikbaarheid staat nu op drie plekken, en overal hetzelfde:
+
+- als knop **Bellen** in de patiëntbalk, naast Videobellen — dezelfde vraag op hetzelfde
+  moment;
+- als kaart **Bereikbaarheid** op het overzichtstabblad;
+- **uitklapbaar bij de taak zelf** in de werklijst, zodat je niet het dossier in hoeft om
+  een nummer te zoeken dat je nu nodig hebt.
+
+Wat erin staat is bewust meer dan een nummer:
+
+| Onderdeel | Waarom het erbij staat |
+|---|---|
+| Mobiel en vast, apart | Een mobiel dat overdag uitstaat en een vaste lijn waar wel wordt opgenomen zijn niet hetzelfde nummer |
+| Het voorkeurskanaal | Wie heeft aangegeven het portaal te willen, bel je niet als eerste |
+| Een notitie over bereikbaarheid | *'Werkt tot 16:00'*, *'slechthorend, spreek rustig'* — dat staat nu op briefjes en in hoofden, en je hebt het nodig vóórdat je belt, niet erna |
+| De naaste, met wat die mag horen | Informeren is iets anders dan meebeslissen; die grens hoort vast te liggen vóórdat iemand hem nodig heeft |
+
+Het belvenster is geen kiezer en geen telefooncentrale — die zit in de telefonie, niet in
+het dossier. Wat het wél doet, is het gesprek als **contact** klaarzetten zodra je
+ophangt: een telefonisch consult is een contactvorm met een eigen declaratieregel, geen
+aantekening bij een ander consult.

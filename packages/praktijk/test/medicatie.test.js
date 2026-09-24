@@ -14,8 +14,17 @@ function metMedicatie(repo) {
   return dossier;
 }
 
-const digitaal = (repo, dossier) => ({
-  route: 'digitaal', apotheekId: voorkeursapotheek(dossier).id,
+/*
+ * Een elektronisch recept vraagt een apotheek die elektronisch ontvangt.
+ *
+ * Eerder stond hier de voorkeursapotheek van de patiënt, en dat ging goed zolang die
+ * toevallig digitaal was. Zodra de demopopulatie verschoof, viel de test om op iets dat
+ * niets met medicatie te maken heeft. Deze tests gaan over de transactie, dus kiezen ze
+ * expliciet een apotheek die de route aankan; het routeren zelf wordt apart getest.
+ */
+const digitaal = () => ({
+  route: 'digitaal',
+  apotheekId: APOTHEKEN.find((a) => a.digitaal && a.id !== 'apo-dienst').id,
 });
 
 test('medicatie: een dosering aanpassen stopt het oude en start het nieuwe op één dag', () => {
@@ -30,7 +39,7 @@ test('medicatie: een dosering aanpassen stopt het oude en start het nieuwe op é
     statementId: middel.id,
     nieuw: { atc: middel.atc, naam: middel.naam, dosering: '2dd 2 tabletten' },
     reden: 'Streefwaarde niet gehaald bij de huidige dosering',
-    aflevering: digitaal(repo, dossier),
+    aflevering: digitaal(),
   });
 
   assert.ok(uit, 'de wijziging hoort te lukken');
@@ -64,7 +73,7 @@ test('medicatie: de lopende order voor het oude middel wordt ingetrokken, met re
     statementId: middel.id,
     nieuw: { atc: middel.atc, naam: middel.naam, dosering: '1dd 1 tablet' },
     reden: 'Nierfunctie gedaald — dosering aangepast',
-    aflevering: digitaal(repo, dossier),
+    aflevering: digitaal(),
   });
 
   const orders = repo.orders(dossier.patient.id).filter((o) => o.atc === middel.atc);
@@ -163,7 +172,7 @@ test('medicatie: de POH wijzigt het dossier, het recept wacht op de huisarts', (
     statementId: middel.id,
     nieuw: { atc: middel.atc, naam: middel.naam, dosering: '1dd 1 tablet' },
     reden: 'Bijwerkingen bij de huidige dosering',
-    aflevering: digitaal(repo, dossier),
+    aflevering: digitaal(),
   });
 
   assert.equal(uit.naarAutorisatie, true);
@@ -183,7 +192,7 @@ test('medicatie: het voorbeeld zegt vooraf precies wat er gaat gebeuren', () => 
     statementId: middel.id,
     nieuw: { atc: middel.atc, naam: middel.naam, dosering: '2dd 2 tabletten' },
     reden: 'test',
-    aflevering: digitaal(repo, dossier),
+    aflevering: digitaal(),
   });
 
   assert.ok(beeld.regels.some((r) => r.includes('stopt vandaag')));

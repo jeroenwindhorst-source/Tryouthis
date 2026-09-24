@@ -83,6 +83,47 @@ export interface Praktijk {
   peildatum: Date;
 }
 
+/*
+ * Adressen en bereikbaarheid.
+ *
+ * Een demopraktijk zonder adressen valt pas op als iemand wil bellen — en dan blijkt het
+ * dossier precies datgene te missen waar het systeem voor bedoeld is. Straatnamen uit één
+ * fictieve wijk, zodat het een praktijk lijkt en geen adressenbestand.
+ */
+const STRATEN = [
+  'Lindenlaan', 'Populierstraat', 'Beukhof', 'Wilgenkade', 'Esdoornplein',
+  'Iepenweg', 'Meidoornsingel', 'Kastanjehof', 'Berkenstraat', 'Eikenlaan',
+];
+
+const WOONPLAATSEN = ['Waterveen', 'Waterveen', 'Waterveen', 'Zuiderbroek', 'Lindenhoven'];
+
+/** Wat een praktijk in de loop der jaren over iemands bereikbaarheid leert. */
+const BEREIKBAARHEID = [
+  'Werkt tot 16:00; daarna beter bereikbaar.',
+  'Slechthorend aan de telefoon — spreek rustig en herhaal afspraken.',
+  'Neemt zelden op bij een onbekend nummer; spreek een bericht in.',
+  'Liefst \u2019s ochtends bellen, na tien uur.',
+  'Spreekt beperkt Nederlands; dochter tolkt vaak mee.',
+  'Mobiel staat overdag uit, probeer het vaste nummer.',
+];
+
+/*
+ * Naasten, met hun relatie en een bijpassende naam.
+ *
+ * De naam volgt uit de relatie en niet uit een muntworp: een 'zoon' die Wilma heet valt
+ * meteen op, en dat is precies het soort slordigheid waardoor iemand de rest van de
+ * demogegevens ook niet meer gelooft. De namen komen uit een eigen lijstje en niet uit
+ * de patiëntenpool, zodat ze niet met patiëntnamen kunnen botsen.
+ */
+const NAASTEN: { relatie: string; namen: string[] }[] = [
+  { relatie: 'dochter', namen: ['Marleen', 'Sanne', 'Judith', 'Esther', 'Fatima'] },
+  { relatie: 'zoon', namen: ['Bram', 'Martijn', 'Hakan', 'Joost', 'Stefan'] },
+  { relatie: 'partner', namen: ['Riet', 'Ger', 'Truus', 'Wim', 'Nel'] },
+  { relatie: 'buurvrouw', namen: ['Lidwien', 'Ans', 'Gerda'] },
+  { relatie: 'zus', namen: ['Corrie', 'Mieke', 'Bep'] },
+  { relatie: 'schoonzoon', namen: ['Peter', 'Ronald', 'Youssef'] },
+];
+
 export function genereerPraktijk(opties: GeneratieOpties = {}): Praktijk {
   const aantal = opties.aantal ?? 48;
   const peildatum = opties.peildatum ?? new Date();
@@ -125,14 +166,62 @@ export function genereerPraktijk(opties: GeneratieOpties = {}): Praktijk {
     const geboortejaar = peildatum.getFullYear() - leeftijd;
     const id = `pat-${String(i + 1).padStart(3, '0')}`;
 
+    const naam = uniekeNaam(vrouw);
+    // example.invalid is bij RFC 2606 gereserveerd en bestaat nooit — een demo mag geen
+    // adres bevatten dat per ongeluk van een echt mens blijkt te zijn.
+    const email = `${naam.voornaam}.${naam.achternaam}`
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z.]/g, '') + '@example.invalid';
+
     const patient: Patient = {
       resourceType: 'Patient',
       id,
       identifier: [{ system: 'http://fhir.nl/fhir/NamingSystem/bsn', value: `99999${String(1000 + i)}`, use: 'official' }],
-      naam: uniekeNaam(vrouw),
+      naam,
       geboortedatum: `${geboortejaar}-${String(1 + Math.floor(willekeurig() * 12)).padStart(2, '0')}-${String(1 + Math.floor(willekeurig() * 28)).padStart(2, '0')}`,
       geslacht: vrouw ? 'female' : 'male',
-      contact: { telefoon: `06${String(Math.floor(tussen(10_000_000, 99_999_999)))}` },
+      adres: {
+        straat: STRATEN[Math.floor(willekeurig() * STRATEN.length)],
+        huisnummer: String(1 + Math.floor(willekeurig() * 140)),
+        postcode: `${1000 + Math.floor(willekeurig() * 8999)} ${
+          String.fromCharCode(65 + Math.floor(willekeurig() * 26))
+        }${String.fromCharCode(65 + Math.floor(willekeurig() * 26))}`,
+        woonplaats: WOONPLAATSEN[Math.floor(willekeurig() * WOONPLAATSEN.length)],
+      },
+      contact: (() => {
+        const mobiel = `06 ${String(Math.floor(tussen(10_000_000, 99_999_999)))
+          .replace(/(\d{2})(\d{2})(\d{2})(\d{2})/, '$1 $2 $3 $4')}`;
+        // Een vaste lijn hebben vooral ouderen nog; dat verschil is geen detail als je
+        // iemand op een dinsdagochtend probeert te bereiken.
+        const vast = leeftijd > 62 && willekeurig() < 0.75
+          ? `0${String(Math.floor(tussen(10, 99)))} ${String(Math.floor(tussen(100, 999)))} ${String(Math.floor(tussen(1000, 9999)))}`
+          : undefined;
+        return {
+          telefoon: mobiel,
+          mobiel,
+          vast,
+          email: willekeurig() < 0.7 ? email : undefined,
+          toelichting: willekeurig() < 0.35
+            ? BEREIKBAARHEID[Math.floor(willekeurig() * BEREIKBAARHEID.length)]
+            : undefined,
+        };
+      })(),
+      // Bij ouderen staat er vaker een naaste in het dossier; bij jongeren zelden.
+      contactpersoon: leeftijd > 70 && willekeurig() < 0.65
+        ? (() => {
+          const naaste = NAASTEN[Math.floor(willekeurig() * NAASTEN.length)];
+          return {
+            naam: `${naaste.namen[Math.floor(willekeurig() * naaste.namen.length)]} `
+              + `${ACHTERNAMEN[Math.floor(willekeurig() * ACHTERNAMEN.length)]}`,
+            relatie: naaste.relatie,
+            telefoon: `06 ${String(Math.floor(tussen(10_000_000, 99_999_999)))
+              .replace(/(\d{2})(\d{2})(\d{2})(\d{2})/, '$1 $2 $3 $4')}`,
+            mag: willekeurig() < 0.6 ? 'informeren' as const
+              : willekeurig() < 0.5 ? 'meebeslissen' as const : 'alleen-in-noodgeval' as const,
+          };
+        })()
+        : undefined,
       portaalActief: willekeurig() < 0.62,
       communicatievoorkeur: willekeurig() < 0.55 ? 'portaal' : willekeurig() < 0.5 ? 'sms' : 'telefoon',
     };

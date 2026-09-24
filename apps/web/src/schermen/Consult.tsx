@@ -6,7 +6,7 @@ import {
   type Meetreeks, type WachtkamerIntake,
   type NieuweOrder, type Overlegnotitie, type PatientOverzicht, type RegistratieUitkomst,
   PATIENTSOORTEN, TIJDLIJNSOORT_LABEL,
-  type Treffer, type Tijdlijnsoort, type Vragenlijstinzage,
+  type Bereikbaarheid, type Treffer, type Tijdlijnsoort, type Vragenlijstinzage,
 } from '../api';
 import { useData } from '../gebruik';
 import { Trendgrafiek } from '../grafiek';
@@ -14,8 +14,8 @@ import { Soepveld } from '../soepveld';
 import { Zorgreis } from '../zorgreis';
 import { Icoon, icoonVanModule } from '../iconen';
 import {
-  Beleidsband, ErnstMerk, Fout, IntakeKaart, Kaart, Laden, Leeg, ModuleIdChips, Signalen,
-  SuggestieKaart, Vragenlijstkaart, Zelfredzaamheidsmeter,
+  Beleidsband, Bereikbaarheidskaart, ErnstMerk, Fout, IntakeKaart, Kaart, Laden, Leeg,
+  ModuleIdChips, Signalen, SuggestieKaart, Vragenlijstkaart, Zelfredzaamheidsmeter,
 } from '../onderdelen';
 import { Orders } from './Orders';
 import { Orderpaneel } from './Orderpaneel';
@@ -178,6 +178,7 @@ export function Consult({ patientId, gebruiker, terug, startTab = 'consult' }: {
   const [medicatieGewijzigd, setMedicatieGewijzigd] = useState(false);
   const [ordersVandaag, setOrdersVandaag] = useState<NieuweOrder[]>([]);
   const [video, setVideo] = useState(false);
+  const [bellen, setBellen] = useState(false);
   const [toonDetails, setToonDetails] = useState(false);
   const [journaalBron, setJournaalBron] = useState<string | undefined>();
   const [vragenlijsten, setVragenlijsten] = useState<Vragenlijstinzage[] | undefined>();
@@ -299,6 +300,16 @@ export function Consult({ patientId, gebruiker, terug, startTab = 'consult' }: {
             consult te voeren, geen andere soort zorg. De knop start in de demo niets —
             wat hij laat zien is waar hij hoort te zitten in het werkproces.
           */}
+          {/*
+            Bellen staat naast videobellen, en dat is geen symmetrie om de vorm: het is
+            dezelfde vraag op hetzelfde moment — hoe bereik ik deze mens nu? Het nummer
+            stond wel in het dossier maar in geen enkel scherm, dus werd het elders
+            opgezocht of aan de assistent gevraagd.
+          */}
+          <button className="knop" onClick={() => setBellen(true)}
+            title="Bekijk hoe je deze patiënt kunt bereiken">
+            <Icoon naam="gesprek" grootte={13} /> Bellen
+          </button>
           <button className="knop" onClick={() => setVideo(true)}
             title="Start een videoconsult met deze patiënt">
             <Icoon naam="video" grootte={13} /> Videobellen
@@ -318,6 +329,11 @@ export function Consult({ patientId, gebruiker, terug, startTab = 'consult' }: {
       {video && (
         <Videovenster naam={data.patient.naam} portaal={Boolean(data.patient.portaalActief)}
           opSluit={() => setVideo(false)} />
+      )}
+
+      {bellen && data.patient.bereikbaarheid && (
+        <Belvenster naam={data.patient.naam} gegevens={data.patient.bereikbaarheid}
+          opSluit={() => setBellen(false)} />
       )}
 
       <div className="dossiertabs">
@@ -1022,6 +1038,62 @@ export function Consult({ patientId, gebruiker, terug, startTab = 'consult' }: {
  * geregistreerd wordt. Dat is het deel dat een HIS moet regelen; het beeld komt van een
  * partij die daar goed in is (docs/14 §4, ingebedde apps).
  */
+/**
+ * HET BELVENSTER
+ *
+ * Geen kiezer en geen telefooncentrale — die zit in de telefonie, niet in het dossier.
+ * Wat hier staat is het antwoord op de vraag die je stelt op het moment dat je gaat
+ * bellen: welk nummer, en is er iets dat ik moet weten voordat ik opneem?
+ *
+ * De knop 'Bellen' legt het gesprek vast als contact zodra je het afrondt. Dat is het
+ * punt: een telefoontje is zorg (docs/19), en wie hem niet vastlegt heeft wel gewerkt
+ * maar niets geleverd.
+ */
+function Belvenster({ naam, gegevens, opSluit }: {
+  naam: string; gegevens: Bereikbaarheid; opSluit: () => void;
+}) {
+  const [gebeld, setGebeld] = useState<string | undefined>();
+  return (
+    <>
+      <div className="paneel-scherm" onClick={opSluit} />
+      <div className="videovenster" role="dialog" aria-label="Bellen">
+        <header>
+          <span className="kop"><Icoon naam="gesprek" grootte={15} /> {naam} bellen</span>
+          <button className="knop" data-toon="stil" onClick={opSluit}>
+            <Icoon naam="kruis" grootte={15} />
+          </button>
+        </header>
+
+        <div className="belblok">
+          <div className="notitie" data-toon="merk" style={{ marginBottom: 12 }}>
+            <strong>Waarmee zou je beginnen?</strong> {gegevens.advies}
+          </div>
+
+          <Bereikbaarheidskaart gegevens={gegevens} opBellen={(k) => setGebeld(k.waarde)} />
+
+          {gebeld && (
+            <div className="notitie" data-toon="merk" style={{ marginTop: 12 }}>
+              <strong>Verbinden met {gebeld}…</strong> In de demo gebeurt er verder niets.
+              In productie belt je toestel; als je ophangt staat er een contactregel klaar
+              met de duur erin, die je alleen nog hoeft aan te vullen.
+            </div>
+          )}
+        </div>
+
+        <footer>
+          <button className="knop" data-toon="primair" disabled={!gebeld} onClick={opSluit}>
+            <Icoon naam="vink" grootte={13} /> Gesprek vastleggen als contact
+          </button>
+          <span className="mini">
+            Een telefonisch consult is een contactvorm met een eigen declaratieregel — niet
+            een aantekening bij een ander consult.
+          </span>
+        </footer>
+      </div>
+    </>
+  );
+}
+
 function Videovenster({ naam, portaal, opSluit }: {
   naam: string; portaal: boolean; opSluit: () => void;
 }) {

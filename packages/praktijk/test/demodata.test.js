@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { InMemoryRepository } from '../dist/store.js';
 import {
-  aanloop, consultvoorbereiding, dagstart, dossierHistorie, herstelProtocol, opvolgen, overleg,
+  aanloop, bereikbaarheid, consultvoorbereiding, dagstart, dossierHistorie, herstelProtocol,
+  opvolgen, overleg,
   patientOverzicht, planTaak, planWerkblok, protocoloverzicht, rondTaakAf, takenoverzicht,
   wijzigProtocol, zetTaakUit, PATIENTBRON, PATIENTSOORTEN,
 } from '../dist/bff.js';
@@ -227,16 +228,25 @@ test('spreekuur: wat in de spreekkamer gemeten wordt, telt niet als achterstand'
   }
 });
 
-test('aanloop: het advies past bij het aantal dagen dat er nog over is', () => {
+test('aanloop: het advies volgt de doorlooptijd van elk onderdeel apart', () => {
+  /*
+   * Niet één grens voor alles. Een labbepaling heeft dagen nodig, een vragenlijst één —
+   * dus een afspraak over vier dagen met alleen een openstaande vragenlijst hoeft niet
+   * verzet te worden. De vragenlijst heeft in de BFF een doorlooptijd van één dag.
+   */
+  const LIJST_DOORLOOPTIJD = 1;
   for (const regel of aanloop(repo)) {
-    const ietsOpen = regel.vooraf.some((v) => !v.binnen)
-      || regel.vragenlijst?.status === 'open';
-    if (!ietsOpen) {
+    if (regel.taak) continue;
+    const open = [
+      ...regel.vooraf.filter((v) => !v.binnen).map((v) => v.doorlooptijdDagen),
+      ...(regel.vragenlijst?.status === 'open' ? [LIJST_DOORLOOPTIJD] : []),
+    ];
+    if (open.length === 0) {
       assert.equal(regel.status, 'op-schema', `${regel.naam} is rond maar heet ${regel.status}`);
       continue;
     }
-    const verwacht = regel.dagenTot <= 5 ? 'verzetten'
-      : regel.dagenTot <= 10 ? 'bellen'
+    const verwacht = open.some((d) => regel.dagenTot < d) ? 'verzetten'
+      : open.some((d) => regel.dagenTot - d <= 5) ? 'bellen'
       : 'herinnering-loopt';
     assert.equal(regel.status, verwacht,
       `${regel.naam} over ${regel.dagenTot} dagen heet ${regel.status}`);
@@ -542,4 +552,36 @@ test('taken: eigen werk krijgt een plek in de agenda, zonder patiënt', () => {
   assert.equal(item.patientId, undefined, 'een werkblok hoort geen patiënt te hebben');
   assert.equal(eigen.agenda('poh-s').length, voor + 1);
   assert.equal(planWerkblok(eigen, { blokId: 'bestaat-niet', rol: 'poh-s', start: `${dag}T16:00:00+02:00` }), undefined);
+});
+
+test('bereikbaarheid: iedereen is te bereiken, en het advies zegt waarmee je begint', () => {
+  /*
+   * Zodra het systeem 'bel deze patiënt' als taak kan uitzetten, moet het ook kunnen
+   * beantwoorden hóé. Een dossier waarin dat bij een deel van de mensen ontbreekt, stuurt
+   * je precies op het verkeerde moment naar een ander systeem.
+   */
+  for (const dossier of repo.alleDossiers()) {
+    const b = bereikbaarheid(dossier);
+    assert.ok(b.kanalen.length > 0, `${dossier.patient.id} is nergens te bereiken`);
+    assert.ok(b.kanalen.some((k) => k.belbaar), `${dossier.patient.id} heeft geen telefoonnummer`);
+    assert.ok(b.advies.length > 10, `${dossier.patient.id}: leeg beladvies`);
+    assert.ok(b.adres && b.adres.length > 10, `${dossier.patient.id}: geen adres`);
+    // Hoogstens één voorkeurskanaal: twee voorkeuren is geen voorkeur.
+    assert.ok(b.kanalen.filter((k) => k.voorkeur).length <= 1,
+      `${dossier.patient.id} heeft meer dan één voorkeurskanaal`);
+    if (b.contactpersoon) {
+      assert.ok(b.contactpersoon.magUitleg.length > 10,
+        `${dossier.patient.id}: naaste zonder leesbare grens`);
+      assert.match(b.contactpersoon.telefoon, /^06 /);
+    }
+  }
+});
+
+test('bereikbaarheid: e-mailadressen staan op een domein dat nooit kan bestaan', () => {
+  // RFC 2606 reserveert .invalid. Een demo mag geen adres bevatten dat per ongeluk van
+  // een echt mens blijkt te zijn.
+  for (const dossier of repo.alleDossiers()) {
+    const email = dossier.patient.contact?.email;
+    if (email) assert.match(email, /@example\.invalid$/);
+  }
 });

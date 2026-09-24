@@ -4,6 +4,7 @@ import {
   api,
   MODULE_NAAM,
   type AgendaRegel, type Beleidsafspraak, type Ernst, type ModuleChip, type Signaal,
+  type Bereikbaarheid, type Bereikbaarheidskanaal,
   type Suggestie, type Takenoverzicht, type Vragenlijstinzage, type WachtkamerIntake,
 } from './api';
 
@@ -556,6 +557,23 @@ export function Werklijst({ gebruiker, naarPlannen, openPatient }: {
 }) {
   const [data, setData] = useState<Takenoverzicht | undefined>();
   const [bezigMet, setBezigMet] = useState<string | undefined>();
+  /*
+   * De contactgegevens bij de taak zelf. Een taak die 'bel deze patiënt' heet en je
+   * vervolgens het dossier in stuurt om het nummer te zoeken, laat het belangrijkste
+   * werk aan jou over. Per taak opgehaald en niet vooraf: het gaat om één nummer van één
+   * mens, en dat hoort pas geladen te worden als je het wilt zien.
+   */
+  const [bereik, setBereik] = useState<Record<string, Bereikbaarheid & { naam: string }>>({});
+  const [open, setOpen] = useState<string | undefined>();
+
+  const toonContact = async (taakId: string, patientId: string) => {
+    if (open === taakId) { setOpen(undefined); return; }
+    setOpen(taakId);
+    if (!bereik[taakId]) {
+      const gegevens = await api.bereikbaarheid(patientId);
+      setBereik((b) => ({ ...b, [taakId]: gegevens }));
+    }
+  };
 
   useEffect(() => {
     let geldig = true;
@@ -563,8 +581,8 @@ export function Werklijst({ gebruiker, naarPlannen, openPatient }: {
     return () => { geldig = false; };
   }, [gebruiker.id]);
 
-  const open = (data?.mijn ?? []).filter((t) => t.status !== 'afgerond');
-  if (!data || open.length === 0) return null;
+  const taken = (data?.mijn ?? []).filter((t) => t.status !== 'afgerond');
+  if (!data || taken.length === 0) return null;
 
   const rondAf = async (id: string) => {
     setBezigMet(id);
@@ -577,7 +595,7 @@ export function Werklijst({ gebruiker, naarPlannen, openPatient }: {
   return (
     <Kaart titel="Mijn werklijst" icoon="bliksem" telling={`${data.open} in te plannen`}>
       <div style={{ display: 'grid', gap: 9 }}>
-        {open.map((taak) => (
+        {taken.map((taak) => (
           <div key={taak.id} className="werktaak" data-dringend={taak.dringend}>
             <span className="ikoon"><Icoon naam={taak.icoon} grootte={14} /></span>
             <div>
@@ -593,6 +611,13 @@ export function Werklijst({ gebruiker, naarPlannen, openPatient }: {
                 {taak.standLabel}
               </span>
               <div className="knop-rij">
+                {taak.patientId && (
+                  <button className="knop" data-toon={open === taak.id ? undefined : 'stil'}
+                    onClick={() => toonContact(taak.id, taak.patientId!)}>
+                    <Icoon naam="gesprek" grootte={12} />
+                    {open === taak.id ? ' Verbergen' : ' Contactgegevens'}
+                  </button>
+                )}
                 {taak.patientId && openPatient && (
                   <button className="knop" data-toon="stil" onClick={() => openPatient(taak.patientId!)}>
                     <Icoon naam="klembord" grootte={12} /> Dossier
@@ -609,9 +634,106 @@ export function Werklijst({ gebruiker, naarPlannen, openPatient }: {
                 </button>
               </div>
             </div>
+
+            {open === taak.id && (
+              <div className="contactuitklap">
+                {bereik[taak.id]
+                  ? (
+                    <>
+                      <div className="reden" style={{ marginBottom: 7 }}>
+                        {bereik[taak.id].advies}
+                      </div>
+                      <Bereikbaarheidskaart gegevens={bereik[taak.id]} compact />
+                    </>
+                  )
+                  : <span className="mini">Contactgegevens ophalen…</span>}
+              </div>
+            )}
           </div>
         ))}
       </div>
     </Kaart>
+  );
+}
+
+const KANAAL_ICOON: Record<string, string> = {
+  mobiel: 'gesprek', vast: 'gesprek', email: 'document', portaal: 'huis',
+};
+
+/**
+ * HOE BEREIK IK DEZE MENS?
+ *
+ * Zodra het systeem 'bel deze patiënt' als taak kan uitzetten, moet het ook kunnen
+ * beantwoorden hóé. Dat stond nergens: het dossier kende wel een telefoonnummer, maar
+ * geen enkel scherm liet het zien — dus zocht je het in een ander systeem op, of je belde
+ * de assistent om het te vragen.
+ *
+ * Bewust meer dan een nummer. Welk kanaal deze mens zelf het liefst heeft, wat de
+ * praktijk over zijn bereikbaarheid heeft geleerd, en wie er gebeld mag worden als hij
+ * het zelf niet redt — met daarbij wát die naaste mag horen.
+ */
+export function Bereikbaarheidskaart({ gegevens, compact, opBellen }: {
+  gegevens: Bereikbaarheid;
+  /** Compacte vorm voor in een werklijst: alleen wat je nodig hebt om te bellen. */
+  compact?: boolean;
+  opBellen?: (kanaal: Bereikbaarheidskanaal) => void;
+}) {
+  return (
+    <div className="bereikbaarheid" data-compact={compact}>
+      {gegevens.kanalen.length === 0 && (
+        <span className="mini">Geen contactgegevens bekend.</span>
+      )}
+      {gegevens.kanalen.map((kanaal) => (
+        <div key={kanaal.soort} className="kanaal">
+          <span className="ikoon"><Icoon naam={KANAAL_ICOON[kanaal.soort] ?? 'gesprek'} grootte={14} /></span>
+          <div>
+            <div className="waarde">{kanaal.waarde}</div>
+            <div className="mini">
+              {kanaal.label}
+              {kanaal.voorkeur && ' · voorkeur van de patiënt'}
+            </div>
+          </div>
+          {kanaal.belbaar && opBellen && (
+            <button className="knop" data-toon="primair" onClick={() => opBellen(kanaal)}>
+              <Icoon naam="gesprek" grootte={12} /> Bellen
+            </button>
+          )}
+        </div>
+      ))}
+
+      {!compact && gegevens.adres && (
+        <div className="kanaal">
+          <span className="ikoon"><Icoon naam="huis" grootte={14} /></span>
+          <div>
+            <div className="waarde">{gegevens.adres}</div>
+            <div className="mini">Woonadres</div>
+          </div>
+        </div>
+      )}
+
+      {/*
+        Wat de praktijk in de loop der jaren heeft geleerd. Dit staat nu op briefjes en
+        in hoofden, en het is precies wat je nodig hebt op het moment dat je de hoorn
+        oppakt — niet erna.
+      */}
+      {gegevens.toelichting && (
+        <div className="bereiknotitie">
+          <Icoon naam="waarschuwing" grootte={13} /> {gegevens.toelichting}
+        </div>
+      )}
+
+      {gegevens.contactpersoon && (
+        <div className="kanaal naaste">
+          <span className="ikoon"><Icoon naam="persoon" grootte={14} /></span>
+          <div>
+            <div className="waarde">
+              {gegevens.contactpersoon.naam}
+              <span className="mini"> · {gegevens.contactpersoon.relatie}</span>
+            </div>
+            <div className="mini">{gegevens.contactpersoon.telefoon} — {gegevens.contactpersoon.magUitleg}</div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

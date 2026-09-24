@@ -172,7 +172,15 @@ Klik op **Hele vragenlijst bekijken**.
 
 ## 5. Het consult — overnemen, en terugvinden in het journaal (3 min)
 
-Klik op **Open consultscherm**, en dan op de tab **Consult**.
+Klik op **Open consultscherm**. Wijs rechtsboven de knop **Bellen** aan, naast
+Videobellen.
+
+> *"Twee manieren om deze mens te bereiken, op dezelfde plek. Bellen laat zien welke
+> nummers er zijn, wat haar voorkeur is, en wie er gebeld mag worden als zij het zelf
+> niet redt — met daarbij wat die naaste mag horen. Informeren is iets anders dan
+> meebeslissen."*
+
+Klik dan op de tab **Consult**.
 
 De vragenlijst staat er weer, nu met een knop.
 
@@ -251,6 +259,14 @@ Klik op **Plannen**.
 > *"Links staat mijn eigen werklijst: wat er bij mij is neergelegd, met de aanleiding
 > erbij. Ik kies er een en klik op een vrije plek — en dan staat het in mijn agenda, met
 > de reden zichtbaar. Want terugbellen is geen tussendoortje, het kost tien minuten."*
+
+Klap bij de taak **Contactgegevens** uit.
+
+> *"En dit miste ik ook. Een taak die 'bel deze patiënt' heet en me vervolgens het
+> dossier in stuurt om het nummer te zoeken, laat het belangrijkste werk aan mij over.
+> Hier staat het nummer, staat erbij dat zij eigenlijk het portaal prefereert, en bij
+> sommige mensen staat er wat we in de loop der jaren geleerd hebben — 'werkt tot vier
+> uur' of 'slechthorend, spreek rustig'. Dat staat nu op briefjes."*
 
 Wijs daaronder **Eigen werk inplannen** aan en zet een blok in een vrije plek.
 

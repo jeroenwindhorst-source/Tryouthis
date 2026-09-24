@@ -195,6 +195,34 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -.01em; }
   font-size: 12.5px; font-style: italic; color: var(--merk-diep);
 }
 
+/* ── Bereikbaarheid ───────────────────────────────────────────────────────── */
+
+/* Het belvenster deelt de vorm van het videovenster; alleen de inhoud verschilt. */
+.belblok { padding: 16px 18px; overflow-y: auto; }
+
+
+
+.bereikbaarheid { display: grid; gap: 6px; }
+.bereikbaarheid .kanaal {
+  display: flex; gap: 10px; align-items: center;
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--rond-klein);
+  background: var(--vlak);
+}
+.bereikbaarheid .kanaal .ikoon { color: var(--merk); flex: none; }
+.bereikbaarheid .kanaal > div { flex: 1 1 auto; min-width: 0; }
+/* Nummers als cijfers, niet als tekst: je leest ze hardop terwijl je ze intikt. */
+.bereikbaarheid .waarde {
+  font-size: 13.5px; font-weight: 600; font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.bereikbaarheid .kanaal.naaste { border-style: dashed; background: var(--bg); }
+.bereikbaarheid[data-compact="true"] .kanaal { padding: 6px 9px; }
+.bereiknotitie {
+  display: flex; gap: 8px; align-items: flex-start;
+  padding: 8px 10px; border-radius: var(--rond-klein);
+  background: var(--aandacht-zacht); color: #7c4a03; font-size: 12.5px;
+}
+
 /* ── Takenpaneel ──────────────────────────────────────────────────────────── */
 
 .taakkeuzes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
@@ -231,6 +259,12 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -.01em; }
 .werktaak[data-dringend="true"] { border-left: 3px solid var(--aandacht); }
 .werktaak .ikoon { color: var(--merk); }
 .werktaak .acties { display: grid; gap: 6px; justify-items: end; }
+/* De contactgegevens schuiven onder de taak uit en niet ernaast: je leest ze nadat je
+   hebt besloten dat je gaat bellen, niet ervoor. */
+.contactuitklap {
+  grid-column: 1 / -1; margin-top: 10px; padding-top: 10px;
+  border-top: 1px solid var(--line-zacht);
+}
 
 /* Een uitgezette taak, zoals hij bij de regel staat die hem veroorzaakte. */
 .taakstand {

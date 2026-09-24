@@ -13,7 +13,8 @@ import {
   InMemoryRepository, intakes, legVerrichtingVast, meetreeksen, meldAan, monitoringCohort,
   neemVragenlijstOver, opvolgen, vragenlijstenVoor,
   protocoloverzicht, wijzigProtocol, herstelProtocol, type Protocolwijziging,
-  takenoverzicht, zetTaakUit, planTaak, rondTaakAf, planWerkblok, type NieuweTaak,
+  takenoverzicht, zetTaakUit, planTaak, rondTaakAf, planWerkblok, bereikbaarheidVoor,
+  type NieuweTaak,
   orderOverzicht, orderVoorstellen, overleg, pakAcuutOp, patientOverzicht, plaatsLosseOrders,
   planbord, planbordPraktijk, praktijkrapportage, praktijkSamenvatting, registreerConsult,
   terminologie, verrichtingen, verwerkVragenlijst, vraagAfspraakAan, zetOpBespreeklijst,
@@ -489,6 +490,9 @@ app.post<{ Params: { id: string } }>('/api/intake/:id/bevestig', async (req, rep
 app.get('/api/beheer', async () => beheer());
 
 // ── Protocol en verantwoording ──────────────────────────────────────────────
+
+app.get<{ Params: { id: string } }>('/api/patient/:id/bereikbaarheid', async (req) =>
+  bereikbaarheidVoor(repo, req.params.id));
 
 app.get<{ Params: { id: string } }>('/api/taken/:id', async (req) =>
   takenoverzicht(repo, req.params.id));

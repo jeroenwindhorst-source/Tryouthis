@@ -1,7 +1,7 @@
 import { api, type Gebruiker, type PatientOverzicht } from '../api';
 import { useData } from '../gebruik';
 import { Icoon, icoonVanModule } from '../iconen';
-import { Fout, Kaart, Laden, Signalen } from '../onderdelen';
+import { Bereikbaarheidskaart, Fout, Kaart, Laden, Signalen } from '../onderdelen';
 import { Zorgreis } from '../zorgreis';
 
 const NADRUK_ICOON: Record<string, string> = {
@@ -85,6 +85,18 @@ export function Overzicht({ patientId, gebruiker, opTab, openPatient }: {
       </div>
 
       <div>
+        {/*
+          Bereikbaarheid hoort op het overzicht en niet drie klikken verderop. Het is een
+          van de eerste dingen die je nodig hebt zodra je iets met deze mens wilt regelen
+          zonder hem in de spreekkamer te hebben.
+        */}
+        {data.patient.bereikbaarheid && (
+          <Kaart titel="Bereikbaarheid" icoon="gesprek"
+            telling={data.patient.bereikbaarheid.kanalen.length}>
+            <Bereikbaarheidskaart gegevens={data.patient.bereikbaarheid} />
+          </Kaart>
+        )}
+
         <Kaart titel="Kerngetallen" icoon="rapport">
           <div className="kengetallen" style={{ marginBottom: 0 }}>
             {vatting.data.kerngetallen.map((k) => (

@@ -1305,6 +1305,126 @@ export function dagafsluiting(repo: DossierRepository) {
   return { datum, punten, afgerond: punten.every((p) => p.aantal === 0) };
 }
 
+// ── 5b. Bereikbaarheid ──────────────────────────────────────────────────────
+
+/**
+ * HOE JE DEZE MENS BEREIKT
+ *
+ * Zodra het systeem 'bel deze patiënt' als taak kan uitzetten, moet het ook kunnen
+ * beantwoorden hoe. Dat stond nergens: het dossier kende wel een telefoonnummer, maar
+ * geen enkel scherm liet het zien — en dus zocht je het in een ander systeem op, of je
+ * belde de assistent om het te vragen.
+ *
+ * Wat hier staat is bewust meer dan een nummer. Welk kanaal iemand zelf het liefst heeft,
+ * wat de praktijk over zijn bereikbaarheid heeft geleerd, en wie er gebeld mag worden als
+ * hij het zelf niet redt — met daarbij wat die naaste mag horen. Dat laatste is geen
+ * detail: informeren is iets anders dan meebeslissen, en die grens hoort vastgelegd te
+ * zijn vóórdat iemand hem nodig heeft.
+ */
+
+export interface Bereikbaarheidskanaal {
+  soort: 'mobiel' | 'vast' | 'email' | 'portaal';
+  label: string;
+  waarde: string;
+  /** Het kanaal dat deze patiënt zelf heeft aangegeven. */
+  voorkeur: boolean;
+  /** Kun je hierop bellen, of is het alleen schrijven? */
+  belbaar: boolean;
+}
+
+export interface Bereikbaarheid {
+  kanalen: Bereikbaarheidskanaal[];
+  adres?: string;
+  /** Wat de praktijk over de bereikbaarheid weet. */
+  toelichting?: string;
+  contactpersoon?: {
+    naam: string; relatie: string; telefoon: string;
+    mag: string; magUitleg: string;
+  };
+  portaalActief: boolean;
+  /** Eén zin: waarmee zou je beginnen? */
+  advies: string;
+}
+
+const MAG_UITLEG: Record<string, string> = {
+  informeren: 'Mag geïnformeerd worden, niet meebeslissen.',
+  meebeslissen: 'Mag meebeslissen over de zorg.',
+  'alleen-in-noodgeval': 'Alleen bellen als het niet anders kan.',
+};
+
+export function bereikbaarheid(dossier: Dossier): Bereikbaarheid {
+  const p = dossier.patient;
+  const voorkeur = p.communicatievoorkeur;
+  const kanalen: Bereikbaarheidskanaal[] = [];
+
+  if (p.contact?.mobiel) {
+    kanalen.push({
+      soort: 'mobiel', label: 'Mobiel', waarde: p.contact.mobiel,
+      voorkeur: voorkeur === 'telefoon' || voorkeur === 'sms', belbaar: true,
+    });
+  }
+  if (p.contact?.vast) {
+    kanalen.push({
+      soort: 'vast', label: 'Vast', waarde: p.contact.vast,
+      voorkeur: false, belbaar: true,
+    });
+  }
+  if (p.contact?.email) {
+    kanalen.push({
+      soort: 'email', label: 'E-mail', waarde: p.contact.email,
+      voorkeur: voorkeur === 'email', belbaar: false,
+    });
+  }
+  if (p.portaalActief) {
+    kanalen.push({
+      soort: 'portaal', label: 'Patiëntportaal', waarde: 'Bericht via het portaal',
+      voorkeur: voorkeur === 'portaal', belbaar: false,
+    });
+  }
+
+  const adres = p.adres
+    ? `${p.adres.straat ?? ''} ${p.adres.huisnummer ?? ''}, ${p.adres.postcode ?? ''} ${p.adres.woonplaats ?? ''}`
+      .replace(/\s+/g, ' ').trim()
+    : undefined;
+
+  /*
+   * Het advies leest het dossier en verzint niets. Wie heeft aangegeven het portaal te
+   * willen, bel je niet als eerste — en wie een notitie heeft dat zijn mobiel overdag
+   * uitstaat, bel je niet op zijn mobiel.
+   */
+  const voorkeurskanaal = kanalen.find((k) => k.voorkeur);
+  const advies = p.contact?.toelichting
+    ? p.contact.toelichting
+    : voorkeurskanaal
+      ? `Voorkeur van de patiënt: ${voorkeurskanaal.label.toLowerCase()}.`
+      : kanalen.some((k) => k.belbaar)
+        ? 'Geen voorkeur vastgelegd; begin bij het mobiele nummer.'
+        : 'Geen telefoonnummer bekend. Vraag het na bij de assistent.';
+
+  return {
+    kanalen,
+    adres,
+    toelichting: p.contact?.toelichting,
+    contactpersoon: p.contactpersoon
+      ? {
+          ...p.contactpersoon,
+          magUitleg: MAG_UITLEG[p.contactpersoon.mag] ?? p.contactpersoon.mag,
+        }
+      : undefined,
+    portaalActief: Boolean(p.portaalActief),
+    advies,
+  };
+}
+
+/** Bereikbaarheid los opvragen, voor een werklijst waar geen heel dossier bij hoeft. */
+export function bereikbaarheidVoor(
+  repo: DossierRepository, patientId: string,
+): (Bereikbaarheid & { naam: string }) | undefined {
+  const dossier = repo.dossier(patientId);
+  if (!dossier) return undefined;
+  return { ...bereikbaarheid(dossier), naam: volledigeNaam(dossier) };
+}
+
 // ── 6. Patiëntoverzicht ─────────────────────────────────────────────────────
 
 export function patientOverzicht(repo: DossierRepository, patientId: string) {
@@ -1325,6 +1445,7 @@ export function patientOverzicht(repo: DossierRepository, patientId: string) {
       geslacht: dossier.patient.geslacht,
       bsn: dossier.patient.identifier[0]?.value,
       portaalActief: dossier.patient.portaalActief,
+      bereikbaarheid: bereikbaarheid(dossier),
     },
     episodes: dossier.episodes.map((e) => ({
       id: e.id, titel: e.titel, status: e.status,

@@ -7,7 +7,8 @@ import {
   InMemoryRepository, intakes, legVerrichtingVast, meetreeksen, meldAan, monitoringCohort,
   neemVragenlijstOver, opvolgen, vragenlijstenVoor,
   protocoloverzicht, wijzigProtocol, herstelProtocol, type Protocolwijziging,
-  takenoverzicht, zetTaakUit, planTaak, rondTaakAf, planWerkblok, type NieuweTaak,
+  takenoverzicht, zetTaakUit, planTaak, rondTaakAf, planWerkblok, bereikbaarheidVoor,
+  type NieuweTaak,
   orderOverzicht, orderVoorstellen, overleg, pakAcuutOp, patientOverzicht, plaatsLosseOrders,
   planbord, planbordPraktijk, praktijkrapportage, praktijkSamenvatting, registreerConsult,
   terminologie, verrichtingen, vraagAfspraakAan, zetOpBespreeklijst, zoekOrders, zoekPatient,
@@ -217,6 +218,11 @@ export const lokaleApi = {
   },
 
   taken: (gebruikerId: string) => traag(takenoverzicht(repo, gebruikerId)),
+  bereikbaarheid: (patientId: string) => {
+    const uitkomst = bereikbaarheidVoor(repo, patientId);
+    if (!uitkomst) return Promise.reject(new Error(`Patiënt ${patientId} niet gevonden`));
+    return traag(uitkomst);
+  },
   zetTaakUit: (nieuw: NieuweTaak, door: string) => traag(zetTaakUit(repo, nieuw, door)),
   planTaak: (id: string, start: string) => traag({ taak: planTaak(repo, id, start) }),
   rondTaakAf: (id: string, door: string, uitkomst: string) =>

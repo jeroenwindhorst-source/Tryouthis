@@ -321,7 +321,9 @@ K(zeg('“En ik kan de hele lijst gewoon teruglezen zoals zij hem gekregen heeft
 
 // ── 5
 K(h1('5 · Het consult — overnemen, en terugvinden in het journaal'));
-K(doe('Klik op **Open consultscherm**, en dan op de tab **Consult**.'));
+K(doe('Klik op **Open consultscherm**. Wijs rechtsboven de knop **Bellen** aan, naast Videobellen.'));
+K(zeg('“Twee manieren om deze mens te bereiken, op dezelfde plek. Bellen laat zien welke nummers er zijn, wat haar voorkeur is, en wie er gebeld mag worden als zij het zelf niet redt — met daarbij wat die naaste mag horen. Informeren is iets anders dan meebeslissen.”'));
+K(doe('Klik dan op de tab **Consult**.'));
 K(p('De vragenlijst staat er weer, nu met een knop.'));
 K(zeg('“En dan het stuk waar het mij om gaat. Ik wil dit niet overtypen.”'));
 K(doe('Klik op **Overnemen in mijn dossier**. Scroll naar het registratieblok en wijs het **S**-veld aan.'));
@@ -355,6 +357,8 @@ K(zeg('“Voor geen van deze drie is een consult nodig. Een bericht, een aangepa
 K(h1('6b · Waar dat werk terechtkomt'));
 K(doe('Klik op **Plannen**.'));
 K(zeg('“Links staat mijn eigen werklijst: wat er bij mij is neergelegd, met de aanleiding erbij. Ik kies er een en klik op een vrije plek — en dan staat het in mijn agenda, met de reden zichtbaar. Want terugbellen is geen tussendoortje, het kost tien minuten.”'));
+K(doe('Klap bij de taak **Contactgegevens** uit.'));
+K(zeg('“En dit miste ik ook. Een taak die ‘bel deze patiënt’ heet en me vervolgens het dossier in stuurt om het nummer te zoeken, laat het belangrijkste werk aan mij over. Hier staat het nummer, staat erbij dat zij eigenlijk het portaal prefereert, en bij sommige mensen staat er wat we in de loop der jaren geleerd hebben — ‘werkt tot vier uur’ of ‘slechthorend, spreek rustig’. Dat staat nu op briefjes.”'));
 K(doe('Wijs daaronder **Eigen werk inplannen** aan en zet een blok in een vrije plek.'));
 K(zeg('“En dit miste ik het meest. Mijn agenda kende alleen patiënten. Maar uitslagen nalopen en administratie kosten evenveel tijd als een consult, en als die tijd er niet in staat, ziet mijn dag er voor de buitenwereld leeg uit terwijl hij vol zit.”'));
 K(p('Als je de tijd hebt: log uit en weer in als `ilse` (assistent).'));

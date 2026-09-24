@@ -22,7 +22,36 @@ export interface Patient extends DomainResource {
   geboortedatum: FhirDate;
   geslacht: 'male' | 'female' | 'other' | 'unknown';
   adres?: { straat?: string; huisnummer?: string; postcode?: string; woonplaats?: string };
-  contact?: { telefoon?: string; email?: string };
+  /**
+   * Hoe deze mens te bereiken is (FHIR Patient.telecom).
+   *
+   * Meer dan één nummer, want dat is de werkelijkheid: een mobiel dat overdag uitstaat
+   * en een vaste lijn waar wel wordt opgenomen. `telefoon` blijft het primaire nummer;
+   * de andere staan ernaast in plaats van het te vervangen.
+   *
+   * `toelichting` is wat de praktijk in de loop der jaren heeft geleerd — 'belt liever
+   * na drieën', 'slechthorend, spreek langzaam'. Dat staat nu in hoofden en op briefjes,
+   * en het is precies wat je nodig hebt op het moment dat je de hoorn oppakt.
+   */
+  contact?: {
+    telefoon?: string;
+    mobiel?: string;
+    vast?: string;
+    email?: string;
+    toelichting?: string;
+  };
+  /**
+   * Naaste die gebeld mag worden (FHIR Patient.contact).
+   *
+   * Met wat diegene mag: informeren is iets anders dan meebeslissen, en die grens hoort
+   * vastgelegd te zijn vóórdat iemand hem nodig heeft.
+   */
+  contactpersoon?: {
+    naam: string;
+    relatie: string;
+    telefoon: string;
+    mag: 'informeren' | 'meebeslissen' | 'alleen-in-noodgeval';
+  };
   /** Voorkeurskanaal voor oproepen — bepaalt de kanaalkeuze in docs/04 §5. */
   communicatievoorkeur?: 'portaal' | 'sms' | 'email' | 'telefoon' | 'brief';
   portaalActief?: boolean;
