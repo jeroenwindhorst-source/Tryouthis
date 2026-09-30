@@ -413,8 +413,16 @@ export function genereerAanloop(
     if (!dossier || afspraken.some((a) => a.patientId === dossier.patient.id)) continue;
     const dag = new Date(praktijk.peildatum);
     dag.setDate(dag.getDate() + dagenVooruit[i]);
-    // Geen controles in het weekend: dat valt in een demo meteen op.
-    if (dag.getDay() === 6) dag.setDate(dag.getDate() + 2);
+    /*
+     * Geen controles in het weekend: dat valt in een demo meteen op.
+     *
+     * Zaterdag schuift een dag naar vóren en zondag een dag naar achteren — de dichtstbij
+     * gelegen werkdag dus, en niet altijd vooruit. Dat lijkt een detail maar is het niet:
+     * met alleen vooruitschuiven belandt de eerstvolgende controle op sommige weekdagen
+     * op vijf dagen of meer, en dan haalt het lab het net wél. Precies dat ene geval —
+     * de voorbereiding die het niet meer redt — draagt het hele aanloopverhaal.
+     */
+    if (dag.getDay() === 6) dag.setDate(dag.getDate() - 1);
     if (dag.getDay() === 0) dag.setDate(dag.getDate() + 1);
 
     afspraken.push({

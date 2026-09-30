@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { InMemoryRepository } from '../dist/store.js';
+import { genereerPraktijk } from '../dist/populatie.js';
 import {
   aanloop, agenda, bereikbaarheid, consultvoorbereiding, dagstart, dossierHistorie,
   herstelProtocol, legContactVast, legGroepsnotitieVast, opvolgen, overleg,
@@ -733,6 +734,33 @@ test('groepsconsult: een lege notitie levert geen contact op', () => {
   });
   assert.match(uitkomst.melding, /lege notitie/i);
   assert.equal(dossierHistorie(eigen, deelnemer.patientId).journaal.length, voor);
+});
+
+
+test('aanloop: het verzetten-geval staat er op elke dag van de week', () => {
+  /*
+   * Deze demo kan op elke dag gegeven worden, dus moet hij op elke dag hetzelfde
+   * vertellen. Dat ging mis op de dagen waarop de eerstvolgende controle door het
+   * weekend heen op vijf dagen uitkwam: dan haalt het lab het net wél en staat er
+   * nergens meer 'verzetten'. Deze test draait de week rond in plaats van te vertrouwen
+   * op de dag waarop hij toevallig wordt uitgevoerd.
+   */
+  for (let dag = 0; dag < 7; dag += 1) {
+    const peildatum = new Date(Date.UTC(2026, 9, 5 + dag, 9, 0, 0));
+    const eigen = new InMemoryRepository(() => genereerPraktijk({ peildatum }));
+    const regels = aanloop(eigen);
+    const weekdag = peildatum.toLocaleDateString('nl-NL', { weekday: 'long', timeZone: 'UTC' });
+    assert.ok(regels.some((r) => r.status === 'verzetten'),
+      `op ${weekdag} vraagt geen enkele afspraak om verzetten`);
+    assert.ok(regels.some((r) => r.status === 'bellen'),
+      `op ${weekdag} vraagt geen enkele afspraak om bellen`);
+    // En nooit een controle in het weekend: dat valt in een demo meteen op.
+    for (const regel of regels) {
+      const dagnummer = new Date(`${regel.datum}T12:00:00Z`).getUTCDay();
+      assert.ok(dagnummer !== 0 && dagnummer !== 6,
+        `controle op ${regel.datum} valt in het weekend`);
+    }
+  }
 });
 
 test('aanloop: er staat altijd één afspraak die verzet moet worden en één die gebeld kan worden', () => {
