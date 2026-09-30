@@ -18,7 +18,8 @@
     "api": "npm run build && node apps/api/dist/server.js",
     "web": "npm --workspace @zpe/web run dev",
     "dev": "npm run build && concurrently -n api,web -c blue,magenta \"node apps/api/dist/server.js\" \"npm --workspace @zpe/web run dev\"",
-    "demoscript": "node scripts/demonstratiescript-docx.js Cadans-demonstratiescript.docx"
+    "demoscript": "node scripts/demonstratiescript-docx.js Cadans-demonstratiescript.docx",
+    "agenda": "node scripts/ontwikkelagenda-docx.js Cadans-ontwikkelagenda.docx"
   },
   "devDependencies": {
     "@types/node": "^22.20.2",
